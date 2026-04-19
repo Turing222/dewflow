@@ -9,6 +9,8 @@ SMOKE_ENV_TEMPLATE ?= .env.smoke.template
 SMOKE_BASE_URL ?= http://localhost:8000
 SMOKE_LIVE_PATH ?= /api/v1/health_check/live
 SMOKE_READY_PATH ?= /api/v1/health_check/db_ready
+FRONTEND_DIR ?= frontend
+FRONTEND_APP ?= admin
 UNIT_TARGETS ?= tests/unit
 COMPONENT_TARGETS ?= tests/component
 INTEGRATION_TARGETS ?= tests/integration
@@ -38,6 +40,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 
 .PHONY: help \
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
+	frontend-test frontend-build \
 	image-build \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
@@ -72,6 +75,8 @@ help:
 		'  qa-perf-chat-locust  Run exploratory chat load test with Locust' \
 		'  qa-agent-flow        Reserved entrypoint for agent/C2C flow tests' \
 		'  qa-checks            Run lint and typecheck via scripts' \
+		'  frontend-test        Run the frontend unit/smoke tests' \
+		'  frontend-build       Build the frontend app bundle' \
 		'  image-build          Build the backend Docker image' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-check      Run preflight checks for smoke environment (API keys)' \
@@ -162,6 +167,12 @@ qa-agent-flow:
 qa-checks:
 	bash scripts/qa/run_checks.sh
 
+frontend-test:
+	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" test
+
+frontend-build:
+	pnpm --dir "$(FRONTEND_DIR)" --filter "$(FRONTEND_APP)" build
+
 image-build:
 	bash scripts/image/build_backend.sh
 
@@ -242,3 +253,10 @@ check: flow-static
 
 clean-cache:
 	uv run python -c "import pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.py[co]')]; [p.rmdir() for p in pathlib.Path('.').rglob('__pycache__')]"
+
+ARGS = $(filter-out $@,$(MAKECMDGOALS))
+
+check-context:
+	@echo "上线文变量查询: $(ARGS) : $($(ARGS))"
+%:
+	@:
