@@ -44,8 +44,6 @@ x-app-environment: &app-environment
   RAG_EMBED_PROVIDER: ${RAG_EMBED_PROVIDER:-google}
   STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
   LOCAL_STORAGE_ROOT: ${LOCAL_STORAGE_ROOT:-/data/knowledge_files}
-  # Deprecated: KNOWLEDGE_STORAGE_ROOT 已被 LOCAL_STORAGE_ROOT 取代，优先级低于后者，将在后续版本移除。
-  KNOWLEDGE_STORAGE_ROOT: ${KNOWLEDGE_STORAGE_ROOT:-/data/knowledge_files}
   S3_BUCKET: ${S3_BUCKET:-knowledge-files}
   S3_PREFIX: ${S3_PREFIX:-knowledge_files}
   S3_REGION: ${S3_REGION:-us-east-1}

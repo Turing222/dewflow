@@ -69,7 +69,7 @@ services:
     environment:
       - PYTHONMALLOC=default # 生产环境使用 default，debug 模式严重拖慢性能
       - WEB_CONCURRENCY=1 # 充分利用 1.5GB 内存，启动 2 个 Worker  Worker Process（工作进程） 测试时只开启一个
-      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
+      - LOCAL_STORAGE_ROOT=/data/knowledge_files
     cap_add:
       - SYS_PTRACE # 允许 py-spy 性能分析工具附加到进程
     restart: unless-stopped
@@ -287,7 +287,7 @@ services:
       - ../.env
     environment:
       - TASKIQ_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
-      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
+      - LOCAL_STORAGE_ROOT=/data/knowledge_files
     # 启动 taskiq worker，指向您的 broker 对象！ --workers 2 表示最多并发 2 个LLM请求
     command: taskiq worker backend.infra.task_broker:broker backend.tasks.llm_tasks backend.tasks.knowledge_tasks --workers 2
     restart: unless-stopped

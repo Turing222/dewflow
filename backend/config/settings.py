@@ -119,10 +119,8 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str | None = None
 
     OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
-    # 兼容旧配置名；实际读取优先级在 local_storage_root property 中统一处理。
-    KNOWLEDGE_STORAGE_ROOT: Path = Path(".files/knowledge_files")
     STORAGE_BACKEND: str = "local"
-    LOCAL_STORAGE_ROOT: Path | None = None  # 替代 KNOWLEDGE_STORAGE_ROOT，优先级更高
+    LOCAL_STORAGE_ROOT: Path = Path(".files/knowledge_files")
     KNOWLEDGE_MAX_UPLOAD_SIZE_MB: int = 20
     KNOWLEDGE_CHUNK_SIZE: int = 800
     KNOWLEDGE_CHUNK_OVERLAP: int = 120
@@ -219,7 +217,7 @@ class Settings(BaseSettings):
 
     @property
     def local_storage_root(self) -> Path:
-        return self.LOCAL_STORAGE_ROOT or self.KNOWLEDGE_STORAGE_ROOT
+        return self.LOCAL_STORAGE_ROOT
 
     def _database_url_obj(self) -> URL:
         if self.DATABASE_URL:

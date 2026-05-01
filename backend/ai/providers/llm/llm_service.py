@@ -183,26 +183,58 @@ class LLMService(AbstractLLMService):
         self,
         query: LLMQueryDTO,
     ) -> LLMResultDTO:
-        """复用流式路径聚合完整响应，保持 provider 行为一致。"""
-        start = time.perf_counter()
-        chunks: list[str] = []
+        """非流式生成回复，直接使用 stream=False。
 
+        与 stream_response 独立，便于未来支持 response_format 等非流式专用参数。
+        """
+        start = time.perf_counter()
         try:
+            messages = self._build_messages(query)
             with trace_span(
                 "llm.openai_compatible.generate",
                 {
                     "gen_ai.system": self.provider_name,
                     "gen_ai.operation.name": "chat",
                     "gen_ai.request.model": self.model_name,
+                    "llm.base_url": self.base_url,
                     "chat.session_id": query.session_id,
+                    "llm.messages.count": len(messages),
                     "llm.stream": False,
                 },
             ) as span:
-                async for chunk in self.stream_response(query):
-                    chunks.append(chunk)
+                client = self._create_client()
+                await self._circuit.acquire()
+
+                completion = await client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    stream=False,
+                )
+                await self._circuit.on_success()
+
+                content = completion.choices[0].message.content or ""
+                latency_ms = int((time.perf_counter() - start) * 1000)
+
+                usage = completion.usage
+                prompt_tokens = usage.prompt_tokens if usage else None
+                completion_tokens = usage.completion_tokens if usage else count_tokens(
+                    content, self.model_name
+                )
+                set_span_attributes(
+                    span,
+                    {
+                        "llm.response.char_count": len(content),
+                        "llm.response.prompt_tokens": prompt_tokens,
+                        "llm.response.completion_tokens": completion_tokens,
+                        "llm.latency_ms": latency_ms,
+                    },
+                )
+
+            logger.info("LLM 非流式请求完成: session_id=%s", query.session_id)
         except AppException:
             raise
         except Exception as e:
+            await self._circuit.on_failure()
             logger.error(
                 "LLM 非流式请求失败: session_id=%s, error=%s",
                 query.session_id,
@@ -215,23 +247,11 @@ class LLMService(AbstractLLMService):
                 details={"session_id": str(query.session_id), "error": str(e)},
             ) from e
 
-        content = "".join(chunks)
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        completion_tokens = count_tokens(content, self.model_name)
-        set_span_attributes(
-            span,
-            {
-                "llm.response.char_count": len(content),
-                "llm.response.completion_tokens": completion_tokens,
-                "llm.latency_ms": latency_ms,
-            },
-        )
-
         return LLMResultDTO(
             content=content,
             latency_ms=latency_ms,
             success=True,
             error_message=None,
-            prompt_tokens=None,
+            prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
         )
