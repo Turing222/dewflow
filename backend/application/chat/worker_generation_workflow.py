@@ -8,17 +8,38 @@
 import logging
 import time
 import uuid
+from typing import Any
 
+from pydantic import BaseModel, Field
+
+from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
+from backend.application.chat.stream_events import (
+    encode_chunk_event,
+    encode_done_event,
+    encode_error_event,
+)
 from backend.config.llm import get_llm_model_config
+from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractLLMService, AbstractUnitOfWork
 from backend.core.exceptions import AppException
 from backend.infra.redis import redis_client
-from backend.models.schemas.chat_schema import LLMQueryDTO
+from backend.models.schemas.chat_schema import ConversationMessage, LLMQueryDTO
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import ChatMessageUpdater
+from backend.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
+
+
+class StreamGenerationPayload(BaseModel):
+    """Worker payload for stream generation tasks."""
+
+    session_id: uuid.UUID
+    query_text: str
+    conversation_history: list[ConversationMessage] = Field(default_factory=list)
+    kb_id: uuid.UUID | None = None
+    rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LLMGenerationWorkerWorkflow:
@@ -29,19 +50,19 @@ class LLMGenerationWorkerWorkflow:
         *,
         uow: AbstractUnitOfWork,
         llm_service: AbstractLLMService,
+        chat_context_builder: ChatContextBuilder | None = None,
     ) -> None:
         self.uow = uow
         self.llm_service = llm_service
+        self.chat_context_builder = chat_context_builder or ChatContextBuilder()
 
     async def generate_stream(
         self,
         *,
-        llm_query: LLMQueryDTO,
+        payload: StreamGenerationPayload,
         channel: str,
         assistant_message_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
-        tokens_input: int | None = None,
-        search_context: dict | None = None,
         idempotency_lock_key: str | None = None,
     ) -> None:
         """Generate a streaming answer, publish chunks, and persist final state."""
@@ -50,12 +71,24 @@ class LLMGenerationWorkerWorkflow:
         start_time = time.time()
 
         try:
+            prepared_context = await self._prepare_context(payload)
+            assembled = prepared_context.assembled_prompt
+            search_context = prepared_context.search_context
+            tokens_input = assembled.total_tokens
+            llm_query = LLMQueryDTO(
+                session_id=payload.session_id,
+                query_text=payload.query_text,
+                conversation_history=assembled.messages,
+            )
+
             with trace_span(
                 "taskiq.llm_stream.generate_and_publish",
                 {
                     "redis.channel": channel,
-                    "chat.session_id": llm_query.session_id,
+                    "chat.session_id": payload.session_id,
                     "chat.assistant_message_id": assistant_message_id,
+                    "chat.prompt.tokens_input": tokens_input,
+                    "chat.prompt.uses_rag": search_context is not None,
                     "llm.provider": getattr(self.llm_service, "provider_name", "unknown"),
                     "gen_ai.request.model": getattr(
                         self.llm_service, "model_name", "unknown"
@@ -64,7 +97,7 @@ class LLMGenerationWorkerWorkflow:
             ) as span:
                 async for chunk in self.llm_service.stream_response(llm_query):
                     accumulated_content.append(chunk)
-                    await redis_connection.publish(channel, chunk)
+                    await redis_connection.publish(channel, encode_chunk_event(chunk))
 
                 full_content = "".join(accumulated_content)
                 tokens_output = self._count_output_tokens(full_content)
@@ -101,7 +134,7 @@ class LLMGenerationWorkerWorkflow:
                 error_content=str(exc),
                 idempotency_lock_key=idempotency_lock_key,
             )
-            await redis_connection.publish(channel, f"[ERROR]{exc}")
+            await redis_connection.publish(channel, encode_error_event(str(exc)))
         except Exception:
             logger.exception("TaskIQ 调用 LLM 系统异常")
             await self._persist_failure(
@@ -109,9 +142,95 @@ class LLMGenerationWorkerWorkflow:
                 error_content="服务暂时不可用，请稍后重试",
                 idempotency_lock_key=idempotency_lock_key,
             )
-            await redis_connection.publish(channel, "[ERROR]服务暂时不可用，请稍后重试")
+            await redis_connection.publish(
+                channel,
+                encode_error_event("服务暂时不可用，请稍后重试"),
+            )
         finally:
-            await redis_connection.publish(channel, "[DONE]")
+            await redis_connection.publish(channel, encode_done_event())
+
+    async def _prepare_context(self, payload: StreamGenerationPayload):
+        reranked_chunks = await self._rerank_candidates_if_enabled(payload)
+        with trace_span(
+            "taskiq.llm_stream.prepare_context",
+            {
+                "chat.session_id": payload.session_id,
+                "rag.kb_id": payload.kb_id,
+                "rag.candidate_count": len(payload.rag_candidates),
+                "rag.rerank.enabled": settings.RAG_RERANK_ENABLED,
+                "rag.hit_count": len(reranked_chunks),
+            },
+        ) as span:
+            prepared_context = self.chat_context_builder.build_from_chunks(
+                history_messages=payload.conversation_history,
+                current_query=payload.query_text,
+                kb_id=payload.kb_id,
+                rag_chunks=reranked_chunks,
+            )
+            set_span_attributes(
+                span,
+                {
+                    "chat.prompt.tokens_input": prepared_context.assembled_prompt.total_tokens,
+                    "chat.prompt.message_count": len(
+                        prepared_context.assembled_prompt.messages
+                    ),
+                    "chat.prompt.uses_rag": prepared_context.search_context is not None,
+                },
+            )
+            return prepared_context
+
+    async def _rerank_candidates_if_enabled(
+        self,
+        payload: StreamGenerationPayload,
+    ) -> list[dict[str, Any]]:
+        candidates = list(payload.rag_candidates)
+        if not candidates:
+            return []
+
+        if not settings.RAG_RERANK_ENABLED:
+            return candidates[: settings.RAG_TOP_K]
+
+        limit = max(1, settings.RAG_RERANK_TOP_K)
+        try:
+            with trace_span(
+                "taskiq.llm_stream.rerank",
+                {
+                    "chat.session_id": payload.session_id,
+                    "rag.kb_id": payload.kb_id,
+                    "rag.top_k": limit,
+                    "rag.candidate_count": len(candidates),
+                },
+            ) as span:
+                prompt = RAGService._build_rerank_prompt(
+                    query_text=payload.query_text,
+                    candidates=candidates,
+                )
+                result = await self.llm_service.generate_response(
+                    LLMQueryDTO(
+                        session_id=payload.session_id,
+                        query_text=prompt,
+                        conversation_history=[],
+                    )
+                )
+                if not result.success:
+                    raise ValueError(result.error_message or "LLM rerank failed")
+                rankings = RAGService._parse_rerank_response(result.content)
+                reranked = RAGService._apply_rankings(
+                    candidates=candidates,
+                    rankings=rankings,
+                    limit=limit,
+                )
+                set_span_attributes(
+                    span,
+                    {
+                        "rag.rerank.ranking_count": len(rankings),
+                        "rag.hit_count": len(reranked),
+                    },
+                )
+                return reranked
+        except Exception as exc:
+            logger.warning("Worker RAG rerank 失败，降级为候选原始排序: %s", exc)
+            return candidates[:limit]
 
     def _count_output_tokens(self, content: str) -> int:
         model_name = getattr(

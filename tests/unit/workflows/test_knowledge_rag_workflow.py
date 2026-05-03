@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from backend.application.knowledge.ingestion_workflow import KnowledgeRAGWorkflow
 from backend.core.exceptions import AppException
 from backend.models.orm.knowledge import FileStatus
-from backend.workflow.knowledge_rag_workflow import KnowledgeRAGWorkflow
 
 
 class FakeChunkingService:
@@ -87,7 +87,7 @@ def test_extract_chunks_uses_lightweight_pdf_channel(monkeypatch, tmp_path):
             return self.pages[index]
 
     monkeypatch.setattr(
-        "backend.workflow.knowledge_rag_workflow.pdfium.PdfDocument",
+        "backend.application.knowledge.ingestion_workflow.pdfium.PdfDocument",
         FakePdfDocument,
     )
 

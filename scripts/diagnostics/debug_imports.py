@@ -4,8 +4,8 @@ import asyncio
 async def main() -> None:
     print("Testing imports...")
 
+    from backend.application.chat.web_stream_workflow import ChatWorkflow
     from backend.config.settings import settings
-    from backend.workflow.chat_workflow import ChatWorkflow
 
     print("Initializing ChatWorkflow...")
     from unittest.mock import MagicMock

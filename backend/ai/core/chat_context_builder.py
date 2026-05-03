@@ -8,12 +8,12 @@
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractRAGService
-from backend.models.schemas.chat_schema import ConversationMessage
+from backend.models.schemas.chat_schema import ChatMessageRole, ConversationMessage
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)
@@ -73,28 +73,15 @@ class ChatContextBuilder:
                 kb_id=kb_id,
             )
 
-            if rag_chunks:
-                rag_references = self._build_rag_references(
-                    kb_id=kb_id,
-                    query_text=current_query,
-                    rag_chunks=rag_chunks,
-                )
-                assembled = self.rag_prompt_manager.assemble(
-                    memory_history,
-                    current_query,
-                    extra_vars={
-                        "context_chunks": rag_references.context_chunks,
-                        "conversation_summary": memory_summary,
-                    },
-                )
-                search_context = rag_references.search_context
-            else:
-                search_context = None
-                assembled = self.prompt_manager.assemble(
-                    memory_history,
-                    current_query,
-                    extra_vars={"conversation_summary": memory_summary},
-                )
+            assembled_context = self._assemble_from_memory_and_chunks(
+                memory_history=memory_history,
+                memory_summary=memory_summary,
+                current_query=current_query,
+                kb_id=kb_id,
+                rag_chunks=rag_chunks,
+            )
+            assembled = assembled_context.assembled_prompt
+            search_context = assembled_context.search_context
 
             set_span_attributes(
                 span,
@@ -113,14 +100,80 @@ class ChatContextBuilder:
                 search_context=search_context,
             )
 
+    def build_from_chunks(
+        self,
+        *,
+        history_messages,
+        current_query: str,
+        kb_id: uuid.UUID | None,
+        rag_chunks: list[dict],
+    ) -> PreparedChatContext:
+        """Build prompt context from already-retrieved RAG chunks."""
+        history_dicts = self._history_to_dicts(history_messages)
+        memory_history, memory_summary = self._prepare_memory_context(
+            history_dicts,
+            current_query,
+        )
+        return self._assemble_from_memory_and_chunks(
+            memory_history=memory_history,
+            memory_summary=memory_summary,
+            current_query=current_query,
+            kb_id=kb_id,
+            rag_chunks=rag_chunks,
+        )
+
+    def _assemble_from_memory_and_chunks(
+        self,
+        *,
+        memory_history: list[ConversationMessage],
+        memory_summary: str,
+        current_query: str,
+        kb_id: uuid.UUID | None,
+        rag_chunks: list[dict],
+    ) -> PreparedChatContext:
+        if rag_chunks:
+            rag_references = self._build_rag_references(
+                kb_id=kb_id,
+                query_text=current_query,
+                rag_chunks=rag_chunks,
+            )
+            assembled = self.rag_prompt_manager.assemble(
+                memory_history,
+                current_query,
+                extra_vars={
+                    "context_chunks": rag_references.context_chunks,
+                    "conversation_summary": memory_summary,
+                },
+            )
+            search_context = rag_references.search_context
+        else:
+            search_context = None
+            assembled = self.prompt_manager.assemble(
+                memory_history,
+                current_query,
+                extra_vars={"conversation_summary": memory_summary},
+            )
+        return PreparedChatContext(
+            assembled_prompt=assembled,
+            search_context=search_context,
+        )
+
     @staticmethod
     def _history_to_dicts(messages) -> list[ConversationMessage]:
         """只保留 Prompt 需要的用户/助手消息。"""
-        return [
-            {"role": msg.role, "content": msg.content}
-            for msg in messages
-            if msg.role in ("user", "assistant") and msg.content
-        ]
+        history: list[ConversationMessage] = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                role = msg.get("role")
+                content = msg.get("content")
+            else:
+                role = getattr(msg, "role", None)
+                content = getattr(msg, "content", None)
+            if role in ("user", "assistant") and content:
+                history.append(
+                    {"role": cast(ChatMessageRole, role), "content": str(content)}
+                )
+        return history
 
     @staticmethod
     def _normalize_text(text: str) -> str:

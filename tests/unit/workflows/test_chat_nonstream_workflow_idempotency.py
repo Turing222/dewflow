@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.ai.core import token_counter
+from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.models.schemas.chat_schema import LLMResultDTO
-from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 
 pytestmark = pytest.mark.asyncio
 
@@ -33,15 +33,15 @@ async def test_idempotency():
 
     with (
         patch(
-            "backend.workflow.chat_nonstream_workflow.redis_client.init",
+            "backend.application.chat.web_nonstream_workflow.redis_client.init",
             return_value=mock_redis,
         ),
         patch(
-            "backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate",
+            "backend.application.chat.web_nonstream_workflow.MessageResponse.model_validate",
             return_value=MagicMock(),
         ),
         patch(
-            "backend.workflow.chat_nonstream_workflow.ChatQueryResponse",
+            "backend.application.chat.web_nonstream_workflow.ChatQueryResponse",
             return_value=MagicMock(),
         ),
         patch(
@@ -131,15 +131,15 @@ async def test_token_recording():
             AsyncMock(return_value=[]),
         ),
         patch(
-            "backend.workflow.chat_nonstream_workflow.MessageResponse.model_validate",
+            "backend.application.chat.web_nonstream_workflow.MessageResponse.model_validate",
             return_value=MagicMock(),
         ),
         patch(
-            "backend.workflow.chat_nonstream_workflow.ChatQueryResponse",
+            "backend.application.chat.web_nonstream_workflow.ChatQueryResponse",
             return_value=MagicMock(),
         ),
         patch(
-            "backend.workflow.chat_nonstream_workflow.ChatMessageUpdater",
+            "backend.application.chat.web_nonstream_workflow.ChatMessageUpdater",
             MagicMock(),
         ) as mock_updater_cls,
         patch(

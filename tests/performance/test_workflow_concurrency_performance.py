@@ -5,15 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.workflow.chat_workflow import ChatWorkflow
+from backend.application.chat.web_stream_workflow import ChatWorkflow
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.performance]
 
 
 async def test_workflow_concurrency():
     with (
-        patch("backend.workflow.chat_workflow.settings.LLM_MAX_CONCURRENCY", 2),
-        patch("backend.workflow.chat_workflow.settings.DB_MAX_CONCURRENCY", 2),
+        patch("backend.application.chat.web_stream_workflow.settings.LLM_MAX_CONCURRENCY", 2),
+        patch("backend.application.chat.web_stream_workflow.settings.DB_MAX_CONCURRENCY", 2),
     ):
         ChatWorkflow._llm_semaphore = asyncio.Semaphore(2)
         ChatWorkflow._db_semaphore = asyncio.Semaphore(2)
@@ -31,9 +31,9 @@ async def test_workflow_concurrency():
         llm_service.stream_response = MagicMock(side_effect=mock_stream)
 
         with (
-            patch("backend.workflow.chat_workflow.SessionManager") as mock_sm,
-            patch("backend.workflow.chat_workflow.ChatMessageUpdater") as mock_up,
-            patch("backend.workflow.chat_workflow.PromptManager") as mock_pm,
+            patch("backend.application.chat.web_stream_workflow.SessionManager") as mock_sm,
+            patch("backend.application.chat.web_stream_workflow.ChatMessageUpdater") as mock_up,
+            patch("backend.application.chat.web_stream_workflow.PromptManager") as mock_pm,
         ):
             mock_sm_inst = mock_sm.return_value
             mock_sm_inst.ensure_session = AsyncMock(

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.workflow.chat_workflow import ChatWorkflow
+from backend.application.chat.web_stream_workflow import ChatWorkflow
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
 

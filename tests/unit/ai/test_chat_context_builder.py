@@ -192,3 +192,37 @@ async def test_build_uses_rerank_when_enabled(monkeypatch):
         top_k=2,
         candidate_count=8,
     )
+
+
+def test_build_from_chunks_does_not_call_rag_service():
+    kb_id = uuid.uuid4()
+    rag_service = SimpleNamespace(retrieve=AsyncMock(return_value=[]))
+    builder = ChatContextBuilder(rag_service=rag_service)
+
+    result = builder.build_from_chunks(
+        history_messages=[
+            {"role": "user", "content": "上一轮"},
+            {"role": "assistant", "content": "回答"},
+            {"role": "user", "content": "本轮问题"},
+        ],
+        current_query="本轮问题",
+        kb_id=kb_id,
+        rag_chunks=[
+            {
+                "id": str(uuid.uuid4()),
+                "content": "worker provided fact",
+                "source_type": "file",
+                "file_id": str(uuid.uuid4()),
+                "message_id": None,
+                "filename": "source.md",
+                "chunk_index": 0,
+                "meta_info": {},
+                "distance": 0.1,
+                "score": 0.9,
+            }
+        ],
+    )
+
+    rag_service.retrieve.assert_not_awaited()
+    assert result.search_context is not None
+    assert "worker provided fact" in result.assembled_prompt.messages[0]["content"]

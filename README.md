@@ -204,7 +204,7 @@ uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ### 5.2 TaskIQ Worker（必须）
 
 ```bash
-uv run taskiq worker backend.infra.task_broker:broker backend.tasks.llm_tasks backend.tasks.knowledge_tasks --workers 2
+uv run taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks --workers 2
 ```
 
 ### 5.3 Docker Compose

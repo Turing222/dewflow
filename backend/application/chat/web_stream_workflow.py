@@ -15,6 +15,8 @@ from langfuse import get_client, observe
 
 from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
+from backend.application.chat.stream_events import decode_stream_event
+from backend.application.chat.worker_generation_workflow import StreamGenerationPayload
 from backend.config.settings import settings
 from backend.contracts.interfaces import (
     AbstractLLMService,
@@ -24,7 +26,6 @@ from backend.contracts.interfaces import (
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_service_error
 from backend.infra.redis import redis_client
-from backend.models.schemas.chat_schema import LLMQueryDTO
 from backend.observability.trace_utils import (
     inject_trace_context,
     set_span_attributes,
@@ -50,6 +51,7 @@ class ChatWorkflow:
     ) -> None:
         self.uow = uow
         self.llm_service = llm_service
+        self.rag_service = rag_service
         self.chat_context_builder = chat_context_builder or ChatContextBuilder(
             prompt_manager=prompt_manager,
             rag_service=rag_service,
@@ -170,24 +172,20 @@ class ChatWorkflow:
                 span, {"chat.history.message_count": len(history_messages)}
             )
 
-        with trace_span("chat.stream.prepare_context", trace_attrs) as span:
-            prepared_context = await self.chat_context_builder.build(
-                history_messages=history_messages,
-                current_query=query_text,
+        with trace_span("chat.stream.retrieve_rag_candidates", trace_attrs) as span:
+            conversation_history = ChatContextBuilder._history_to_dicts(
+                history_messages
+            )
+            rag_candidates = await self._retrieve_rag_candidates_for_worker(
+                query_text=query_text,
                 kb_id=effective_kb_id,
             )
-            assembled = prepared_context.assembled_prompt
-            search_context = prepared_context.search_context
-            tokens_input = assembled.total_tokens
             set_span_attributes(
                 span,
                 {
-                    "chat.prompt.tokens_input": tokens_input,
-                    "chat.prompt.message_count": len(assembled.messages),
-                    "chat.prompt.uses_rag": search_context is not None,
-                    "rag.hit_count": len(search_context["chunks"])
-                    if search_context
-                    else 0,
+                    "chat.history.message_count": len(conversation_history),
+                    "rag.candidate_count": len(rag_candidates),
+                    "rag.rerank.deferred_to_worker": settings.RAG_RERANK_ENABLED,
                 },
             )
 
@@ -202,10 +200,12 @@ class ChatWorkflow:
         )
         yield f"data: {meta_event}\n\n"
 
-        llm_query = LLMQueryDTO(
+        generation_payload = StreamGenerationPayload(
             session_id=session.id,
             query_text=query_text,
-            conversation_history=assembled.messages,
+            conversation_history=conversation_history,
+            kb_id=effective_kb_id,
+            rag_candidates=rag_candidates,
         )
 
         task_id = str(uuid.uuid4())
@@ -221,13 +221,11 @@ class ChatWorkflow:
                 pubsub = (await redis_client.init()).pubsub()
                 await pubsub.subscribe(channel)
                 await generate_llm_stream_task.kiq(
-                    llm_query.model_dump(mode="json"),
+                    generation_payload.model_dump(mode="json"),
                     channel,
                     inject_trace_context(),
                     str(assistant_msg.id),
                     str(user_id),
-                    tokens_input,
-                    search_context,
                     lock_key,
                 )
         except AppException as exc:
@@ -300,17 +298,20 @@ class ChatWorkflow:
                     first_payload = _read_stream_payload(first_message)
                     if first_payload is None:
                         continue
-                    if first_payload == "[DONE]":
+                    event = decode_stream_event(first_payload)
+                    event_type = event.get("type")
+                    if event_type == "done":
                         done_received = True
-                    elif first_payload.startswith("[ERROR]"):
+                    elif event_type == "error":
                         raise app_service_error(
-                            f"Taskiq 队列执行 LLM 错误: {first_payload[7:]}",
+                            f"Taskiq 队列执行 LLM 错误: {event.get('message', '')}",
                             code="LLM_TASK_FAILED",
                         )
                     else:
-                        accumulated_content.append(first_payload)
+                        content = event.get("content", "")
+                        accumulated_content.append(content)
                         first_chunk = json.dumps(
-                            {"type": "chunk", "content": first_payload}
+                            {"type": "chunk", "content": content}
                         )
                         yield f"data: {first_chunk}\n\n"
                     break
@@ -332,16 +333,19 @@ class ChatWorkflow:
                         payload = _read_stream_payload(message)
                         if payload is None:
                             continue
-                        if payload == "[DONE]":
+                        event = decode_stream_event(payload)
+                        event_type = event.get("type")
+                        if event_type == "done":
                             done_received = True
                             break
-                        if payload.startswith("[ERROR]"):
+                        if event_type == "error":
                             raise app_service_error(
-                                f"Taskiq 队列执行 LLM 错误: {payload[7:]}",
+                                f"Taskiq 队列执行 LLM 错误: {event.get('message', '')}",
                                 code="LLM_TASK_FAILED",
                             )
-                        accumulated_content.append(payload)
-                        chunk_event = json.dumps({"type": "chunk", "content": payload})
+                        content = event.get("content", "")
+                        accumulated_content.append(content)
+                        chunk_event = json.dumps({"type": "chunk", "content": content})
                         yield f"data: {chunk_event}\n\n"
 
                 if not done_received:
@@ -389,3 +393,48 @@ class ChatWorkflow:
                             await maybe_awaitable
 
         yield "data: [DONE]\n\n"
+
+    async def _retrieve_rag_candidates_for_worker(
+        self,
+        *,
+        query_text: str,
+        kb_id: uuid.UUID | None,
+    ) -> list[dict]:
+        if not self.rag_service or kb_id is None:
+            return []
+
+        try:
+            uow = getattr(self.rag_service, "uow", None)
+            if uow is None or getattr(uow, "_session", None) is not None:
+                return await self._retrieve_from_rag_service(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                )
+            async with uow:
+                return await self._retrieve_from_rag_service(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                )
+        except Exception as exc:
+            logger.warning("RAG 候选检索失败，降级为普通对话: %s", exc)
+            return []
+
+    async def _retrieve_from_rag_service(
+        self,
+        *,
+        query_text: str,
+        kb_id: uuid.UUID,
+    ) -> list[dict]:
+        if self.rag_service is None:
+            return []
+
+        if settings.RAG_RERANK_ENABLED:
+            return await self.rag_service.retrieve_hybrid(
+                query_text=query_text,
+                kb_id=kb_id,
+                top_k=settings.RAG_RERANK_CANDIDATE_COUNT,
+            )
+        return await self.rag_service.retrieve(
+            query_text=query_text,
+            kb_id=kb_id,
+        )

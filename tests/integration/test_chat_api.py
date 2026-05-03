@@ -11,10 +11,10 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.ai.core import token_counter
 from backend.api.v1.endpoint import chat_api
+from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.config.settings import settings
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
-from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
 
 
 class _FakeEncoding:
@@ -262,7 +262,7 @@ def stable_test_environment():
             return_value=_FakeEncoding(),
         ),
         patch(
-            "backend.workflow.chat_nonstream_workflow.get_client",
+            "backend.application.chat.web_nonstream_workflow.get_client",
             return_value=_NoopLangfuseClient(),
         ),
     ):

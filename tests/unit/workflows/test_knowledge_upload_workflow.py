@@ -7,9 +7,9 @@ from unittest.mock import ANY, AsyncMock, MagicMock
 import pytest
 from fastapi import UploadFile
 
+from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflow
 from backend.models.orm.knowledge import FileStatus
 from backend.services.knowledge_service import SavedKnowledgeFile
-from backend.workflow.knowledge_upload_workflow import KnowledgeUploadWorkflow
 
 
 class DummyUoW:
@@ -56,7 +56,7 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
 
     kiq_mock = AsyncMock()
     monkeypatch.setattr(
-        "backend.workflow.knowledge_upload_workflow.ingest_knowledge_file_task.kiq",
+        "backend.application.knowledge.upload_workflow.ingest_knowledge_file_task.kiq",
         kiq_mock,
     )
 
@@ -122,7 +122,7 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job(monkeypatch
     )
     kiq_mock = AsyncMock()
     monkeypatch.setattr(
-        "backend.workflow.knowledge_upload_workflow.ingest_knowledge_file_task.kiq",
+        "backend.application.knowledge.upload_workflow.ingest_knowledge_file_task.kiq",
         kiq_mock,
     )
 
@@ -187,7 +187,7 @@ async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job(
 
     kiq_mock = AsyncMock()
     monkeypatch.setattr(
-        "backend.workflow.knowledge_upload_workflow.ingest_knowledge_file_task.kiq",
+        "backend.application.knowledge.upload_workflow.ingest_knowledge_file_task.kiq",
         kiq_mock,
     )
 
