@@ -10,6 +10,7 @@ from backend.api.dependencies import (
     get_knowledge_upload_workflow,
     get_task_service,
 )
+from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflow
 from backend.core.exceptions import app_not_found
 from backend.models.orm.user import User
 from backend.models.schemas.knowledge_schema import (
@@ -20,7 +21,6 @@ from backend.models.schemas.task_schema import TaskResponse
 from backend.services.audit_service import AuditAction, AuditService, capture_audit
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.task_service import TaskService
-from backend.workflow.knowledge_upload_workflow import KnowledgeUploadWorkflow
 
 router = APIRouter()
 UpFile = Annotated[UploadFile, File()]

@@ -8,6 +8,10 @@ from backend.api.deps.ai import (
 )
 from backend.api.deps.services import get_knowledge_service, get_task_service
 from backend.api.deps.uow import get_uow
+from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
+from backend.application.chat.web_stream_workflow import ChatWorkflow
+from backend.application.knowledge.ingestion_workflow import KnowledgeRAGWorkflow
+from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflow
 from backend.contracts.interfaces import (
     AbstractLLMService,
     AbstractRAGService,
@@ -17,10 +21,6 @@ from backend.services.chunking_service import ChunkingService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.task_service import TaskService
 from backend.services.vector_index_service import VectorIndexService
-from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
-from backend.workflow.chat_workflow import ChatWorkflow
-from backend.workflow.knowledge_rag_workflow import KnowledgeRAGWorkflow
-from backend.workflow.knowledge_upload_workflow import KnowledgeUploadWorkflow
 
 
 def get_chat_workflow(

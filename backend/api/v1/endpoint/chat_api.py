@@ -22,6 +22,8 @@ from backend.api.dependencies import (
     get_permission_service,
     get_session_query_service,
 )
+from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
+from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.config.settings import settings
 from backend.middleware.rate_limit import RateLimiter
 from backend.models.orm.user import User
@@ -34,8 +36,6 @@ from backend.models.schemas.chat_schema import (
 from backend.services.audit_service import AuditAction, AuditService, capture_audit
 from backend.services.permission_service import PermissionService
 from backend.services.session_query_service import SessionQueryService
-from backend.workflow.chat_nonstream_workflow import ChatNonStreamWorkflow
-from backend.workflow.chat_workflow import ChatWorkflow
 
 # R8 修复：限流参数从 settings 读取，通过环境变量控制（CHAT_RATE_LIMIT_TIMES / CHAT_RATE_LIMIT_SECONDS）
 # 压测时可设 CHAT_RATE_LIMIT_TIMES=100000，生产环境保持安全默认值（10次/60秒）

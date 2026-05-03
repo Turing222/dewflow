@@ -1,4 +1,4 @@
-"""Task package marker.
+"""Compatibility task package marker.
 
 Keep package import side-effect free so workers can load individual task
 modules without eagerly importing every task dependency chain.
