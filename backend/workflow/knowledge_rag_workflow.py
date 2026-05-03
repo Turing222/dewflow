@@ -8,6 +8,7 @@
 import asyncio
 import uuid
 from pathlib import Path
+from typing import cast
 
 import pypdfium2 as pdfium
 
@@ -19,7 +20,7 @@ from backend.core.exceptions import (
 )
 from backend.models.orm.knowledge import FileStatus
 from backend.observability.trace_utils import set_span_attributes, trace_span
-from backend.services.chunking_service import ChunkingService
+from backend.services.chunking_service import ChunkingService, ChunkPayload
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.vector_index_service import VectorIndexService
 
@@ -94,6 +95,11 @@ class KnowledgeRAGWorkflow:
                     },
                 ) as span:
                     chunks = await asyncio.to_thread(self._extract_chunks, file_path)
+                    chunks = self._prepare_chunks_for_index(
+                        chunks=chunks,
+                        filename=file_obj.filename,
+                        file_path=file_obj.file_path,
+                    )
                     set_span_attributes(span, {"rag.chunk_count": len(chunks)})
             if not chunks:
                 raise app_validation_error(
@@ -154,7 +160,7 @@ class KnowledgeRAGWorkflow:
                 code="KNOWLEDGE_FILE_INGEST_FAILED",
             ) from exc
 
-    def _extract_chunks(self, file_path: Path) -> list[str]:
+    def _extract_chunks(self, file_path: Path) -> list[ChunkPayload]:
         suffix = file_path.suffix.lower()
         if suffix in TEXT_FILE_SUFFIXES:
             return self._extract_text_chunks(file_path)
@@ -166,14 +172,22 @@ class KnowledgeRAGWorkflow:
             code="KNOWLEDGE_FILE_UNSUPPORTED_TYPE",
         )
 
-    def _extract_text_chunks(self, file_path: Path) -> list[str]:
+    def _extract_text_chunks(self, file_path: Path) -> list[ChunkPayload]:
         text = file_path.read_text(encoding="utf-8", errors="ignore")
-        return self.chunking_service.split_text(text)
+        return self.chunking_service.split_text(text, file_suffix=file_path.suffix)
 
-    def _extract_pdf_chunks(self, file_path: Path) -> list[str]:
+    def _extract_pdf_chunks(self, file_path: Path) -> list[ChunkPayload]:
         try:
-            text = self._extract_pdf_text(file_path)
-            return self.chunking_service.split_text(text)
+            chunks: list[ChunkPayload] = []
+            for page_text, page_label in self._extract_pdf_text_by_page(file_path):
+                page_chunks = self.chunking_service.split_text(
+                    page_text,
+                    file_suffix=".txt",
+                )
+                for chunk in page_chunks:
+                    chunk["page_label"] = page_label
+                    chunks.append(chunk)
+            return chunks
         except AppException:
             raise
         except Exception as exc:
@@ -183,8 +197,8 @@ class KnowledgeRAGWorkflow:
             ) from exc
 
     @staticmethod
-    def _extract_pdf_text(file_path: Path) -> str:
-        page_texts: list[str] = []
+    def _extract_pdf_text_by_page(file_path: Path) -> list[tuple[str, str]]:
+        page_texts: list[tuple[str, str]] = []
         with pdfium.PdfDocument(file_path) as document:
             for page_index in range(len(document)):
                 page = document[page_index]
@@ -193,9 +207,62 @@ class KnowledgeRAGWorkflow:
                     text_page = page.get_textpage()
                     text = text_page.get_text_range().strip()
                     if text:
-                        page_texts.append(text)
+                        page_texts.append((text, str(page_index + 1)))
                 finally:
                     if text_page is not None:
                         text_page.close()
                     page.close()
-        return "\n\n".join(page_texts)
+        return page_texts
+
+    @staticmethod
+    def _prepare_chunks_for_index(
+        *,
+        chunks: list[ChunkPayload],
+        filename: str,
+        file_path: str,
+    ) -> list[ChunkPayload]:
+        prepared_chunks: list[ChunkPayload] = []
+        for chunk in chunks:
+            content = chunk["content"]
+            meta_info = {
+                **(chunk.get("meta_info") or {}),
+                "filename": filename,
+                "path": file_path,
+                "source_path": file_path,
+            }
+            section_path = chunk.get("section_path")
+            page_label = chunk.get("page_label")
+            if section_path:
+                meta_info["section_path"] = section_path
+            if page_label:
+                meta_info["page_label"] = page_label
+
+            prepared = dict(chunk)
+            prepared["content"] = content
+            prepared["meta_info"] = meta_info
+            prepared["embedding_content"] = "\n".join(
+                [
+                    KnowledgeRAGWorkflow._build_context_prefix(
+                        filename=filename,
+                        section_path=section_path,
+                        page_label=page_label,
+                    ),
+                    content,
+                ]
+            ).strip()
+            prepared_chunks.append(cast(ChunkPayload, prepared))
+        return prepared_chunks
+
+    @staticmethod
+    def _build_context_prefix(
+        *,
+        filename: str,
+        section_path: str | None = None,
+        page_label: str | None = None,
+    ) -> str:
+        parts = [f"[文档: {filename}]"]
+        if section_path:
+            parts.append(f"[章节: {section_path}]")
+        if page_label:
+            parts.append(f"[页码: {page_label}]")
+        return " ".join(parts)

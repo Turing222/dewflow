@@ -12,13 +12,16 @@ from backend.workflow.knowledge_rag_workflow import KnowledgeRAGWorkflow
 class FakeChunkingService:
     def __init__(self, chunk_size: int = 10):
         self.chunk_size = chunk_size
-        self.split_calls: list[str] = []
+        self.split_calls: list[tuple[str, str]] = []
 
-    def split_text(self, text: str) -> list[str]:
-        self.split_calls.append(text)
+    def split_text(self, text: str, file_suffix: str = ".txt") -> list[dict]:
+        self.split_calls.append((text, file_suffix))
         if len(text) <= self.chunk_size:
-            return [text]
-        return [text[: self.chunk_size], text[self.chunk_size :]]
+            return [{"content": text, "chunk_index": 0}]
+        return [
+            {"content": text[: self.chunk_size], "chunk_index": 0},
+            {"content": text[self.chunk_size :], "chunk_index": 1},
+        ]
 
 
 def make_workflow(chunking_service: FakeChunkingService) -> KnowledgeRAGWorkflow:
@@ -37,8 +40,8 @@ def test_extract_chunks_uses_plain_text_channel(tmp_path):
 
     chunks = workflow._extract_chunks(file_path)
 
-    assert chunks == ["plain cont", "ent"]
-    assert chunking.split_calls == ["plain content"]
+    assert [chunk["content"] for chunk in chunks] == ["plain cont", "ent"]
+    assert chunking.split_calls == [("plain content", ".txt")]
 
 
 def test_extract_chunks_uses_lightweight_pdf_channel(monkeypatch, tmp_path):
@@ -90,8 +93,39 @@ def test_extract_chunks_uses_lightweight_pdf_channel(monkeypatch, tmp_path):
 
     chunks = workflow._extract_chunks(file_path)
 
-    assert chunks == ["0123456789", "ABC\n\nshort"]
-    assert chunking.split_calls == ["0123456789ABC\n\nshort"]
+    assert [chunk["content"] for chunk in chunks] == ["0123456789", "ABC", "short"]
+    assert [chunk["page_label"] for chunk in chunks] == ["1", "1", "2"]
+    assert chunking.split_calls == [("0123456789ABC", ".txt"), ("short", ".txt")]
+
+
+def test_prepare_chunks_for_index_adds_contextual_embedding_content():
+    chunks = [
+        {
+            "content": "body",
+            "section_path": "Intro / Setup",
+            "chunk_index": 0,
+        },
+        {
+            "content": "page body",
+            "page_label": "2",
+            "chunk_index": 1,
+        },
+    ]
+
+    prepared = KnowledgeRAGWorkflow._prepare_chunks_for_index(
+        chunks=chunks,
+        filename="demo.md",
+        file_path="s3://bucket/demo.md",
+    )
+
+    assert prepared[0]["content"] == "body"
+    assert prepared[0]["meta_info"]["section_path"] == "Intro / Setup"
+    assert prepared[0]["meta_info"]["source_path"] == "s3://bucket/demo.md"
+    assert prepared[0]["embedding_content"] == (
+        "[文档: demo.md] [章节: Intro / Setup]\nbody"
+    )
+    assert prepared[1]["meta_info"]["page_label"] == "2"
+    assert prepared[1]["embedding_content"] == "[文档: demo.md] [页码: 2]\npage body"
 
 
 def test_extract_chunks_rejects_docx_without_structured_parser(tmp_path):
@@ -173,7 +207,18 @@ async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path):
 
     vector_index_service.replace_file_chunks.assert_called_once_with(
         file_id="file-id",
-        chunks=["remote content"],
+        chunks=[
+            {
+                "content": "remote content",
+                "chunk_index": 0,
+                "meta_info": {
+                    "filename": "demo.txt",
+                    "path": "s3://bucket/key",
+                    "source_path": "s3://bucket/key",
+                },
+                "embedding_content": "[文档: demo.txt]\nremote content",
+            }
+        ],
         filename="demo.txt",
         file_path="s3://bucket/key",
     )

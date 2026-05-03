@@ -8,14 +8,16 @@
 import asyncio
 import hashlib
 import uuid
+from collections.abc import Sequence
 from typing import TypedDict
 
 from backend.contracts.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.base import BaseService
+from backend.services.chunking_service import ChunkPayload
 
-CHUNKING_VERSION = 1
+CHUNKING_VERSION = 2
 
 
 class _HybridHit(TypedDict):
@@ -23,6 +25,12 @@ class _HybridHit(TypedDict):
 
     chunk: DocumentChunk
     score: float
+
+
+class _IndexChunk(TypedDict):
+    content: str
+    embedding_content: str
+    meta_info: dict[str, object]
 
 
 class VectorIndexService(BaseService[AbstractUnitOfWork]):
@@ -42,7 +50,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         self,
         *,
         file_id: uuid.UUID,
-        chunks: list[str],
+        chunks: Sequence[str | ChunkPayload],
         filename: str,
         file_path: str,
     ) -> None:
@@ -57,33 +65,40 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         ) as span:
             chunk_records: list[dict] = []
             for start in range(0, len(chunks), self.embed_batch_size):
-                batch = chunks[start : start + self.embed_batch_size]
+                batch = [
+                    self._normalize_chunk(
+                        chunk,
+                        filename=filename,
+                        file_path=file_path,
+                    )
+                    for chunk in chunks[start : start + self.embed_batch_size]
+                ]
+                embedding_inputs = [chunk["embedding_content"] for chunk in batch]
                 embeddings = await asyncio.to_thread(
                     self.embedder.encode_documents,
-                    batch,
+                    embedding_inputs,
                 )
                 if len(embeddings) != len(batch):
                     raise ValueError("RAG embedding 批量返回数量与输入切片数量不一致")
 
-                for offset, (chunk_text, embedding) in enumerate(
+                for offset, (chunk, embedding) in enumerate(
                     zip(batch, embeddings, strict=True)
                 ):
                     idx = start + offset
+                    content = chunk["content"]
+                    embedding_content = chunk["embedding_content"]
                     chunk_records.append(
                         {
                             "source_type": ChunkSourceType.FILE,
                             "file_id": file_id,
-                            "content": chunk_text,
+                            "content": content,
                             "content_hash": hashlib.sha256(
-                                chunk_text.encode("utf-8")
+                                embedding_content.encode("utf-8")
                             ).hexdigest(),
-                            "token_count": len(chunk_text),
+                            "token_count": len(content),
                             "chunk_index": idx,
                             "chunking_version": CHUNKING_VERSION,
-                            "meta_info": {
-                                "filename": filename,
-                                "path": file_path,
-                            },
+                            "meta_info": chunk["meta_info"],
                             "embedding": embedding,
                         }
                     )
@@ -99,6 +114,34 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                     else None,
                 },
             )
+
+    @staticmethod
+    def _normalize_chunk(
+        chunk: str | ChunkPayload,
+        *,
+        filename: str,
+        file_path: str,
+    ) -> _IndexChunk:
+        if isinstance(chunk, str):
+            content = chunk
+            embedding_content = chunk
+            meta_info: dict[str, object] = {}
+        else:
+            content = chunk["content"]
+            embedding_content = chunk.get("embedding_content") or content
+            meta_info = dict(chunk.get("meta_info") or {})
+            for key in ("section_path", "page_label", "source_path"):
+                value = chunk.get(key)
+                if value:
+                    meta_info.setdefault(key, value)
+
+        meta_info.setdefault("filename", filename)
+        meta_info.setdefault("path", file_path)
+        return {
+            "content": content,
+            "embedding_content": embedding_content,
+            "meta_info": meta_info,
+        }
 
     async def search_chunks_for_kb(
         self,

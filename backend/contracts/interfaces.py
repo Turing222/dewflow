@@ -99,6 +99,17 @@ class AbstractRAGService(ABC):
         """返回混合检索命中的上下文片段"""
         ...
 
+    @abstractmethod
+    async def retrieve_with_rerank(
+        self,
+        query_text: str,
+        kb_id: uuid.UUID | None,
+        top_k: int | None = None,
+        candidate_count: int | None = None,
+    ) -> list[dict]:
+        """返回经过可选 LLM 重排序的上下文片段"""
+        ...
+
 
 class AbstractRAGEmbedder(ABC):
     """RAG 向量化器抽象接口"""

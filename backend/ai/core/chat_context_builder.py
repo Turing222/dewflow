@@ -256,21 +256,55 @@ class ChatContextBuilder:
             ) as span:
                 uow = getattr(self.rag_service, "uow", None)
                 if uow is None or getattr(uow, "_session", None) is not None:
-                    chunks = await self.rag_service.retrieve(
+                    chunks = await self._retrieve_from_service(
                         query_text=query_text,
                         kb_id=kb_id,
                     )
                 else:
                     async with uow:
-                        chunks = await self.rag_service.retrieve(
+                        chunks = await self._retrieve_from_service(
                             query_text=query_text,
                             kb_id=kb_id,
                         )
-                set_span_attributes(span, {"rag.hit_count": len(chunks)})
+                set_span_attributes(
+                    span,
+                    {
+                        "rag.hit_count": len(chunks),
+                        "rag.rerank.enabled": settings.RAG_RERANK_ENABLED,
+                    },
+                )
                 return chunks
         except Exception as exc:
             logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
             return []
+
+    async def _retrieve_from_service(
+        self,
+        *,
+        query_text: str,
+        kb_id: uuid.UUID,
+    ) -> list[dict]:
+        rag_service = self.rag_service
+        if rag_service is None:
+            return []
+
+        if settings.RAG_RERANK_ENABLED:
+            retrieve_with_rerank = getattr(
+                rag_service,
+                "retrieve_with_rerank",
+                None,
+            )
+            if retrieve_with_rerank is not None:
+                return await retrieve_with_rerank(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                    top_k=settings.RAG_RERANK_TOP_K,
+                    candidate_count=settings.RAG_RERANK_CANDIDATE_COUNT,
+                )
+        return await rag_service.retrieve(
+            query_text=query_text,
+            kb_id=kb_id,
+        )
 
     @staticmethod
     def _build_search_context(
@@ -382,4 +416,7 @@ class ChatContextBuilder:
         page_label = meta_info.get("page_label") or meta_info.get("page")
         if page_label:
             details.append(f"页码：{page_label}")
+        section_path = meta_info.get("section_path")
+        if section_path:
+            details.append(f"章节：{section_path}")
         return f"[{ref_id}] {'，'.join(details)}\n{chunk['content']}"

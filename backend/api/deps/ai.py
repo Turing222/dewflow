@@ -49,11 +49,15 @@ def get_rag_service(
     embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
     vector_index_service: VectorIndexService = Depends(get_vector_index_service),
 ) -> AbstractRAGService:
+    llm_service = get_llm_service() if settings.RAG_RERANK_ENABLED else None
     return RAGService(
         uow=uow,
         embedder=embedder,
         vector_index_service=vector_index_service,
         top_k=settings.RAG_TOP_K,
+        llm_service=llm_service,
+        rerank_candidate_count=settings.RAG_RERANK_CANDIDATE_COUNT,
+        rerank_top_k=settings.RAG_RERANK_TOP_K,
     )
 
 

@@ -26,7 +26,7 @@ async def test_build_uses_rag_prompt_and_search_context_when_chunks_found():
                     "message_id": None,
                     "filename": "smoke.txt",
                     "chunk_index": 3,
-                    "meta_info": {"page_label": "1"},
+                    "meta_info": {"page_label": "1", "section_path": "Guide / Setup"},
                     "distance": 0.2,
                     "score": 0.8,
                 },
@@ -68,6 +68,7 @@ async def test_build_uses_rag_prompt_and_search_context_when_chunks_found():
     assert "[R1.1]" in system_message["content"]
     assert "[R1.2]" in system_message["content"]
     assert "smoke.txt" in system_message["content"]
+    assert "章节：Guide / Setup" in system_message["content"]
     assert "索引里的事实" in system_message["content"]
     assert result.assembled_prompt.messages[-1] == {
         "role": "user",
@@ -95,7 +96,7 @@ async def test_build_uses_rag_prompt_and_search_context_when_chunks_found():
         "chunk_index": 3,
         "score": 0.8,
         "distance": 0.2,
-        "meta_info": {"page_label": "1"},
+        "meta_info": {"page_label": "1", "section_path": "Guide / Setup"},
     }
     assert result.search_context["refs"][0]["chunks"][1]["ref_id"] == "R1.2"
     assert result.search_context["refs"][0]["chunks"][1]["chunk_id"] == str(chunk_id_2)
@@ -140,3 +141,54 @@ async def test_build_falls_back_to_plain_prompt_when_rag_errors():
 
     assert result.search_context is None
     assert "--- 参考资料 ---" not in result.assembled_prompt.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_build_uses_rerank_when_enabled(monkeypatch):
+    kb_id = uuid.uuid4()
+    rag_service = SimpleNamespace(
+        retrieve=AsyncMock(return_value=[]),
+        retrieve_with_rerank=AsyncMock(
+            return_value=[
+                {
+                    "id": str(uuid.uuid4()),
+                    "content": "reranked fact",
+                    "source_type": "file",
+                    "file_id": str(uuid.uuid4()),
+                    "message_id": None,
+                    "filename": "source.md",
+                    "chunk_index": 0,
+                    "meta_info": {},
+                    "distance": 0.1,
+                    "score": 0.9,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.ai.core.chat_context_builder.settings.RAG_RERANK_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.ai.core.chat_context_builder.settings.RAG_RERANK_TOP_K",
+        2,
+    )
+    monkeypatch.setattr(
+        "backend.ai.core.chat_context_builder.settings.RAG_RERANK_CANDIDATE_COUNT",
+        8,
+    )
+
+    builder = ChatContextBuilder(rag_service=rag_service)
+    await builder.build(
+        history_messages=[],
+        current_query="本轮问题",
+        kb_id=kb_id,
+    )
+
+    rag_service.retrieve.assert_not_awaited()
+    rag_service.retrieve_with_rerank.assert_awaited_once_with(
+        query_text="本轮问题",
+        kb_id=kb_id,
+        top_k=2,
+        candidate_count=8,
+    )

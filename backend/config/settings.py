@@ -160,6 +160,9 @@ class Settings(BaseSettings):
     CHAT_MEMORY_SNIPPET_CHARS: int = 120
     CHAT_MEMORY_FETCH_LIMIT: int = 2000
     RAG_TOP_K: int = 4
+    RAG_RERANK_ENABLED: bool = False
+    RAG_RERANK_CANDIDATE_COUNT: int = Field(default=20, ge=8, le=50)
+    RAG_RERANK_TOP_K: int = Field(default=4, ge=1, le=10)
     RAG_EMBED_PROVIDER: str = "google"
     RAG_EMBED_BASE_URL: str | None = None
     RAG_EMBED_API_KEY: str | None = None

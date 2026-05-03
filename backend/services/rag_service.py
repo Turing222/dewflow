@@ -5,16 +5,19 @@
 失败处理：非业务异常降级为空检索上下文，保证聊天主链路可继续。
 """
 
+import json
 import logging
 import uuid
 
 from backend.contracts.interfaces import (
+    AbstractLLMService,
     AbstractRAGEmbedder,
     AbstractRAGService,
     AbstractUnitOfWork,
 )
 from backend.core.exceptions import AppException
 from backend.models.orm.chunk import DocumentChunk
+from backend.models.schemas.chat_schema import LLMQueryDTO
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.vector_index_service import VectorIndexService
 
@@ -30,11 +33,17 @@ class RAGService(AbstractRAGService):
         embedder: AbstractRAGEmbedder,
         vector_index_service: VectorIndexService,
         top_k: int = 4,
+        llm_service: AbstractLLMService | None = None,
+        rerank_candidate_count: int = 20,
+        rerank_top_k: int = 4,
     ) -> None:
         self.uow = uow
         self.embedder = embedder
         self.vector_index_service = vector_index_service
         self.top_k = top_k
+        self.llm_service = llm_service
+        self.rerank_candidate_count = rerank_candidate_count
+        self.rerank_top_k = rerank_top_k
 
     async def retrieve(
         self,
@@ -71,6 +80,89 @@ class RAGService(AbstractRAGService):
             return []
 
         return self._format_hits(hits)
+
+    async def retrieve_with_rerank(
+        self,
+        query_text: str,
+        kb_id: uuid.UUID | None,
+        top_k: int | None = None,
+        candidate_count: int | None = None,
+    ) -> list[dict]:
+        if kb_id is None or not query_text.strip():
+            return []
+
+        limit = top_k or self.rerank_top_k or self.top_k
+        candidate_limit = candidate_count or self.rerank_candidate_count
+        if limit <= 0 or candidate_limit <= 0:
+            return []
+
+        try:
+            with trace_span(
+                "rag.rerank.retrieve_candidates",
+                {
+                    "rag.kb_id": kb_id,
+                    "rag.top_k": limit,
+                    "rag.candidate_count": candidate_limit,
+                    "rag.query.char_count": len(query_text),
+                },
+            ) as span:
+                hits = await self.vector_index_service.search_chunks_for_kb_hybrid(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                    limit=candidate_limit,
+                )
+                candidates = self._format_hits(hits)
+                set_span_attributes(span, {"rag.candidate_hit_count": len(candidates)})
+        except AppException:
+            raise
+        except Exception as exc:
+            logger.warning("RAG rerank 候选检索失败，降级为普通检索: %s", exc)
+            return await self.retrieve(query_text=query_text, kb_id=kb_id, top_k=limit)
+
+        if not candidates:
+            return []
+        if self.llm_service is None:
+            return candidates[:limit]
+
+        try:
+            with trace_span(
+                "rag.rerank.llm",
+                {
+                    "rag.kb_id": kb_id,
+                    "rag.top_k": limit,
+                    "rag.candidate_count": len(candidates),
+                },
+            ) as span:
+                prompt = self._build_rerank_prompt(
+                    query_text=query_text,
+                    candidates=candidates,
+                )
+                result = await self.llm_service.generate_response(
+                    LLMQueryDTO(
+                        session_id=uuid.uuid4(),
+                        query_text=prompt,
+                        conversation_history=[],
+                    )
+                )
+                if not result.success:
+                    raise ValueError(result.error_message or "LLM rerank failed")
+                rankings = self._parse_rerank_response(result.content)
+                reranked = self._apply_rankings(
+                    candidates=candidates,
+                    rankings=rankings,
+                    limit=limit,
+                )
+                set_span_attributes(
+                    span,
+                    {
+                        "rag.rerank.ranking_count": len(rankings),
+                        "rag.hit_count": len(reranked),
+                    },
+                )
+                return reranked
+        except Exception as exc:
+            logger.warning("RAG rerank 失败，降级为候选原始排序: %s", exc)
+            return candidates[:limit]
 
     async def retrieve_fulltext(
         self,
@@ -166,3 +258,91 @@ class RAGService(AbstractRAGService):
                 }
             )
         return chunks
+
+    @staticmethod
+    def _build_rerank_prompt(
+        *,
+        query_text: str,
+        candidates: list[dict],
+    ) -> str:
+        lines = [
+            "你是一个文档相关性评分助手。根据查询对以下片段逐一评分(0-10)，只输出JSON：",
+            '{"rankings": [{"index": 1, "score": 8}, {"index": 3, "score": 6}]}',
+            "",
+            f"查询: {query_text}",
+        ]
+        for index, chunk in enumerate(candidates, start=1):
+            content = str(chunk.get("content") or "")
+            excerpt = content[:200].replace("\n", " ")
+            lines.append(f"[{index}] {excerpt}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _parse_rerank_response(content: str) -> list[tuple[int, float]]:
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end >= start:
+            text = text[start : end + 1]
+
+        data = json.loads(text)
+        rankings = data.get("rankings") if isinstance(data, dict) else None
+        if not isinstance(rankings, list):
+            raise ValueError("rerank response missing rankings")
+
+        parsed: list[tuple[int, float]] = []
+        for item in rankings:
+            if not isinstance(item, dict):
+                continue
+            index = item.get("index")
+            score = item.get("score")
+            if isinstance(index, int) and isinstance(score, (int, float)):
+                parsed.append((index, float(score)))
+        if not parsed:
+            raise ValueError("rerank response has no valid rankings")
+        return parsed
+
+    @staticmethod
+    def _apply_rankings(
+        *,
+        candidates: list[dict],
+        rankings: list[tuple[int, float]],
+        limit: int,
+    ) -> list[dict]:
+        selected: list[dict] = []
+        selected_indexes: set[int] = set()
+        indexed_scores: list[tuple[int, float, int]] = [
+            (index, score, order) for order, (index, score) in enumerate(rankings)
+        ]
+
+        for index, score, _ in sorted(
+            indexed_scores,
+            key=lambda item: (-item[1], item[2]),
+        ):
+            candidate_index = index - 1
+            if candidate_index in selected_indexes:
+                continue
+            if not 0 <= candidate_index < len(candidates):
+                continue
+            chunk = dict(candidates[candidate_index])
+            chunk["rerank_score"] = score
+            selected.append(chunk)
+            selected_indexes.add(candidate_index)
+            if len(selected) >= limit:
+                return selected
+
+        for candidate_index, candidate in enumerate(candidates):
+            if candidate_index in selected_indexes:
+                continue
+            selected.append(candidate)
+            if len(selected) >= limit:
+                break
+        return selected

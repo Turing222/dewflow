@@ -7,12 +7,28 @@ import pytest
 from backend.services.rag_service import RAGService
 
 
-def _build_service() -> RAGService:
+def _build_service(llm_service=None) -> RAGService:
     return RAGService(
         uow=MagicMock(),
         embedder=MagicMock(),
         vector_index_service=MagicMock(),
         top_k=4,
+        llm_service=llm_service,
+        rerank_candidate_count=3,
+        rerank_top_k=2,
+    )
+
+
+def _chunk(content: str, index: int):
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        content=content,
+        source_type="file",
+        file_id=uuid.uuid4(),
+        message_id=None,
+        file=SimpleNamespace(filename="source.md"),
+        chunk_index=index,
+        meta_info={},
     )
 
 
@@ -65,3 +81,71 @@ async def test_retrieve_hybrid_returns_empty_on_error():
     )
 
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_retrieve_with_rerank_orders_by_llm_scores():
+    llm_service = SimpleNamespace(
+        generate_response=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                content='{"rankings": [{"index": 2, "score": 9}, {"index": 1, "score": 3}]}',
+                error_message=None,
+            )
+        )
+    )
+    service = _build_service(llm_service=llm_service)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["beta", "alpha"]
+    assert result[0]["rerank_score"] == 9
+    llm_service.generate_response.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json():
+    llm_service = SimpleNamespace(
+        generate_response=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                content="not json",
+                error_message=None,
+            )
+        )
+    )
+    service = _build_service(llm_service=llm_service)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_with_rerank_without_llm_returns_candidate_order():
+    service = _build_service(llm_service=None)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]

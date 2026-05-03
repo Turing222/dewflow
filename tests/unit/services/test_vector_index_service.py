@@ -57,6 +57,50 @@ async def test_replace_file_chunks_uses_batch_embedding():
 
 
 @pytest.mark.asyncio
+async def test_replace_file_chunks_uses_embedding_content_for_structured_chunks():
+    file_id = uuid.uuid4()
+    repo = SimpleNamespace(
+        delete_chunks_for_file=AsyncMock(),
+        add_chunks=AsyncMock(),
+    )
+    uow = SimpleNamespace(knowledge_repo=repo)
+    embedder = MagicMock()
+    embedder.encode_documents.return_value = [[0.1, 0.2]]
+    service = VectorIndexService(
+        uow=uow,
+        embedder=embedder,
+        embed_batch_size=2,
+    )
+
+    await service.replace_file_chunks(
+        file_id=file_id,
+        chunks=[
+            {
+                "content": "原文内容",
+                "embedding_content": "[文档: demo.md] [章节: Intro]\n原文内容",
+                "meta_info": {"section_path": "Intro"},
+            }
+        ],
+        filename="demo.md",
+        file_path="/tmp/demo.md",
+    )
+
+    embedder.encode_documents.assert_called_once_with(
+        ["[文档: demo.md] [章节: Intro]\n原文内容"]
+    )
+    records = repo.add_chunks.await_args.args[0]
+    assert records[0]["content"] == "原文内容"
+    assert records[0]["content_hash"] == hashlib.sha256(
+        "[文档: demo.md] [章节: Intro]\n原文内容".encode()
+    ).hexdigest()
+    assert records[0]["meta_info"] == {
+        "filename": "demo.md",
+        "path": "/tmp/demo.md",
+        "section_path": "Intro",
+    }
+
+
+@pytest.mark.asyncio
 async def test_replace_file_chunks_rejects_mismatched_embedding_count():
     repo = SimpleNamespace(
         delete_chunks_for_file=AsyncMock(),
