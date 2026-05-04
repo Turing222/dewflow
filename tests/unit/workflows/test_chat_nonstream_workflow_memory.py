@@ -1,19 +1,15 @@
 import uuid
-from unittest.mock import MagicMock
 
-from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
+from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.config.settings import settings
 
 
-def _build_workflow() -> ChatNonStreamWorkflow:
-    return ChatNonStreamWorkflow(
-        uow=MagicMock(),
-        llm_service=MagicMock(),
-    )
+def _build_builder() -> ChatContextBuilder:
+    return ChatContextBuilder()
 
 
 def test_prepare_memory_context_excludes_current_query(monkeypatch):
-    workflow = _build_workflow()
+    builder = _build_builder()
     monkeypatch.setattr(settings, "CHAT_MEMORY_RECENT_ROUNDS", 6)
 
     history = [
@@ -22,7 +18,7 @@ def test_prepare_memory_context_excludes_current_query(monkeypatch):
         {"role": "user", "content": "本轮问题"},
     ]
 
-    recent_history, summary_text = workflow._prepare_memory_context(
+    recent_history, summary_text = builder._prepare_memory_context(
         history,
         current_query="本轮问题",
     )
@@ -35,7 +31,7 @@ def test_prepare_memory_context_excludes_current_query(monkeypatch):
 
 
 def test_prepare_memory_context_splits_recent_rounds_and_summary(monkeypatch):
-    workflow = _build_workflow()
+    builder = _build_builder()
     monkeypatch.setattr(settings, "CHAT_MEMORY_RECENT_ROUNDS", 1)
     monkeypatch.setattr(settings, "CHAT_MEMORY_SNIPPET_CHARS", 60)
     monkeypatch.setattr(settings, "CHAT_MEMORY_SUMMARY_MAX_CHARS", 1000)
@@ -48,7 +44,7 @@ def test_prepare_memory_context_splits_recent_rounds_and_summary(monkeypatch):
         {"role": "user", "content": "第三轮问题"},
     ]
 
-    recent_history, summary_text = workflow._prepare_memory_context(
+    recent_history, summary_text = builder._prepare_memory_context(
         history,
         current_query="第三轮问题",
     )
@@ -63,7 +59,7 @@ def test_prepare_memory_context_splits_recent_rounds_and_summary(monkeypatch):
 
 
 def test_build_rounds_summary_respects_max_chars(monkeypatch):
-    workflow = _build_workflow()
+    builder = _build_builder()
     monkeypatch.setattr(settings, "CHAT_MEMORY_SNIPPET_CHARS", 200)
     monkeypatch.setattr(settings, "CHAT_MEMORY_SUMMARY_MAX_CHARS", 80)
 
@@ -75,7 +71,7 @@ def test_build_rounds_summary_respects_max_chars(monkeypatch):
         for i in range(4)
     ]
 
-    summary_text = workflow._build_rounds_summary(rounds)
+    summary_text = builder._build_rounds_summary(rounds)
 
     assert len(summary_text) <= 80
     assert summary_text != ""

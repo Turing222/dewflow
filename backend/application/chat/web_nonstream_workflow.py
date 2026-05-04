@@ -1,8 +1,8 @@
 """Non-streaming chat workflow.
 
-职责：编排非流式聊天请求的幂等、会话消息、Prompt/RAG、LLM 调用和结果持久化。
-边界：本模块不实现 provider 细节，也不负责 HTTP 响应结构。
-失败处理：任一阶段失败会清理幂等锁并回写助手消息失败状态。
+职责：编排非流式聊天请求的幂等、会话消息、RAG 候选检索和 Worker 任务投递。
+边界：LLM 调用和最终消息持久化由 Worker 拥有；本模块只负责 Web 侧编排和 HTTP 响应。
+失败处理：任务投递前失败由 Web 回写；任务投递后最终消息状态由 Worker 拥有。
 """
 
 import logging
@@ -10,15 +10,14 @@ import uuid
 
 from langfuse import get_client, observe
 
-from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
+from backend.application.chat.worker_generation_workflow import GenerationPayload
 from backend.config.settings import settings
 from backend.contracts.interfaces import (
-    AbstractLLMService,
     AbstractRAGService,
     AbstractUnitOfWork,
 )
-from backend.core.concurrency import db_concurrency_slot, llm_concurrency_slot
+from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import (
     AppException,
     app_service_error,
@@ -28,182 +27,79 @@ from backend.infra.redis import redis_client
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
-    ConversationMessage,
-    LLMQueryDTO,
     MessageResponse,
 )
-from backend.observability.trace_utils import set_span_attributes, trace_span
-from backend.services.chat_service import ChatMessageUpdater, SessionManager
+from backend.observability.trace_utils import (
+    inject_trace_context,
+    set_span_attributes,
+    trace_span,
+)
+from backend.services.chat_service import SessionManager
 from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
+from backend.worker.tasks.llm_tasks import generate_llm_nonstream_task
 
 logger = logging.getLogger(__name__)
 
 
 class ChatNonStreamWorkflow:
-    """非流式对话编排器。"""
+    """非流式对话编排器 —— Web 侧负责会话管理、RAG 检索、Worker 投递。"""
 
     def __init__(
         self,
         uow: AbstractUnitOfWork,
-        llm_service: AbstractLLMService,
-        prompt_manager: PromptManager | None = None,
         rag_service: AbstractRAGService | None = None,
     ) -> None:
         self.uow = uow
-        self.llm_service = llm_service
-        self.prompt_manager = prompt_manager or PromptManager()
-        self.rag_prompt_manager = PromptManager(template_name="rag_system")
         self.rag_service = rag_service
 
-    def _history_to_dicts(self, messages) -> list[ConversationMessage]:
-        return [
-            {"role": msg.role, "content": msg.content}
-            for msg in messages
-            if msg.role in ("user", "assistant") and msg.content
-        ]
+    # ── RAG candidate retrieval (mirrors streaming workflow) ──────
 
-    @staticmethod
-    def _normalize_text(text: str) -> str:
-        return " ".join((text or "").split())
-
-    @staticmethod
-    def _truncate_text(text: str, limit: int) -> str:
-        if limit <= 0:
-            return ""
-        if len(text) <= limit:
-            return text
-        return f"{text[: max(0, limit - 3)]}..."
-
-    @staticmethod
-    def _group_history_rounds(
-        history: list[ConversationMessage],
-    ) -> list[list[ConversationMessage]]:
-        if not history:
-            return []
-
-        rounds: list[list[ConversationMessage]] = []
-        current_round: list[ConversationMessage] = []
-        for msg in history:
-            role = msg["role"]
-            if role == "user" and current_round:
-                rounds.append(current_round)
-                current_round = []
-            current_round.append(msg)
-
-        if current_round:
-            rounds.append(current_round)
-        return rounds
-
-    @classmethod
-    def _exclude_latest_query_from_history(
-        cls,
-        history: list[ConversationMessage],
-        current_query: str,
-    ) -> list[ConversationMessage]:
-        if not history:
-            return history
-
-        latest = history[-1]
-        if latest["role"] != "user":
-            return history
-
-        latest_text = cls._normalize_text(latest["content"])
-        query_text = cls._normalize_text(current_query)
-        if latest_text and latest_text == query_text:
-            return history[:-1]
-        return history
-
-    @classmethod
-    def _build_rounds_summary(cls, rounds: list[list[ConversationMessage]]) -> str:
-        if not rounds:
-            return ""
-
-        snippet_limit = max(20, settings.CHAT_MEMORY_SNIPPET_CHARS)
-        max_chars = max(1, settings.CHAT_MEMORY_SUMMARY_MAX_CHARS)
-        lines: list[str] = []
-
-        for round_msgs in rounds:
-            user_text = cls._normalize_text(
-                " ".join(msg["content"] for msg in round_msgs if msg["role"] == "user")
-            )
-            assistant_text = cls._normalize_text(
-                " ".join(
-                    msg["content"] for msg in round_msgs if msg["role"] == "assistant"
-                )
-            )
-            if not user_text and not assistant_text:
-                continue
-
-            user_excerpt = cls._truncate_text(user_text, snippet_limit) or "(空)"
-            assistant_excerpt = (
-                cls._truncate_text(assistant_text, snippet_limit) or "(空)"
-            )
-            lines.append(f"- 用户: {user_excerpt} | 助手: {assistant_excerpt}")
-
-        if not lines:
-            return ""
-
-        original_lines = list(lines)
-        while lines and len("\n".join(lines)) > max_chars:
-            lines.pop(0)
-
-        if not lines:
-            return cls._truncate_text(original_lines[-1], max_chars)
-
-        return "\n".join(lines)
-
-    @classmethod
-    def _prepare_memory_context(
-        cls,
-        history: list[ConversationMessage],
-        current_query: str,
-    ) -> tuple[list[ConversationMessage], str]:
-        history_without_current = cls._exclude_latest_query_from_history(
-            history,
-            current_query,
-        )
-        rounds = cls._group_history_rounds(history_without_current)
-        recent_rounds = max(0, settings.CHAT_MEMORY_RECENT_ROUNDS)
-
-        if recent_rounds <= 0:
-            older_rounds = rounds
-            kept_rounds: list[list[ConversationMessage]] = []
-        elif len(rounds) > recent_rounds:
-            older_rounds = rounds[:-recent_rounds]
-            kept_rounds = rounds[-recent_rounds:]
-        else:
-            older_rounds = []
-            kept_rounds = rounds
-
-        recent_history = [msg for round_msgs in kept_rounds for msg in round_msgs]
-        summary_text = cls._build_rounds_summary(older_rounds)
-        return recent_history, summary_text
-
-    async def _retrieve_rag_chunks(
+    async def _retrieve_rag_candidates_for_worker(
         self,
+        *,
         query_text: str,
         kb_id: uuid.UUID | None,
     ) -> list[dict]:
         if not self.rag_service or kb_id is None:
             return []
-        try:
-            rag_uow = getattr(self.rag_service, "uow", None)
-            if rag_uow is None or getattr(rag_uow, "_session", None) is not None:
-                return await self.rag_service.retrieve(
-                    query_text=query_text, kb_id=kb_id
-                )
 
-            async with db_concurrency_slot({"rag.kb_id": kb_id}):
-                async with rag_uow:
-                    return await self.rag_service.retrieve(
-                        query_text=query_text,
-                        kb_id=kb_id,
-                    )
-        except AppException:
-            raise
+        try:
+            uow = getattr(self.rag_service, "uow", None)
+            if uow is None or getattr(uow, "_session", None) is not None:
+                return await self._retrieve_from_rag_service(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                )
+            async with uow:
+                return await self._retrieve_from_rag_service(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                )
         except Exception as exc:
-            logger.warning("RAG 检索失败，降级为普通对话: %s", exc)
+            logger.warning("RAG 候选检索失败，降级为普通对话: %s", exc)
             return []
+
+    async def _retrieve_from_rag_service(
+        self,
+        *,
+        query_text: str,
+        kb_id: uuid.UUID,
+    ) -> list[dict]:
+        if self.rag_service is None:
+            return []
+
+        if settings.RAG_RERANK_ENABLED:
+            return await self.rag_service.retrieve_hybrid(
+                query_text=query_text,
+                kb_id=kb_id,
+                top_k=settings.RAG_RERANK_CANDIDATE_COUNT,
+            )
+        return await self.rag_service.retrieve(
+            query_text=query_text,
+            kb_id=kb_id,
+        )
+
+    # ── Main handler ──────────────────────────────────────────────
 
     @observe()
     async def handle_query(
@@ -236,6 +132,8 @@ class ChatNonStreamWorkflow:
             "chat.query.char_count": len(query_text),
             "chat.stream": False,
         }
+
+        # ── 幂等检查 ──────────────────────────────────────────────
 
         with trace_span("chat.nonstream.idempotency_check", trace_attrs) as span:
             if client_request_id:
@@ -276,12 +174,13 @@ class ChatNonStreamWorkflow:
                                 answer=MessageResponse.model_validate(msg),
                             )
 
+        # ── 会话与消息创建 ────────────────────────────────────────
+
         with trace_span(
             "chat.nonstream.create_session_and_messages", trace_attrs
         ) as span:
             async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
-                    # 悲观锁保护 token 余额检查，避免并发请求同时通过额度判断。
                     user = await self.uow.user_repo.get_with_lock(user_id)
                     if user and user.used_tokens >= user.max_tokens:
                         if redis is not None and lock_key is not None:
@@ -331,6 +230,8 @@ class ChatNonStreamWorkflow:
             trace_attrs["chat.session_id"] = session.id
             trace_attrs["chat.assistant_message_id"] = assistant_msg.id
 
+        # ── 获取历史消息 ──────────────────────────────────────────
+
         with trace_span("chat.nonstream.fetch_history", trace_attrs) as span:
             async with db_concurrency_slot(trace_attrs):
                 async with self.uow:
@@ -343,142 +244,88 @@ class ChatNonStreamWorkflow:
                 span, {"chat.history.message_count": len(history_messages)}
             )
 
-        with trace_span("chat.nonstream.prepare_context", trace_attrs) as span:
-            history_dicts = self._history_to_dicts(history_messages)
-            memory_history, memory_summary = self._prepare_memory_context(
-                history_dicts,
-                query_text,
+        # ── RAG 候选检索 ──────────────────────────────────────────
+
+        with trace_span("chat.nonstream.retrieve_rag_candidates", trace_attrs) as span:
+            conversation_history = ChatContextBuilder._history_to_dicts(
+                history_messages
             )
-            rag_chunks = await self._retrieve_rag_chunks(
+            rag_candidates = await self._retrieve_rag_candidates_for_worker(
                 query_text=query_text,
                 kb_id=effective_kb_id,
             )
-            if rag_chunks:
-                rag_references = ChatContextBuilder._build_rag_references(
-                    kb_id=effective_kb_id,
-                    query_text=query_text,
-                    rag_chunks=rag_chunks,
-                )
-                search_context = rag_references.search_context
-                assembled = self.rag_prompt_manager.assemble(
-                    memory_history,
-                    query_text,
-                    extra_vars={
-                        "context_chunks": rag_references.context_chunks,
-                        "conversation_summary": memory_summary,
-                    },
-                )
-            else:
-                search_context = None
-                assembled = self.prompt_manager.assemble(
-                    memory_history,
-                    query_text,
-                    extra_vars={"conversation_summary": memory_summary},
-                )
-            tokens_input = assembled.total_tokens
             set_span_attributes(
                 span,
                 {
-                    "chat.history.message_count": len(history_dicts),
-                    "chat.memory.message_count": len(memory_history),
-                    "chat.memory.summary_char_count": len(memory_summary),
-                    "chat.prompt.tokens_input": tokens_input,
-                    "chat.prompt.message_count": len(assembled.messages),
-                    "chat.prompt.uses_rag": bool(rag_chunks),
-                    "rag.hit_count": len(rag_chunks),
+                    "chat.history.message_count": len(conversation_history),
+                    "rag.candidate_count": len(rag_candidates),
+                    "rag.rerank.deferred_to_worker": settings.RAG_RERANK_ENABLED,
                 },
             )
 
-        llm_query = LLMQueryDTO(
+        # ── 投递到 Worker ─────────────────────────────────────────
+
+        generation_payload = GenerationPayload(
             session_id=session.id,
             query_text=query_text,
-            conversation_history=assembled.messages,
+            conversation_history=conversation_history,
+            kb_id=effective_kb_id,
+            rag_candidates=rag_candidates,
         )
 
         try:
-            with trace_span("chat.nonstream.call_llm", trace_attrs) as span:
-                async with llm_concurrency_slot(trace_attrs):
-                    result = await self.llm_service.generate_response(llm_query)
-                set_span_attributes(
-                    span,
-                    {
-                        "llm.success": result.success,
-                        "llm.latency_ms": result.latency_ms,
-                        "llm.response.completion_tokens": result.completion_tokens,
-                        "llm.response.char_count": len(result.content),
-                    },
+            with trace_span(
+                "chat.nonstream.dispatch_task",
+                {
+                    **trace_attrs,
+                    "chat.assistant_message_id": assistant_msg.id,
+                },
+            ):
+                task = await generate_llm_nonstream_task.kiq(
+                    generation_payload.model_dump(mode="json"),
+                    inject_trace_context(),
+                    str(assistant_msg.id),
+                    str(user_id),
+                    lock_key,
+                )
+                result = await task.wait_result(
+                    timeout=settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS + 300
                 )
         except AppException:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    updater = ChatMessageUpdater(self.uow)
-                    await updater.update_as_failed(assistant_msg.id)
             raise
         except Exception as exc:
             if redis is not None and lock_key is not None:
                 await redis.delete(lock_key)
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    updater = ChatMessageUpdater(self.uow)
-                    await updater.update_as_failed(assistant_msg.id)
             raise app_service_error(
                 "LLM 服务调用失败，请稍后重试",
                 code="LLM_SERVICE_ERROR",
             ) from exc
 
-        if not result.success:
-            if redis is not None and lock_key is not None:
-                await redis.delete(lock_key)
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    updater = ChatMessageUpdater(self.uow)
-                    await updater.update_as_failed(
-                        assistant_msg.id,
-                        error_content=result.error_message or "LLM 服务调用失败",
-                    )
+        if not result or not result.get("success"):
+            error_msg = result.get("error", "LLM 服务返回失败") if result else "LLM 服务返回失败"
             raise app_service_error(
-                "LLM 服务返回失败",
+                error_msg,
                 code="LLM_SERVICE_FAILED",
-                details={"error": result.error_message},
+                details={"error": error_msg},
             )
 
-        with trace_span("chat.nonstream.persist_answer", trace_attrs) as span:
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    updater = ChatMessageUpdater(self.uow)
-                    updated_msg = await updater.update_as_success(
-                        message_id=assistant_msg.id,
-                        content=result.content,
-                        tokens_input=tokens_input,
-                        tokens_output=result.completion_tokens,
-                        search_context=search_context,
-                    )
-                    # token 累加使用条件更新，避免并发完成时突破用户额度上限。
-                    total_tokens = tokens_input + (result.completion_tokens or 0)
-                    ok = await self.uow.user_repo.increment_used_tokens_guarded(
-                        user_id, total_tokens
-                    )
-                    if not ok:
-                        logger.warning(
-                            "Token 累加后超出上限，本次消耗未记录: user_id=%s, delta=%d",
-                            user_id,
-                            total_tokens,
-                        )
-            set_span_attributes(
-                span,
-                {
-                    "chat.tokens_input": tokens_input,
-                    "chat.tokens_output": result.completion_tokens,
-                },
-            )
-
-        if redis is not None and lock_key is not None:
-            await redis.set(lock_key, str(updated_msg.id), ex=3600)
+        # Worker 已持久化成功消息并更新幂等锁；Web 直接构造响应。
+        answer = MessageResponse(
+            id=assistant_msg.id,
+            session_id=session.id,
+            role="assistant",
+            content=result["content"],
+            status=MessageStatus.SUCCESS,
+            latency_ms=result.get("latency_ms"),
+            search_context=result.get("search_context"),
+            created_at=assistant_msg.created_at,
+            updated_at=assistant_msg.updated_at,
+        )
 
         return ChatQueryResponse(
             session_id=session.id,
             session_title=session.title,
-            answer=MessageResponse.model_validate(updated_msg),
+            answer=answer,
         )

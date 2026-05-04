@@ -1,20 +1,29 @@
-def test_workflow_compat_imports_point_to_application_modules():
-    from backend.application.chat.web_stream_workflow import ChatWorkflow as NewChat
+def test_chat_workflow_imports_from_application():
+    """Chat workflows live under application/chat/."""
+    from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
+    from backend.application.chat.web_stream_workflow import ChatWorkflow
+
+    assert ChatWorkflow is not None
+    assert ChatNonStreamWorkflow is not None
+
+
+def test_knowledge_workflow_imports_from_application():
+    """Knowledge workflows live under application/knowledge/."""
     from backend.application.knowledge.ingestion_workflow import (
-        KnowledgeRAGWorkflow as NewIngestion,
+        KnowledgeRAGWorkflow,
     )
-    from backend.workflow.chat_workflow import ChatWorkflow as OldChat
-    from backend.workflow.knowledge_rag_workflow import (
-        KnowledgeRAGWorkflow as OldIngestion,
+    from backend.application.knowledge.upload_workflow import (
+        KnowledgeUploadWorkflow,
     )
 
-    assert OldChat is NewChat
-    assert OldIngestion is NewIngestion
+    assert KnowledgeRAGWorkflow is not None
+    assert KnowledgeUploadWorkflow is not None
 
 
-def test_task_compat_imports_point_to_worker_modules():
-    from backend.tasks.llm_tasks import generate_llm_stream_task as old_llm_task
-    from backend.worker.tasks.llm_tasks import generate_llm_stream_task as new_llm_task
+def test_task_imports_from_worker():
+    """Tasks live under worker/tasks/."""
+    from backend.worker.tasks.knowledge_tasks import ingest_knowledge_file_task
+    from backend.worker.tasks.llm_tasks import generate_llm_stream_task
 
-    assert old_llm_task is new_llm_task
-
+    assert generate_llm_stream_task is not None
+    assert ingest_knowledge_file_task is not None

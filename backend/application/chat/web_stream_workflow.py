@@ -16,7 +16,7 @@ from langfuse import get_client, observe
 from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.application.chat.stream_events import decode_stream_event
-from backend.application.chat.worker_generation_workflow import StreamGenerationPayload
+from backend.application.chat.worker_generation_workflow import GenerationPayload
 from backend.config.settings import settings
 from backend.contracts.interfaces import (
     AbstractLLMService,
@@ -200,7 +200,7 @@ class ChatWorkflow:
         )
         yield f"data: {meta_event}\n\n"
 
-        generation_payload = StreamGenerationPayload(
+        generation_payload = GenerationPayload(
             session_id=session.id,
             query_text=query_text,
             conversation_history=conversation_history,

@@ -280,7 +280,7 @@ def api_context():
     chat_repo = FakeChatRepo()
     uow = FakeUnitOfWork(user_repo=user_repo, chat_repo=chat_repo)
     llm_service = RecordingLLMService()
-    workflow = ChatNonStreamWorkflow(uow=uow, llm_service=llm_service)
+    workflow = ChatNonStreamWorkflow(uow=uow)
 
     # --- 依赖覆盖 ---
     # 1. 核心业务依赖

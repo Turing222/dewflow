@@ -33,10 +33,9 @@ def get_chat_workflow(
 
 def get_chat_nonstream_workflow(
     uow: AbstractUnitOfWork = Depends(get_uow),
-    llm_service: AbstractLLMService = Depends(get_llm_service),
     rag_service: AbstractRAGService = Depends(get_rag_service),
 ) -> ChatNonStreamWorkflow:
-    return ChatNonStreamWorkflow(uow, llm_service, rag_service=rag_service)
+    return ChatNonStreamWorkflow(uow, rag_service=rag_service)
 
 
 def get_knowledge_rag_workflow(

@@ -1,6 +1,6 @@
 """Worker-side LLM generation workflow.
 
-职责：在 TaskIQ worker 中调用 LLM、发布流式 chunk，并拥有最终消息状态落库。
+职责：在 TaskIQ worker 中调用 LLM、发布流式 chunk / 返回完整结果，并拥有最终消息状态落库。
 边界：Web 负责创建会话和消息占位；本 workflow 不做认证/鉴权/HTTP 响应。
 失败处理：业务和系统异常都会尽力回写助手消息失败状态，并通过 Redis 通知等待方。
 """
@@ -19,9 +19,10 @@ from backend.application.chat.stream_events import (
     encode_done_event,
     encode_error_event,
 )
+from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
-from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractLLMService, AbstractUnitOfWork
+from backend.core.concurrency import llm_concurrency_slot
 from backend.core.exceptions import AppException
 from backend.infra.redis import redis_client
 from backend.models.schemas.chat_schema import ConversationMessage, LLMQueryDTO
@@ -32,8 +33,8 @@ from backend.services.rag_service import RAGService
 logger = logging.getLogger(__name__)
 
 
-class StreamGenerationPayload(BaseModel):
-    """Worker payload for stream generation tasks."""
+class GenerationPayload(BaseModel):
+    """Worker payload for LLM generation tasks (streaming and non-streaming)."""
 
     session_id: uuid.UUID
     query_text: str
@@ -43,7 +44,7 @@ class StreamGenerationPayload(BaseModel):
 
 
 class LLMGenerationWorkerWorkflow:
-    """Worker-side streaming generation and persistence workflow."""
+    """Worker-side LLM generation and persistence workflow."""
 
     def __init__(
         self,
@@ -56,10 +57,12 @@ class LLMGenerationWorkerWorkflow:
         self.llm_service = llm_service
         self.chat_context_builder = chat_context_builder or ChatContextBuilder()
 
+    # ── Streaming ──────────────────────────────────────────────────
+
     async def generate_stream(
         self,
         *,
-        payload: StreamGenerationPayload,
+        payload: GenerationPayload,
         channel: str,
         assistant_message_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
@@ -95,9 +98,19 @@ class LLMGenerationWorkerWorkflow:
                     ),
                 },
             ) as span:
-                async for chunk in self.llm_service.stream_response(llm_query):
-                    accumulated_content.append(chunk)
-                    await redis_connection.publish(channel, encode_chunk_event(chunk))
+                async with llm_concurrency_slot(
+                    {
+                        "chat.session_id": payload.session_id,
+                        "chat.assistant_message_id": assistant_message_id,
+                        "chat.stream": True,
+                    }
+                ):
+                    async for chunk in self.llm_service.stream_response(llm_query):
+                        accumulated_content.append(chunk)
+                        await redis_connection.publish(
+                            channel,
+                            encode_chunk_event(chunk),
+                        )
 
                 full_content = "".join(accumulated_content)
                 tokens_output = self._count_output_tokens(full_content)
@@ -149,7 +162,126 @@ class LLMGenerationWorkerWorkflow:
         finally:
             await redis_connection.publish(channel, encode_done_event())
 
-    async def _prepare_context(self, payload: StreamGenerationPayload):
+    # ── Non-Streaming ──────────────────────────────────────────────
+
+    async def generate_nonstream(
+        self,
+        *,
+        payload: GenerationPayload,
+        assistant_message_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
+        idempotency_lock_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Generate a non-streaming answer, persist final state, and return result."""
+        redis_connection = await redis_client.init()
+        start_time = time.time()
+
+        try:
+            prepared_context = await self._prepare_context(payload)
+            assembled = prepared_context.assembled_prompt
+            search_context = prepared_context.search_context
+            tokens_input = assembled.total_tokens
+            llm_query = LLMQueryDTO(
+                session_id=payload.session_id,
+                query_text=payload.query_text,
+                conversation_history=assembled.messages,
+            )
+
+            with trace_span(
+                "taskiq.llm_nonstream.generate",
+                {
+                    "chat.session_id": payload.session_id,
+                    "chat.assistant_message_id": assistant_message_id,
+                    "chat.prompt.tokens_input": tokens_input,
+                    "chat.prompt.uses_rag": search_context is not None,
+                    "llm.provider": getattr(self.llm_service, "provider_name", "unknown"),
+                    "gen_ai.request.model": getattr(
+                        self.llm_service, "model_name", "unknown"
+                    ),
+                },
+            ) as span:
+                async with llm_concurrency_slot(
+                    {
+                        "chat.session_id": payload.session_id,
+                        "chat.assistant_message_id": assistant_message_id,
+                        "chat.stream": False,
+                    }
+                ):
+                    result = await self.llm_service.generate_response(llm_query)
+                set_span_attributes(
+                    span,
+                    {
+                        "llm.success": result.success,
+                        "llm.latency_ms": result.latency_ms,
+                        "llm.response.completion_tokens": result.completion_tokens,
+                        "llm.response.char_count": len(result.content),
+                    },
+                )
+
+            if not result.success:
+                error_msg = result.error_message or "LLM 服务返回失败"
+                await self._persist_failure(
+                    assistant_message_id=assistant_message_id,
+                    error_content=error_msg,
+                    idempotency_lock_key=idempotency_lock_key,
+                )
+                return {"success": False, "error": error_msg}
+
+            full_content = result.content
+            tokens_output = result.completion_tokens or self._count_output_tokens(
+                full_content
+            )
+
+            await self._persist_success(
+                assistant_message_id=assistant_message_id,
+                user_id=user_id,
+                content=full_content,
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                search_context=search_context,
+                start_time=start_time,
+            )
+            if idempotency_lock_key is not None and assistant_message_id is not None:
+                await redis_connection.set(
+                    idempotency_lock_key,
+                    str(assistant_message_id),
+                    ex=3600,
+                )
+
+            logger.info(
+                "TaskIQ Worker 成功结束非流式处理: session_id=%s, message_id=%s",
+                payload.session_id,
+                assistant_message_id,
+            )
+            return {
+                "success": True,
+                "content": full_content,
+                "tokens_input": tokens_input,
+                "tokens_output": tokens_output,
+                "search_context": search_context,
+                "latency_ms": result.latency_ms,
+            }
+
+        except AppException as exc:
+            logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
+            await self._persist_failure(
+                assistant_message_id=assistant_message_id,
+                error_content=str(exc),
+                idempotency_lock_key=idempotency_lock_key,
+            )
+            return {"success": False, "error": str(exc)}
+        except Exception:
+            logger.exception("TaskIQ 调用 LLM 系统异常")
+            await self._persist_failure(
+                assistant_message_id=assistant_message_id,
+                error_content="服务暂时不可用，请稍后重试",
+                idempotency_lock_key=idempotency_lock_key,
+            )
+            return {"success": False, "error": "服务暂时不可用，请稍后重试"}
+
+    # ── Shared Helpers ─────────────────────────────────────────────
+
+    async def _prepare_context(self, payload: GenerationPayload):
         reranked_chunks = await self._rerank_candidates_if_enabled(payload)
         with trace_span(
             "taskiq.llm_stream.prepare_context",
@@ -157,7 +289,7 @@ class LLMGenerationWorkerWorkflow:
                 "chat.session_id": payload.session_id,
                 "rag.kb_id": payload.kb_id,
                 "rag.candidate_count": len(payload.rag_candidates),
-                "rag.rerank.enabled": settings.RAG_RERANK_ENABLED,
+                "rag.rerank.enabled": ai_settings.RAG_RERANK_ENABLED,
                 "rag.hit_count": len(reranked_chunks),
             },
         ) as span:
@@ -181,16 +313,16 @@ class LLMGenerationWorkerWorkflow:
 
     async def _rerank_candidates_if_enabled(
         self,
-        payload: StreamGenerationPayload,
+        payload: GenerationPayload,
     ) -> list[dict[str, Any]]:
         candidates = list(payload.rag_candidates)
         if not candidates:
             return []
 
-        if not settings.RAG_RERANK_ENABLED:
-            return candidates[: settings.RAG_TOP_K]
+        if not ai_settings.RAG_RERANK_ENABLED:
+            return candidates[: ai_settings.RAG_TOP_K]
 
-        limit = max(1, settings.RAG_RERANK_TOP_K)
+        limit = max(1, ai_settings.RAG_RERANK_TOP_K)
         try:
             with trace_span(
                 "taskiq.llm_stream.rerank",
@@ -205,13 +337,20 @@ class LLMGenerationWorkerWorkflow:
                     query_text=payload.query_text,
                     candidates=candidates,
                 )
-                result = await self.llm_service.generate_response(
-                    LLMQueryDTO(
-                        session_id=payload.session_id,
-                        query_text=prompt,
-                        conversation_history=[],
+                async with llm_concurrency_slot(
+                    {
+                        "chat.session_id": payload.session_id,
+                        "rag.kb_id": payload.kb_id,
+                        "rag.rerank": True,
+                    }
+                ):
+                    result = await self.llm_service.generate_response(
+                        LLMQueryDTO(
+                            session_id=payload.session_id,
+                            query_text=prompt,
+                            conversation_history=[],
+                        )
                     )
-                )
                 if not result.success:
                     raise ValueError(result.error_message or "LLM rerank failed")
                 rankings = RAGService._parse_rerank_response(result.content)
