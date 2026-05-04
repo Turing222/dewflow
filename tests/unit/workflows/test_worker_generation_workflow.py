@@ -12,9 +12,9 @@ from backend.application.chat.stream_events import (
     encode_error_event,
 )
 from backend.application.chat.worker_generation_workflow import (
-    GenerationPayload,
     LLMGenerationWorkerWorkflow,
 )
+from backend.contracts.chat_generation import GenerationPayload
 from backend.core.exceptions import app_service_error
 from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
 
@@ -110,6 +110,14 @@ class NonStreamingLLM:
     async def stream_response(self, query: LLMQueryDTO) -> AsyncIterator[str]:
         if False:
             yield query.query_text
+
+
+class RecordingRAGService:
+    def __init__(self, hits: list[dict]) -> None:
+        self.hits = hits
+        self.uow = None
+        self.retrieve = AsyncMock(return_value=hits)
+        self.retrieve_hybrid = AsyncMock(return_value=hits)
 
 
 @pytest.mark.asyncio
@@ -271,6 +279,60 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
             "chat.stream": False,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
+    monkeypatch,
+):
+    redis = FakeRedis()
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.redis_client.init",
+        AsyncMock(return_value=redis),
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_RERANK_ENABLED",
+        False,
+    )
+
+    rag_hit = {
+        "id": str(uuid.uuid4()),
+        "content": "worker-side context",
+        "source_type": "file",
+        "file_id": str(uuid.uuid4()),
+        "message_id": None,
+        "filename": "ctx.md",
+        "chunk_index": 0,
+        "meta_info": {},
+        "distance": 0.1,
+        "score": 0.9,
+    }
+    rag_service = RecordingRAGService([rag_hit])
+    llm_service = NonStreamingLLM(LLMResultDTO(content="answer"))
+    uow = DummyUoW()
+    uow.chat_repo.update_message_status.return_value = object()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        llm_service=llm_service,
+        rag_service=rag_service,
+    )
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="hi",
+        conversation_history=[],
+        kb_id=uuid.uuid4(),
+    )
+
+    await workflow.generate_nonstream(payload=payload, assistant_message_id=uuid.uuid4())
+
+    rag_service.retrieve.assert_awaited_once_with(
+        query_text="hi",
+        kb_id=payload.kb_id,
+        top_k=4,
+    )
+    rag_service.retrieve_hybrid.assert_not_awaited()
+    query = llm_service.generate_response.call_args.args[0]
+    assert "worker-side context" in query.conversation_history[0]["content"]
 
 
 @pytest.mark.asyncio

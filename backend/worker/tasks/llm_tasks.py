@@ -11,14 +11,15 @@ from typing import Any
 from langfuse import observe
 
 from backend.application.chat.worker_generation_workflow import (
-    GenerationPayload,
     LLMGenerationWorkerWorkflow,
 )
+from backend.contracts.chat_generation import GenerationPayload
 from backend.infra.task_broker import broker
 from backend.observability.trace_utils import trace_span, use_trace_context
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.worker.dependencies import (
     get_worker_llm_service,
+    get_worker_rag_service,
     get_worker_session_factory,
 )
 
@@ -66,9 +67,11 @@ async def _generate_llm_stream_task(
             "chat.assistant_message_id": assistant_message_id,
         },
     ):
+        llm_service = get_worker_llm_service()
         workflow = LLMGenerationWorkerWorkflow(
             uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
-            llm_service=get_worker_llm_service(),
+            llm_service=llm_service,
+            rag_service=get_worker_rag_service(llm_service=llm_service),
         )
         payload = GenerationPayload(**generation_payload)
         assistant_uuid = (
@@ -123,9 +126,11 @@ async def _generate_llm_nonstream_task(
         "taskiq.llm_nonstream.setup",
         {"chat.assistant_message_id": assistant_message_id},
     ):
+        llm_service = get_worker_llm_service()
         workflow = LLMGenerationWorkerWorkflow(
             uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
-            llm_service=get_worker_llm_service(),
+            llm_service=llm_service,
+            rag_service=get_worker_rag_service(llm_service=llm_service),
         )
         payload = GenerationPayload(**generation_payload)
         assistant_uuid = (

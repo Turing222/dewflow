@@ -5,66 +5,65 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
+    # ── Shared —— Web 和 Worker 两边都必须安装 ──
     "alembic~=1.17.0",
     "asyncpg~=0.31.0",
-    "bcrypt==4.0.1",
-    "fastapi~=0.128.0",
-    "jinja2~=3.1.0",
-    "openai==2.21.0",
-    "openpyxl~=3.1.0",
     "orjson~=3.10.15",
     "pgvector~=0.4.2",
     "pwdlib[argon2]~=0.2.0",
     "pydantic-settings~=2.12.0",
-    "pydantic-ai-slim[google]>=1.30.0",
     "pydantic[email]~=2.12.0",
     "pyyaml~=6.0",
-    "pyjwt[crypto]~=2.10.0",
     "opentelemetry-api~=1.40.0",
     "opentelemetry-sdk~=1.40.0",
     "opentelemetry-exporter-otlp-proto-http~=1.40.0",
-    "opentelemetry-instrumentation-fastapi>=0.50b0",
     "python-json-logger~=3.2.1",
-    "python-multipart>=0.0.22",
-    "python-ulid>=3.1.0",
+    "python-ulid~=3.1.0",
     "redis~=7.1.0",
     "sqlalchemy[asyncio]~=2.0.45",
-    "tenacity~=9.0.0",
-    "tiktoken~=0.9.0",
-    "uvicorn~=0.40.0",
     "taskiq~=0.12.0",
     "taskiq-redis~=1.2.0",
-    "taskiq-fastapi~=0.4.0",
-    "pypdfium2~=5.3.0",
     "langfuse~=3.14.0",
     "boto3~=1.42.0",
 ]
 
+[project.optional-dependencies]
+web = [
+    # ── Web / HTTP API 专用 ──
+    "fastapi~=0.128.0",
+    "uvicorn~=0.40.0",
+    "pyjwt[crypto]~=2.10.0",
+    "python-multipart>=0.0.22",
+    "taskiq-fastapi~=0.4.0",
+    "opentelemetry-instrumentation-fastapi>=0.50b0",
+]
+
+ai = [
+    # ── AI / Worker Generation 专用 ──
+    "openai~=2.21.0",
+    "pydantic-ai-slim[google]>=1.30.0",
+    "jinja2~=3.1.0",
+    "tiktoken~=0.9.0",
+    # Knowledge processing
+    "pypdfium2~=5.3.0",
+    "openpyxl~=3.1.0",
+]
+
 [tool.ruff]
-# 1. 设置行宽限制（PEP 8 建议 79，但现代开发通常用 88 或 100）
 line-length = 88
 exclude = [
-    "alembic/versions",  # 排除生成的迁移脚本
+    "alembic/versions",
 ]
 
 [tool.ruff.lint]
-# 2. 指定要检查的规则包
-# E/W: PEP 8
-# F: Pyflakes (基础错误)
-# B: Bugbear (代码陷阱)
-# I: Isort (导入排序)
-# UP: Pyupgrade (现代化语法)
 select = ["E", "F", "B", "I", "UP"]
-
-# 3. 指定要忽略的规则
-ignore = ["E501"] # 比如忽略“行太长”的警告，因为有些 URL 确实很长
+ignore = ["E501"]
 
 [tool.ruff.format]
-# 格式化器（类似 Black）的配置
-quote-style = "double"  # 使用双引号
-indent-style = "space"  # 使用空格缩进
+quote-style = "double"
+indent-style = "space"
+
 [tool.ruff.lint.flake8-bugbear]
-# 允许在默认参数中调用这些函数（专门针对 FastAPI）
 extend-immutable-calls = [
     "fastapi.Depends",
     "fastapi.params.Depends",
@@ -72,7 +71,7 @@ extend-immutable-calls = [
     "fastapi.Path",
     "fastapi.Body",
     "fastapi.Header",
-    "Depends",  # 如果你是从 fastapi 直接 import Depends
+    "Depends",
 ]
 
 [dependency-groups]
@@ -89,10 +88,11 @@ dev = [
     "ruff>=0.15.2",
     "ty>=0.0.18",
 ]
+
 [tool.uvicorn]
 reload_excludes = ["postgres_data/**"]
+
 [tool.pytest.ini_options]
-# 忽略特定的目录，不进行测试搜寻
 pythonpath = ["."]
 norecursedirs = ["data", "logs", "config", "venv","postgres_data"]
 testpaths = ["tests"]
@@ -103,32 +103,23 @@ markers = [
     "performance: concurrency/load-oriented tests, excluded from default runs",
 ]
 
-
 [tool.ty.environment]
-# 1. 核心：ty 这里需要的是一个已存在的 Python 可执行文件或虚拟环境目录
-#    新 worktree / 新目录首次使用前，需要先创建本地 .venv
 python = ".venv"
 
 [tool.ty.rules]
-# 4. 严格模式：在 ty 中，如果你想实现“严格模式”，
-# 通常是通过开启特定规则组来实现的（类似 Ruff）
-# 2026 年的习惯是开启全部规则或指定基础规则集
 all = "warn"
 
 [tool.ty.src]
-# 3. 源码范围：如果你的源码在 src 目录下，可以指定 root = ["src"]
-# 4. 排除项：ty 默认其实会忽略 .venv，但显式排除是好习惯
 exclude = [
     ".git",
     ".venv",
     "__pycache__",
     "build",
     "dist",
-    "tests", # 如果不想对测试代码进行极端严格的类型检查，可以排除
-    "alembic/versions",  # 排除自动生成的脚本,
-    "alembic/archive_versions"
+    "tests",
+    "alembic/versions",
+    "alembic/archive_versions",
 ]
 
 [tool.ty.terminal]
-# 5. 可选：让输出结果更美观（2026年大家都在用这种彩色富文本输出）
 output-format = "full"

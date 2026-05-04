@@ -29,6 +29,7 @@ log_section "Running dev check flow"
 make qa-test-unit
 make qa-test-integration
 make qa-lint
+make qa-boundaries
 make qa-typecheck
 
 smoke_env_path="$(resolve_project_path "$SMOKE_ENV_FILE")"

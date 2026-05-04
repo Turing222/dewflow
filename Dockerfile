@@ -22,7 +22,7 @@ COPY pyproject.toml uv.lock ./
 # --frozen 确保严格执行 uv.lock
 # --no-dev 排除开发依赖，只保留生产环境必需包
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    uv sync --frozen --no-dev --extra web --no-install-project
 
 
 # 3. 复制源码并完成安装
@@ -35,9 +35,9 @@ COPY configs/ ./configs/
 COPY backend/ ./backend/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev 
+    uv sync --frozen --no-dev --extra web
 
-RUN uv run --no-dev python -c "import openai; print('✅ OpenAI is ready')"
+RUN uv run --no-dev --extra web python -c "import fastapi; print('✅ FastAPI is ready')"
 
 
 # ==========================================
@@ -73,10 +73,6 @@ USER appuser
 # Test your own module, not a transitive dependency
 RUN /app/.venv/bin/python -c "import backend; print('✅ Final Stage: backend module imported successfully')"
 
-#验证安装 (构建时报错能提早发现问题)
-RUN /app/.venv/bin/python -c "import jinja2; print('Stage 2 Jinja2 package found')"
-RUN /app/.venv/bin/python -c "import tiktoken; print('Stage 2 tiktoken package found')"
-
 # Healthcheck — 路径需与 FastAPI root_path="/api" 和实际路由一致
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health_check/live', timeout=5)" \
@@ -94,7 +90,6 @@ CMD ["uvicorn", "backend.main:app", \
     "--host", "0.0.0.0", "--port", "8000",\
     "--proxy-headers", "--forwarded-allow-ips",\
     "*"]
-
 
 
 

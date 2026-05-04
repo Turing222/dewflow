@@ -14,23 +14,28 @@ from pydantic import Field, field_validator
 from sqlalchemy.engine import URL, make_url
 
 from backend.config.ai_settings import BASE_DIR, AISettings, _config_dir
+from backend.config.web_settings import WebSettings
+from backend.config.worker_settings import WorkerSettings
 
 _logger = logging.getLogger(__name__)
 
 
-class Settings(AISettings):
-    """应用配置 —— 继承 AI 配置，追加 Web/DB/Redis/Auth 等基础设施字段。"""
+class Settings(WebSettings, AISettings, WorkerSettings):
+    """Application settings — aggregates Web, AI, and Worker configs.
+
+    应用配置 —— 继承 Web/AI/Worker 配置，追加共享 DB/Redis/Storage 基础设施字段。
+
+    旧代码可继续通过 backend.config.settings 聚合导入所有配置。
+    新代码优先导入更具体的 settings：
+      - Web:  backend.config.web_settings
+      - Worker: backend.config.worker_settings + backend.config.ai_settings
+    """
 
     # ── App Metadata ──────────────────────────────────────────────
     APP_ENV: str = Field(default_factory=lambda: __import__("os").getenv("APP_ENV", "local").strip().lower() or "local")
     CONFIG_DIR: Path = Field(default_factory=_config_dir)
     BASE_DIR: Path = BASE_DIR
     LOG_DIR: Path = BASE_DIR / "logs/backend"
-
-    PROJECT_NAME: str = "Obsidian Mentor AI"
-    VERSION: str = "0.1.0"
-    API_ROOT_PATH: str = "/api"
-    API_V1_STR: str = "/v1"
 
     # ── Database ──────────────────────────────────────────────────
     DATABASE_URL: str | None = None
@@ -63,17 +68,6 @@ class Settings(AISettings):
     S3_ENDPOINT_URL: str | None = None
     S3_ACCESS_KEY_ID: str | None = None
     S3_SECRET_ACCESS_KEY: str | None = None
-
-    # ── Concurrency / Rate Limiting ───────────────────────────────
-    DB_MAX_CONCURRENCY: int = 10
-    RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = ""
-    CHAT_RATE_LIMIT_TIMES: int = 10
-    CHAT_RATE_LIMIT_SECONDS: int = 60
-
-    # ── Auth ──────────────────────────────────────────────────────
-    SECRET_KEY: str = Field(..., min_length=1)
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # ── Properties ────────────────────────────────────────────────
 
@@ -177,14 +171,6 @@ class Settings(AISettings):
         if normalized not in {"disable", "require"}:
             raise ValueError("POSTGRES_SSL_MODE must be one of: disable, require")
         return normalized
-
-    @field_validator("SECRET_KEY")
-    @classmethod
-    def validate_secret_key(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("SECRET_KEY must not be empty")
-        return value
-
 
 @lru_cache
 def get_settings() -> Settings:

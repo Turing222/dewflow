@@ -1,6 +1,6 @@
 """Non-streaming chat workflow.
 
-职责：编排非流式聊天请求的幂等、会话消息、RAG 候选检索和 Worker 任务投递。
+职责：编排非流式聊天请求的幂等、会话消息和 Worker 任务投递。
 边界：LLM 调用和最终消息持久化由 Worker 拥有；本模块只负责 Web 侧编排和 HTTP 响应。
 失败处理：任务投递前失败由 Web 回写；任务投递后最终消息状态由 Worker 拥有。
 """
@@ -10,12 +10,12 @@ import uuid
 
 from langfuse import get_client, observe
 
-from backend.ai.core.chat_context_builder import ChatContextBuilder
-from backend.application.chat.worker_generation_workflow import GenerationPayload
+from backend.application.chat.history_projection import history_to_conversation_messages
 from backend.config.settings import settings
+from backend.contracts.chat_generation import GenerationPayload
 from backend.contracts.interfaces import (
-    AbstractRAGService,
     AbstractUnitOfWork,
+    AbstractTaskDispatcher,
 )
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import (
@@ -28,6 +28,7 @@ from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat_schema import (
     ChatQueryResponse,
     MessageResponse,
+    MessageStatusEnum,
 )
 from backend.observability.trace_utils import (
     inject_trace_context,
@@ -36,7 +37,6 @@ from backend.observability.trace_utils import (
 )
 from backend.services.chat_service import SessionManager
 from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
-from backend.worker.tasks.llm_tasks import generate_llm_nonstream_task
 
 logger = logging.getLogger(__name__)
 
@@ -47,57 +47,10 @@ class ChatNonStreamWorkflow:
     def __init__(
         self,
         uow: AbstractUnitOfWork,
-        rag_service: AbstractRAGService | None = None,
+        dispatcher: AbstractTaskDispatcher,
     ) -> None:
         self.uow = uow
-        self.rag_service = rag_service
-
-    # ── RAG candidate retrieval (mirrors streaming workflow) ──────
-
-    async def _retrieve_rag_candidates_for_worker(
-        self,
-        *,
-        query_text: str,
-        kb_id: uuid.UUID | None,
-    ) -> list[dict]:
-        if not self.rag_service or kb_id is None:
-            return []
-
-        try:
-            uow = getattr(self.rag_service, "uow", None)
-            if uow is None or getattr(uow, "_session", None) is not None:
-                return await self._retrieve_from_rag_service(
-                    query_text=query_text,
-                    kb_id=kb_id,
-                )
-            async with uow:
-                return await self._retrieve_from_rag_service(
-                    query_text=query_text,
-                    kb_id=kb_id,
-                )
-        except Exception as exc:
-            logger.warning("RAG 候选检索失败，降级为普通对话: %s", exc)
-            return []
-
-    async def _retrieve_from_rag_service(
-        self,
-        *,
-        query_text: str,
-        kb_id: uuid.UUID,
-    ) -> list[dict]:
-        if self.rag_service is None:
-            return []
-
-        if settings.RAG_RERANK_ENABLED:
-            return await self.rag_service.retrieve_hybrid(
-                query_text=query_text,
-                kb_id=kb_id,
-                top_k=settings.RAG_RERANK_CANDIDATE_COUNT,
-            )
-        return await self.rag_service.retrieve(
-            query_text=query_text,
-            kb_id=kb_id,
-        )
+        self.dispatcher = dispatcher
 
     # ── Main handler ──────────────────────────────────────────────
 
@@ -244,22 +197,15 @@ class ChatNonStreamWorkflow:
                 span, {"chat.history.message_count": len(history_messages)}
             )
 
-        # ── RAG 候选检索 ──────────────────────────────────────────
+        # ── Worker payload 准备 ───────────────────────────────────
 
-        with trace_span("chat.nonstream.retrieve_rag_candidates", trace_attrs) as span:
-            conversation_history = ChatContextBuilder._history_to_dicts(
-                history_messages
-            )
-            rag_candidates = await self._retrieve_rag_candidates_for_worker(
-                query_text=query_text,
-                kb_id=effective_kb_id,
-            )
+        with trace_span("chat.nonstream.prepare_worker_payload", trace_attrs) as span:
+            conversation_history = history_to_conversation_messages(history_messages)
             set_span_attributes(
                 span,
                 {
                     "chat.history.message_count": len(conversation_history),
-                    "rag.candidate_count": len(rag_candidates),
-                    "rag.rerank.deferred_to_worker": settings.RAG_RERANK_ENABLED,
+                    "rag.deferred_to_worker": effective_kb_id is not None,
                 },
             )
 
@@ -270,7 +216,6 @@ class ChatNonStreamWorkflow:
             query_text=query_text,
             conversation_history=conversation_history,
             kb_id=effective_kb_id,
-            rag_candidates=rag_candidates,
         )
 
         try:
@@ -281,15 +226,12 @@ class ChatNonStreamWorkflow:
                     "chat.assistant_message_id": assistant_msg.id,
                 },
             ):
-                task = await generate_llm_nonstream_task.kiq(
+                result = await self.dispatcher.enqueue_nonstream(
                     generation_payload.model_dump(mode="json"),
                     inject_trace_context(),
                     str(assistant_msg.id),
                     str(user_id),
                     lock_key,
-                )
-                result = await task.wait_result(
-                    timeout=settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS + 300
                 )
         except AppException:
             if redis is not None and lock_key is not None:
@@ -317,7 +259,7 @@ class ChatNonStreamWorkflow:
             session_id=session.id,
             role="assistant",
             content=result["content"],
-            status=MessageStatus.SUCCESS,
+            status=MessageStatusEnum.SUCCESS,
             latency_ms=result.get("latency_ms"),
             search_context=result.get("search_context"),
             created_at=assistant_msg.created_at,

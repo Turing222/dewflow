@@ -22,18 +22,11 @@ async def test_workflow_concurrency():
         uow.__aenter__.return_value = uow
         uow.__aexit__.return_value = None
 
-        llm_service = MagicMock()
-
-        async def mock_stream(*args, **kwargs):
-            await asyncio.sleep(0.5)
-            yield '{"type":"chunk", "content":"hello"}'
-
-        llm_service.stream_response = MagicMock(side_effect=mock_stream)
+        dispatcher = AsyncMock()
 
         with (
             patch("backend.application.chat.web_stream_workflow.SessionManager") as mock_sm,
             patch("backend.application.chat.web_stream_workflow.ChatMessageUpdater") as mock_up,
-            patch("backend.application.chat.web_stream_workflow.PromptManager") as mock_pm,
         ):
             mock_sm_inst = mock_sm.return_value
             mock_sm_inst.ensure_session = AsyncMock(
@@ -49,14 +42,7 @@ async def test_workflow_concurrency():
             mock_up_inst.update_as_success = AsyncMock()
             mock_up_inst.update_as_failed = AsyncMock()
 
-            mock_pm_inst = mock_pm.return_value
-            mock_pm_inst.assemble = MagicMock(
-                return_value=MagicMock(
-                    messages=[], total_tokens=0, history_rounds_used=0, truncated=False
-                )
-            )
-
-            workflow = ChatWorkflow(uow, llm_service)
+            workflow = ChatWorkflow(uow, dispatcher)
 
             user_id = uuid.uuid4()
             start_time = time.time()

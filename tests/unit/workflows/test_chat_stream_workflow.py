@@ -1,65 +1,27 @@
-import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
-import pytest
-
+from backend.application.chat.history_projection import history_to_conversation_messages
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 
 
-@pytest.mark.asyncio
-async def test_stream_workflow_defers_rerank_to_worker(monkeypatch):
-    rag_service = SimpleNamespace(
-        retrieve=AsyncMock(return_value=[]),
-        retrieve_hybrid=AsyncMock(return_value=[{"content": "candidate"}]),
-        retrieve_with_rerank=AsyncMock(return_value=[]),
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.web_stream_workflow.settings.RAG_RERANK_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.web_stream_workflow.settings.RAG_RERANK_CANDIDATE_COUNT",
-        8,
-    )
-
+def test_stream_workflow_constructs_without_ai_dependencies():
     workflow = ChatWorkflow(
         uow=SimpleNamespace(),
-        llm_service=SimpleNamespace(),
-        rag_service=rag_service,
-    )
-    result = await workflow._retrieve_rag_candidates_for_worker(
-        query_text="query",
-        kb_id=uuid.uuid4(),
+        dispatcher=SimpleNamespace(),
     )
 
-    assert result == [{"content": "candidate"}]
-    rag_service.retrieve_hybrid.assert_awaited_once()
-    rag_service.retrieve.assert_not_awaited()
-    rag_service.retrieve_with_rerank.assert_not_awaited()
+    assert workflow is not None
 
 
-@pytest.mark.asyncio
-async def test_stream_workflow_uses_plain_retrieve_without_rerank(monkeypatch):
-    rag_service = SimpleNamespace(
-        retrieve=AsyncMock(return_value=[{"content": "hit"}]),
-        retrieve_hybrid=AsyncMock(return_value=[]),
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.web_stream_workflow.settings.RAG_RERANK_ENABLED",
-        False,
-    )
+def test_history_projection_keeps_only_user_and_assistant_messages():
+    messages = [
+        SimpleNamespace(role="system", content="ignore"),
+        SimpleNamespace(role="user", content="hello"),
+        {"role": "assistant", "content": "hi"},
+        {"role": "assistant", "content": ""},
+    ]
 
-    workflow = ChatWorkflow(
-        uow=SimpleNamespace(),
-        llm_service=SimpleNamespace(),
-        rag_service=rag_service,
-    )
-    result = await workflow._retrieve_rag_candidates_for_worker(
-        query_text="query",
-        kb_id=uuid.uuid4(),
-    )
-
-    assert result == [{"content": "hit"}]
-    rag_service.retrieve.assert_awaited_once()
-    rag_service.retrieve_hybrid.assert_not_awaited()
+    assert history_to_conversation_messages(messages) == [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi"},
+    ]

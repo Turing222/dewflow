@@ -9,10 +9,10 @@ from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflo
 pytestmark = pytest.mark.asyncio
 
 
-def _build_workflow(uow=None, rag_service=None):
+def _build_workflow(uow=None, dispatcher=None):
     return ChatNonStreamWorkflow(
         uow=uow or MagicMock(),
-        rag_service=rag_service,
+        dispatcher=dispatcher or AsyncMock(),
     )
 
 
@@ -70,8 +70,19 @@ async def test_token_quota():
 async def test_worker_dispatch_on_success():
     """Verify the web workflow dispatches to worker and returns response on success."""
     uow = MagicMock()
-    workflow = _build_workflow(uow=uow)
     user_id = uuid.uuid4()
+
+    mock_worker_result = {
+        "success": True,
+        "content": "Hello from worker",
+        "tokens_input": 10,
+        "tokens_output": 5,
+        "search_context": None,
+        "latency_ms": 200,
+    }
+    mock_dispatcher = AsyncMock()
+    mock_dispatcher.enqueue_nonstream = AsyncMock(return_value=mock_worker_result)
+    workflow = _build_workflow(uow=uow, dispatcher=mock_dispatcher)
 
     mock_user = MagicMock(used_tokens=0, max_tokens=1000)
     uow.user_repo = AsyncMock()
@@ -89,18 +100,6 @@ async def test_worker_dispatch_on_success():
         created_at=now,
         updated_at=now,
     )
-
-    mock_worker_result = {
-        "success": True,
-        "content": "Hello from worker",
-        "tokens_input": 10,
-        "tokens_output": 5,
-        "search_context": None,
-        "latency_ms": 200,
-    }
-
-    mock_task = AsyncMock()
-    mock_task.wait_result = AsyncMock(return_value=mock_worker_result)
 
     with (
         patch(
@@ -120,12 +119,8 @@ async def test_worker_dispatch_on_success():
             AsyncMock(return_value=[]),
         ),
         patch(
-            "backend.application.chat.web_nonstream_workflow.ChatContextBuilder._history_to_dicts",
+            "backend.application.chat.web_nonstream_workflow.history_to_conversation_messages",
             return_value=[],
-        ),
-        patch(
-            "backend.application.chat.web_nonstream_workflow.generate_llm_nonstream_task.kiq",
-            AsyncMock(return_value=mock_task),
         ),
     ):
         result = await workflow.handle_query(user_id, "hello")
@@ -134,3 +129,4 @@ async def test_worker_dispatch_on_success():
     assert result.session_id == session.id
     assert result.session_title == "Test Session"
     assert result.answer.content == "Hello from worker"
+    mock_dispatcher.enqueue_nonstream.assert_awaited_once()

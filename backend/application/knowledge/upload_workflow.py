@@ -11,6 +11,7 @@ from types import TracebackType
 
 from fastapi import UploadFile
 
+from backend.contracts.interfaces import AbstractTaskDispatcher
 from backend.core.exceptions import AppException
 from backend.models.orm.knowledge import File, FileStatus
 from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
@@ -21,7 +22,6 @@ from backend.observability.trace_utils import (
 )
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.task_service import TaskService
-from backend.worker.tasks.knowledge_tasks import ingest_knowledge_file_task
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +99,11 @@ class KnowledgeUploadWorkflow:
         self,
         knowledge_service: KnowledgeService,
         task_service: TaskService,
+        dispatcher: AbstractTaskDispatcher,
     ) -> None:
         self.knowledge_service = knowledge_service
         self.task_service = task_service
+        self.dispatcher = dispatcher
 
     async def submit(
         self,
@@ -219,7 +221,7 @@ class KnowledgeUploadWorkflow:
                     "task.id": task.id,
                 },
             ):
-                await ingest_knowledge_file_task.kiq(
+                await self.dispatcher.enqueue_ingestion(
                     str(file_obj.id),
                     str(task.id),
                     inject_trace_context(),

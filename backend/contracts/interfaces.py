@@ -2,6 +2,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from types import TracebackType
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -126,3 +127,46 @@ class AbstractRAGEmbedder(ABC):
     def encode_documents(self, texts: list[str]) -> list[list[float]]:
         """将文档片段批量编码为向量；默认逐条编码。"""
         return [self.encode_document(text) for text in texts]
+
+
+class AbstractTaskDispatcher(ABC):
+    """Web → Worker 任务投递抽象。
+
+    所有 TaskIQ .kiq() 调用收敛到该接口的实现端，
+    Web workflow 只依赖此 Protocol，不直接 import worker.tasks.*。
+    """
+
+    @abstractmethod
+    async def enqueue_stream(
+        self,
+        generation_payload: dict[str, Any],
+        channel: str,
+        trace_context: dict[str, str] | None = None,
+        assistant_message_id: str | None = None,
+        user_id: str | None = None,
+        idempotency_lock_key: str | None = None,
+    ) -> None:
+        """投递流式 LLM 生成任务到 TaskIQ worker。"""
+        ...
+
+    @abstractmethod
+    async def enqueue_nonstream(
+        self,
+        generation_payload: dict[str, Any],
+        trace_context: dict[str, str] | None = None,
+        assistant_message_id: str | None = None,
+        user_id: str | None = None,
+        idempotency_lock_key: str | None = None,
+    ) -> dict[str, Any]:
+        """投递非流式 LLM 生成任务并等待结果返回。"""
+        ...
+
+    @abstractmethod
+    async def enqueue_ingestion(
+        self,
+        file_id: str,
+        task_id: str | None = None,
+        trace_context: dict[str, str] | None = None,
+    ) -> None:
+        """投递知识库文件入库任务到 TaskIQ worker。"""
+        ...

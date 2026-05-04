@@ -10,8 +10,6 @@ import time
 import uuid
 from typing import Any
 
-from pydantic import BaseModel, Field
-
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
 from backend.application.chat.stream_events import (
@@ -21,26 +19,21 @@ from backend.application.chat.stream_events import (
 )
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
-from backend.contracts.interfaces import AbstractLLMService, AbstractUnitOfWork
+from backend.contracts.chat_generation import GenerationPayload
+from backend.contracts.interfaces import (
+    AbstractLLMService,
+    AbstractRAGService,
+    AbstractUnitOfWork,
+)
 from backend.core.concurrency import llm_concurrency_slot
 from backend.core.exceptions import AppException
 from backend.infra.redis import redis_client
-from backend.models.schemas.chat_schema import ConversationMessage, LLMQueryDTO
+from backend.models.schemas.chat_schema import LLMQueryDTO
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import ChatMessageUpdater
 from backend.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
-
-
-class GenerationPayload(BaseModel):
-    """Worker payload for LLM generation tasks (streaming and non-streaming)."""
-
-    session_id: uuid.UUID
-    query_text: str
-    conversation_history: list[ConversationMessage] = Field(default_factory=list)
-    kb_id: uuid.UUID | None = None
-    rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LLMGenerationWorkerWorkflow:
@@ -51,10 +44,12 @@ class LLMGenerationWorkerWorkflow:
         *,
         uow: AbstractUnitOfWork,
         llm_service: AbstractLLMService,
+        rag_service: AbstractRAGService | None = None,
         chat_context_builder: ChatContextBuilder | None = None,
     ) -> None:
         self.uow = uow
         self.llm_service = llm_service
+        self.rag_service = rag_service
         self.chat_context_builder = chat_context_builder or ChatContextBuilder()
 
     # ── Streaming ──────────────────────────────────────────────────
@@ -282,13 +277,17 @@ class LLMGenerationWorkerWorkflow:
     # ── Shared Helpers ─────────────────────────────────────────────
 
     async def _prepare_context(self, payload: GenerationPayload):
-        reranked_chunks = await self._rerank_candidates_if_enabled(payload)
+        candidates = await self._retrieve_rag_candidates(payload)
+        reranked_chunks = await self._rerank_candidates_if_enabled(
+            payload,
+            candidates,
+        )
         with trace_span(
             "taskiq.llm_stream.prepare_context",
             {
                 "chat.session_id": payload.session_id,
                 "rag.kb_id": payload.kb_id,
-                "rag.candidate_count": len(payload.rag_candidates),
+                "rag.candidate_count": len(candidates),
                 "rag.rerank.enabled": ai_settings.RAG_RERANK_ENABLED,
                 "rag.hit_count": len(reranked_chunks),
             },
@@ -311,11 +310,49 @@ class LLMGenerationWorkerWorkflow:
             )
             return prepared_context
 
-    async def _rerank_candidates_if_enabled(
+    async def _retrieve_rag_candidates(
         self,
         payload: GenerationPayload,
     ) -> list[dict[str, Any]]:
-        candidates = list(payload.rag_candidates)
+        if payload.rag_candidates:
+            return list(payload.rag_candidates)
+        if self.rag_service is None or payload.kb_id is None:
+            return []
+
+        try:
+            uow = getattr(self.rag_service, "uow", None)
+            if uow is None or getattr(uow, "_session", None) is not None:
+                return await self._retrieve_from_rag_service(payload)
+            async with uow:
+                return await self._retrieve_from_rag_service(payload)
+        except Exception as exc:
+            logger.warning("Worker RAG 候选检索失败，降级为普通对话: %s", exc)
+            return []
+
+    async def _retrieve_from_rag_service(
+        self,
+        payload: GenerationPayload,
+    ) -> list[dict[str, Any]]:
+        if self.rag_service is None:
+            return []
+        if ai_settings.RAG_RERANK_ENABLED:
+            return await self.rag_service.retrieve_hybrid(
+                query_text=payload.query_text,
+                kb_id=payload.kb_id,
+                top_k=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
+            )
+        return await self.rag_service.retrieve(
+            query_text=payload.query_text,
+            kb_id=payload.kb_id,
+            top_k=ai_settings.RAG_TOP_K,
+        )
+
+    async def _rerank_candidates_if_enabled(
+        self,
+        payload: GenerationPayload,
+        candidates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        candidates = list(candidates)
         if not candidates:
             return []
 

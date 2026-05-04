@@ -24,7 +24,7 @@ export SMOKE_READY_PATH
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-format qa-typecheck qa-test-unit qa-test-integration qa-test-all qa-checks \
+	qa-lint qa-boundaries qa-format qa-typecheck qa-test-unit qa-test-integration qa-test-all qa-checks \
 	image-build \
 	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
@@ -37,6 +37,7 @@ help:
 	@printf '%s\n' \
 		'Available targets:' \
 		'  qa-lint              Run Ruff lint checks' \
+		'  qa-boundaries        Check Web/Worker import boundaries' \
 		'  qa-format            Run Ruff formatter' \
 		'  qa-typecheck         Run type checking' \
 		'  qa-test-unit         Run unit tests (UNIT_TARGETS=...)' \
@@ -61,6 +62,9 @@ help:
 
 qa-lint:
 	uv run ruff check .
+
+qa-boundaries:
+	uv run python scripts/check_import_boundaries.py
 
 qa-format:
 	uv run ruff format .
@@ -134,6 +138,7 @@ test: qa-test-all
 
 check:
 	$(MAKE) qa-lint
+	$(MAKE) qa-boundaries
 	$(MAKE) qa-typecheck
 	$(MAKE) qa-test-all
 

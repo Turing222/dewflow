@@ -1,10 +1,5 @@
-from backend.api.deps.ai import (
-    get_chunking_service,
-    get_llm_service,
-    get_rag_embedder,
-    get_rag_service,
-    get_vector_index_service,
-)
+from importlib import import_module
+
 from backend.api.deps.audit import get_audit_service
 from backend.api.deps.auth import (
     get_current_active_user,
@@ -25,9 +20,17 @@ from backend.api.deps.uow import get_uow
 from backend.api.deps.workflows import (
     get_chat_nonstream_workflow,
     get_chat_workflow,
-    get_knowledge_rag_workflow,
     get_knowledge_upload_workflow,
 )
+
+_AI_EXPORTS = {
+    "get_chunking_service",
+    "get_llm_service",
+    "get_rag_embedder",
+    "get_rag_service",
+    "get_vector_index_service",
+    "get_knowledge_rag_workflow",
+}
 
 __all__ = [
     "reusable_oauth2",
@@ -37,11 +40,6 @@ __all__ = [
     "get_current_superuser",
     "get_login_data",
     "get_audit_service",
-    "get_llm_service",
-    "get_rag_embedder",
-    "get_rag_service",
-    "get_chunking_service",
-    "get_vector_index_service",
     "get_knowledge_service",
     "get_object_storage",
     "get_permission_service",
@@ -51,5 +49,12 @@ __all__ = [
     "get_chat_nonstream_workflow",
     "get_chat_workflow",
     "get_knowledge_upload_workflow",
-    "get_knowledge_rag_workflow",
 ]
+
+
+# 向后兼容的延迟导入：避免 Web 侧直接 import backend.api.deps.ai。
+# 新代码应直接从 backend.api.deps.ai 导入 AI 相关依赖。
+def __getattr__(name: str):
+    if name in _AI_EXPORTS:
+        return getattr(import_module("backend.api.deps.ai"), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

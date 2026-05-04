@@ -9,5 +9,8 @@ cd "$PROJECT_ROOT"
 log_section "Running lint"
 uv run ruff check .
 
+log_section "Running import boundary check"
+uv run python scripts/check_import_boundaries.py
+
 log_section "Running typecheck"
 uv run ty check .

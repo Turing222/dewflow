@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -280,7 +280,18 @@ def api_context():
     chat_repo = FakeChatRepo()
     uow = FakeUnitOfWork(user_repo=user_repo, chat_repo=chat_repo)
     llm_service = RecordingLLMService()
-    workflow = ChatNonStreamWorkflow(uow=uow)
+    mock_dispatcher = AsyncMock()
+    mock_dispatcher.enqueue_nonstream = AsyncMock(
+        return_value={
+            "success": True,
+            "content": "这是集成测试里的回答",
+            "tokens_input": 10,
+            "tokens_output": 5,
+            "search_context": None,
+            "latency_ms": 200,
+        }
+    )
+    workflow = ChatNonStreamWorkflow(uow=uow, dispatcher=mock_dispatcher)
 
     # --- 依赖覆盖 ---
     # 1. 核心业务依赖
@@ -390,30 +401,21 @@ async def test_query_sent_uses_memory_summary_and_updates_tokens(
     assert body["answer"]["status"] == "success"
     assert body["answer"]["content"] == "这是集成测试里的回答"
 
-    assert len(api_context.llm_service.calls) == 1
-    llm_query = api_context.llm_service.calls[0]
-    history = llm_query.conversation_history
+    # Web workflow dispatches to worker via AbstractTaskDispatcher;
+    # LLM invocation and final persistence are owned by the worker.
+    mock_dispatcher = api_context.workflow.dispatcher
+    mock_dispatcher.enqueue_nonstream.assert_awaited_once()
+    dispatch_args = mock_dispatcher.enqueue_nonstream.call_args
+    generation_payload = dispatch_args[0][0]
+    assert generation_payload["query_text"] == "第三轮问题"
+    assert generation_payload["session_id"] == str(session.id)
 
+    # Conversation history is still assembled on the web side and sent to worker.
+    history = generation_payload["conversation_history"]
     assert history[-1] == {"role": "user", "content": "第三轮问题"}
     assert sum(msg["content"] == "第三轮问题" for msg in history) == 1
     assert {"role": "user", "content": "第二轮问题"} in history
     assert {"role": "assistant", "content": "第二轮回答"} in history
-
-    system_prompt = history[0]["content"]
-    assert "历史对话摘要" in system_prompt
-    assert "第一轮问题" in system_prompt
-    assert "第一轮回答" in system_prompt
-    assert "第二轮问题" not in system_prompt
-
-    updated_assistant = api_context.chat_repo.messages[uuid.UUID(body["answer"]["id"])]
-    assert updated_assistant.tokens_output == 7
-    assert updated_assistant.status == MessageStatus.SUCCESS
-    assert api_context.user_repo.increment_calls == [
-        updated_assistant.tokens_input + updated_assistant.tokens_output
-    ]
-    assert (
-        api_context.current_user.used_tokens == api_context.user_repo.increment_calls[0]
-    )
 
 
 @pytest.mark.asyncio

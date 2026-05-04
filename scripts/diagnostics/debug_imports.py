@@ -14,8 +14,8 @@ async def main() -> None:
     print("ChatWorkflow imported.")
 
     uow = MagicMock()
-    llm = MagicMock()
-    ChatWorkflow(uow, llm)
+    dispatcher = MagicMock()
+    ChatWorkflow(uow, dispatcher)
     print("ChatWorkflow initialized.")
 
 

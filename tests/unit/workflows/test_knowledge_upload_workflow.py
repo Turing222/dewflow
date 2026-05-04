@@ -49,15 +49,11 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
             return_value=SimpleNamespace(id=task_id, status="pending")
         ),
     )
+    mock_dispatcher = SimpleNamespace(enqueue_ingestion=AsyncMock())
     workflow = KnowledgeUploadWorkflow(
         knowledge_service=knowledge_service,
         task_service=task_service,
-    )
-
-    kiq_mock = AsyncMock()
-    monkeypatch.setattr(
-        "backend.application.knowledge.upload_workflow.ingest_knowledge_file_task.kiq",
-        kiq_mock,
+        dispatcher=mock_dispatcher,
     )
 
     result = await workflow.submit(
@@ -78,7 +74,9 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
         filename="demo.txt",
         user_id=user_id,
     )
-    kiq_mock.assert_awaited_once_with(str(file_id), str(task_id), ANY)
+    mock_dispatcher.enqueue_ingestion.assert_awaited_once_with(
+        str(file_id), str(task_id), ANY
+    )
     assert result.task_id == task_id
     assert result.file_id == file_id
     assert result.kb_id == kb_id
@@ -88,7 +86,7 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_submit_reuses_ready_duplicate_without_dispatching_job(monkeypatch):
+async def test_submit_reuses_ready_duplicate_without_dispatching_job():
     file_id = uuid.uuid4()
     task_id = uuid.uuid4()
     kb_id = uuid.uuid4()
@@ -116,14 +114,11 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job(monkeypatch
             return_value=SimpleNamespace(id=task_id, status="completed")
         ),
     )
+    mock_dispatcher = SimpleNamespace(enqueue_ingestion=AsyncMock())
     workflow = KnowledgeUploadWorkflow(
         knowledge_service=knowledge_service,
         task_service=task_service,
-    )
-    kiq_mock = AsyncMock()
-    monkeypatch.setattr(
-        "backend.application.knowledge.upload_workflow.ingest_knowledge_file_task.kiq",
-        kiq_mock,
+        dispatcher=mock_dispatcher,
     )
 
     result = await workflow.submit(
@@ -140,7 +135,7 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job(monkeypatch
         user_id=user_id,
         deduplicated=True,
     )
-    kiq_mock.assert_not_awaited()
+    mock_dispatcher.enqueue_ingestion.assert_not_awaited()
     assert result.file_id == file_id
     assert result.task_id == task_id
     assert result.task_status == "completed"
@@ -149,9 +144,7 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job(
-    monkeypatch,
-):
+async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job():
     file_id = uuid.uuid4()
     task_id = uuid.uuid4()
     kb_id = uuid.uuid4()
@@ -180,15 +173,11 @@ async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job(
             return_value=SimpleNamespace(id=task_id, status="pending")
         ),
     )
+    mock_dispatcher = SimpleNamespace(enqueue_ingestion=AsyncMock())
     workflow = KnowledgeUploadWorkflow(
         knowledge_service=knowledge_service,
         task_service=task_service,
-    )
-
-    kiq_mock = AsyncMock()
-    monkeypatch.setattr(
-        "backend.application.knowledge.upload_workflow.ingest_knowledge_file_task.kiq",
-        kiq_mock,
+        dispatcher=mock_dispatcher,
     )
 
     result = await workflow.submit(
@@ -209,7 +198,9 @@ async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job(
         filename="demo.txt",
         user_id=user_id,
     )
-    kiq_mock.assert_awaited_once_with(str(file_id), str(task_id), ANY)
+    mock_dispatcher.enqueue_ingestion.assert_awaited_once_with(
+        str(file_id), str(task_id), ANY
+    )
     assert result.task_id == task_id
     assert result.file_id == file_id
     assert result.kb_id == kb_id

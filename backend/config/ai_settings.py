@@ -98,9 +98,6 @@ class AISettings(BaseSettings):
     LLM_MAX_CONTEXT_TOKENS: int = 4096
     LLM_MAX_HISTORY_ROUNDS: int = 10
     LLM_RESERVED_RESPONSE_TOKENS: int = 1024
-    LLM_MAX_CONCURRENCY: int = 5
-    LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
-    LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 30
 
     # ── Chat Stream Timeouts ──────────────────────────────────────
     CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS: int = 30

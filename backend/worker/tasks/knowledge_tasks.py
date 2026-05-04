@@ -9,8 +9,8 @@ import logging
 import uuid
 
 from backend.application.knowledge.ingestion_workflow import KnowledgeRAGWorkflow
+from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
-from backend.config.settings import settings
 from backend.core.exceptions import (
     AppException,
     app_service_error,
@@ -69,7 +69,7 @@ async def _ingest_knowledge_file_task(
 ) -> None:
     logger.info("TaskIQ 开始处理知识库文件: file_id=%s task_id=%s", file_id, task_id)
     embedding_profile = get_llm_model_config().resolve_embedding_profile(
-        settings.RAG_EMBED_PROVIDER
+        ai_settings.RAG_EMBED_PROVIDER
     )
 
     with trace_span(
@@ -85,18 +85,18 @@ async def _ingest_knowledge_file_task(
         uow = SQLAlchemyUnitOfWork(get_worker_session_factory())
         task_service = TaskService(uow)
         chunking_service = ChunkingService(
-            chunk_size=settings.KNOWLEDGE_CHUNK_SIZE,
-            chunk_overlap=settings.KNOWLEDGE_CHUNK_OVERLAP,
+            chunk_size=ai_settings.KNOWLEDGE_CHUNK_SIZE,
+            chunk_overlap=ai_settings.KNOWLEDGE_CHUNK_OVERLAP,
         )
         vector_index_service = VectorIndexService(
             uow=uow,
             embedder=get_worker_embedder(),
-            embed_batch_size=settings.RAG_EMBED_BATCH_SIZE,
+            embed_batch_size=ai_settings.RAG_EMBED_BATCH_SIZE,
         )
         knowledge_service = KnowledgeService(
             uow=uow,
             storage=get_worker_object_storage(),
-            max_upload_size_mb=settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
+            max_upload_size_mb=ai_settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
         )
         workflow = KnowledgeRAGWorkflow(
             knowledge_service=knowledge_service,

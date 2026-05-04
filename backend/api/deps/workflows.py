@@ -1,60 +1,44 @@
 from fastapi import Depends
 
-from backend.api.deps.ai import (
-    get_chunking_service,
-    get_llm_service,
-    get_rag_service,
-    get_vector_index_service,
-)
 from backend.api.deps.services import get_knowledge_service, get_task_service
 from backend.api.deps.uow import get_uow
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.application.chat.web_stream_workflow import ChatWorkflow
-from backend.application.knowledge.ingestion_workflow import KnowledgeRAGWorkflow
 from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflow
 from backend.contracts.interfaces import (
-    AbstractLLMService,
-    AbstractRAGService,
     AbstractUnitOfWork,
+    AbstractTaskDispatcher,
 )
-from backend.services.chunking_service import ChunkingService
+from backend.infra.task_dispatcher import TaskDispatcher
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.task_service import TaskService
-from backend.services.vector_index_service import VectorIndexService
+
+
+def get_dispatcher() -> TaskDispatcher:
+    return TaskDispatcher()
 
 
 def get_chat_workflow(
     uow: AbstractUnitOfWork = Depends(get_uow),
-    llm_service: AbstractLLMService = Depends(get_llm_service),
-    rag_service: AbstractRAGService = Depends(get_rag_service),
+    dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
 ) -> ChatWorkflow:
-    return ChatWorkflow(uow, llm_service, rag_service=rag_service)
+    return ChatWorkflow(uow, dispatcher)
 
 
 def get_chat_nonstream_workflow(
     uow: AbstractUnitOfWork = Depends(get_uow),
-    rag_service: AbstractRAGService = Depends(get_rag_service),
+    dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
 ) -> ChatNonStreamWorkflow:
-    return ChatNonStreamWorkflow(uow, rag_service=rag_service)
-
-
-def get_knowledge_rag_workflow(
-    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
-    chunking_service: ChunkingService = Depends(get_chunking_service),
-    vector_index_service: VectorIndexService = Depends(get_vector_index_service),
-) -> KnowledgeRAGWorkflow:
-    return KnowledgeRAGWorkflow(
-        knowledge_service=knowledge_service,
-        chunking_service=chunking_service,
-        vector_index_service=vector_index_service,
-    )
+    return ChatNonStreamWorkflow(uow, dispatcher)
 
 
 def get_knowledge_upload_workflow(
     knowledge_service: KnowledgeService = Depends(get_knowledge_service),
     task_service: TaskService = Depends(get_task_service),
+    dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
 ) -> KnowledgeUploadWorkflow:
     return KnowledgeUploadWorkflow(
         knowledge_service=knowledge_service,
         task_service=task_service,
+        dispatcher=dispatcher,
     )
