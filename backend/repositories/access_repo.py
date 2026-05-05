@@ -82,7 +82,7 @@ class AccessRepository:
         - 尔后可以对孤立资源批量归档或迁移，数据可捕捉。
         - 取代物理删除，避免联级删除潫陷。
         """
-        workspace.deleted_at = datetime.now(UTC)  # type: ignore[assignment]
+        workspace.deleted_at = datetime.now(UTC)
         self.session.add(workspace)
         await self.session.flush()
 

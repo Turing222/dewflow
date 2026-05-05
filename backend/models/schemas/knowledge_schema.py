@@ -1,3 +1,9 @@
+"""Knowledge API response schemas.
+
+职责：定义知识库上传任务和文件状态的响应结构。
+边界：本模块不处理文件存储、解析或向量化。
+"""
+
 import uuid
 from datetime import datetime
 

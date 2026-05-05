@@ -1,12 +1,13 @@
 """Lightweight chat history projection helpers for Web workflows."""
 
+from collections.abc import Sequence
 from typing import Any, cast
 
 from backend.models.schemas.chat_schema import ChatMessageRole, ConversationMessage
 
 
 def history_to_conversation_messages(
-    messages: list[dict[str, Any] | Any],
+    messages: Sequence[Any],
 ) -> list[ConversationMessage]:
     """Keep only user/assistant messages needed by worker prompt assembly."""
     history: list[ConversationMessage] = []

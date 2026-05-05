@@ -79,15 +79,16 @@ class TaskRepository:
         skip: int = 0,
         limit: int = 20,
     ) -> Sequence[TaskJob]:
-        """
-        获取用户的任务列表
-        注意：TaskJob 没有直接的 user_id 字段，需要通过 payload 中的 session_id 关联查询
-        或者由 Service 层在调用时传入 user_id 到 payload 中
-        """
-        raise NotImplementedError(
-            "TaskRepository.get_user_tasks is not implemented: "
-            "task_jobs has no user_id column yet."
+        """按 payload.user_id 获取用户任务列表。"""
+        stmt = (
+            select(TaskJob)
+            .where(TaskJob.payload["user_id"].astext == str(user_id))
+            .order_by(TaskJob.created_at.desc())
+            .offset(skip)
+            .limit(limit)
         )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
 
     async def mark_completed(
         self,

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.repositories.user_repo import UserRepository
+from backend.repositories.user_repo import UserCreateData, UserRepository
 
 
 @pytest.fixture
@@ -77,6 +77,46 @@ async def test_get_existing_usernames_returns_set(repo_ctx):
 
 
 @pytest.mark.asyncio
+async def test_get_multi_returns_empty_sequence(repo_ctx):
+    repo, session = repo_ctx
+    result_proxy = MagicMock()
+    scalars_proxy = MagicMock()
+    scalars_proxy.all.return_value = []
+    result_proxy.scalars.return_value = scalars_proxy
+    session.execute.return_value = result_proxy
+
+    result = await repo.get_multi()
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_create_accepts_persistence_data_only(repo_ctx):
+    repo, _ = repo_ctx
+    expected = MagicMock()
+    repo.crud.create = AsyncMock(return_value=expected)
+    obj_in = UserCreateData(
+        username="alice",
+        email="alice@example.com",
+        hashed_password="hashed-password",
+        max_tokens=100000,
+    )
+
+    result = await repo.create(obj_in=obj_in)
+
+    assert result is expected
+    create_data = repo.crud.create.await_args.kwargs["obj_in"]
+    assert create_data == {
+        "username": "alice",
+        "email": "alice@example.com",
+        "hashed_password": "hashed-password",
+        "max_tokens": 100000,
+    }
+    assert "password" not in create_data
+    assert "confirm_password" not in create_data
+
+
+@pytest.mark.asyncio
 async def test_bulk_upsert_validates_required_keys(repo_ctx):
     repo, _ = repo_ctx
 
@@ -130,3 +170,37 @@ async def test_increment_used_tokens_executes_atomic_update(repo_ctx):
     sql = str(stmt)
     assert "UPDATE users SET used_tokens=" in sql
     assert "users.used_tokens +" in sql
+
+
+@pytest.mark.asyncio
+async def test_increment_used_tokens_guarded_returns_true_when_row_updated(repo_ctx):
+    repo, session = repo_ctx
+    user_id = uuid.uuid4()
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = user_id
+    session.execute.return_value = result_proxy
+
+    result = await repo.increment_used_tokens_guarded(user_id=user_id, amount=5)
+
+    assert result is True
+    stmt = session.execute.call_args.args[0]
+    sql = str(stmt)
+    assert "UPDATE users SET used_tokens=" in sql
+    assert "RETURNING users.id" in sql
+
+
+@pytest.mark.asyncio
+async def test_increment_used_tokens_guarded_returns_false_when_no_row_updated(
+    repo_ctx,
+):
+    repo, session = repo_ctx
+    result_proxy = MagicMock()
+    result_proxy.scalar_one_or_none.return_value = None
+    session.execute.return_value = result_proxy
+
+    result = await repo.increment_used_tokens_guarded(
+        user_id=uuid.uuid4(),
+        amount=5,
+    )
+
+    assert result is False

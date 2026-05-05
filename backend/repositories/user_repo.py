@@ -1,31 +1,45 @@
 import uuid
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, TypedDict
 
+from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.orm.user import User  # 你的 SQLAlchemy 模型
-from backend.models.schemas.user_schema import UserCreate, UserUpdate
+from backend.models.orm.user import User
+from backend.models.schemas.user_schema import UserUpdate
 from backend.repositories.base import CRUDBase
+
+
+class UserCreateData(TypedDict):
+    username: str
+    email: str
+    hashed_password: str
+    max_tokens: int
 
 
 class UserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self.crud: CRUDBase[User, UserCreate, UserUpdate] = CRUDBase(User, session)
+        self.crud: CRUDBase[User, BaseModel, UserUpdate] = CRUDBase(User, session)
 
     async def get(self, id: Any) -> User | None:
         return await self.crud.get(id)
 
     async def get_multi(
         self, *, skip: int = 0, limit: int = 100
-    ) -> Sequence[User] | None:
+    ) -> Sequence[User]:
         return await self.crud.get_multi(skip=skip, limit=limit)
 
-    async def create(self, *, obj_in: UserCreate | dict[str, Any]) -> User:
-        return await self.crud.create(obj_in=obj_in)
+    async def create(self, *, obj_in: UserCreateData) -> User:
+        create_data: dict[str, Any] = {
+            "username": obj_in["username"],
+            "email": obj_in["email"],
+            "hashed_password": obj_in["hashed_password"],
+            "max_tokens": obj_in["max_tokens"],
+        }
+        return await self.crud.create(obj_in=create_data)
 
     async def update(
         self, *, db_obj: User, obj_in: UserUpdate | dict[str, Any]
@@ -46,20 +60,14 @@ class UserRepository:
         return result.scalars().first()
 
     async def get_existing_usernames(self, usernames: list[str]) -> set[str]:
-        """
-        输入一个用户名列表，返回数据库中已经存在的用户名集合。
-        使用 Core 风格，性能高。
-        """
+        """返回数据库中已存在的用户名集合。"""
         if not usernames:
             return set()
 
-        # 这里的 select(User.username) 就是 Core 风格
-        # 它只查询 username 字段，不会把整行数据都查出来
+        # 只查询 username 字段，避免批量导入预检查读取整行用户数据。
         stmt = select(User.username).where(User.username.in_(usernames))
         result = await self.session.execute(stmt)
 
-        # scalars().all() 会返回一个列表 ['zhangsan', 'lisi', ...]
-        # 转成 set 方便后续 O(1) 复杂度的查找比对
         return set(result.scalars().all())
 
     async def bulk_upsert(self, user_maps: list[dict[str, str]]) -> None:
@@ -110,8 +118,6 @@ class UserRepository:
         用于余额检查前的悲观锁读，防止多个并发请求同时通过余额校验（TOCTOU）。
         必须在已开启事务的 UoW 上下文内调用（即 async with uow 块中）。
         """
-        from sqlalchemy import select
-
         stmt = select(User).where(User.id == user_id).with_for_update()
         result = await self.session.execute(stmt)
         return result.scalars().first()
@@ -124,15 +130,12 @@ class UserRepository:
         """
         带上限检查的条件原子 Token 累加（R1 + R5 修复）。
 
-        实现：单条 UPDATE WHERE used_tokens + amount <= max_tokens
-        - 若更新成功（rowcount == 1）：返回 True
-        - 若已超出上限（rowcount == 0）：返回 False，调用方应记录并告知用户
+        实现：单条 UPDATE WHERE used_tokens + amount <= max_tokens。
+        若未返回更新后的用户 ID，表示额度不足或用户不存在。
 
         此方法是原子的，不存在读-改-写竞态，与 get_with_lock 配合可彻底
         消除高并发下的 Token 超支问题。
         """
-        from sqlalchemy import func
-
         stmt = (
             update(User)
             .where(
@@ -140,9 +143,7 @@ class UserRepository:
                 User.used_tokens + amount <= User.max_tokens,
             )
             .values(used_tokens=User.used_tokens + amount)
-            .returning(func.count())
+            .returning(User.id)
         )
         result = await self.session.execute(stmt)
-        # rowcount 在 asyncpg UPDATE + RETURNING 场景下是实际受影响行数
-        # ty 对 SQLAlchemy CursorResult 类型推断不完整，此处 ignore 是已知误报
-        return result.rowcount > 0  # type: ignore[union-attr]
+        return result.scalar_one_or_none() is not None

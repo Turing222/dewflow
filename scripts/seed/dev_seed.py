@@ -6,7 +6,7 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -107,7 +107,17 @@ from backend.models.orm.user import User  # noqa: E402
 
 SEED_PASSWORD = "SeedPass123!"
 
-USER_SEEDS = [
+
+class UserSeed(TypedDict):
+    username: str
+    email: str
+    is_superuser: bool
+    is_active: bool
+    max_tokens: int
+    used_tokens: int
+
+
+USER_SEEDS: list[UserSeed] = [
     {
         "username": "seed_admin",
         "email": "seed_admin@example.com",

@@ -1,6 +1,13 @@
+"""Workspace access and audit ORM models.
+
+职责：定义工作区、成员角色和审计事件的持久化结构。
+边界：本模块只描述数据结构，不承载权限判定逻辑。
+"""
+
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -51,10 +58,8 @@ class Workspace(Base, BaseIdModel, AuditMixin):
         index=True,
         nullable=True,
     )
-    # R7 修复：软删除字段。NULL 表示活跃，非 NULL 表示已删除。
-    # 使用软删除保留 KB/File/ChatSession 等关联数据，
-    # 防止删除 Workspace 导致子资源孤立（workspace_id 被置 NULL）。
-    deleted_at: Mapped[DateTime | None] = mapped_column(
+    # 软删除保留关联资源的 workspace_id，避免物理删除造成历史数据脱链。
+    deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         index=True,

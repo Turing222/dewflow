@@ -1,3 +1,9 @@
+"""Task response schemas.
+
+职责：定义异步任务状态查询的响应结构。
+边界：本模块不创建、调度或执行任务。
+"""
+
 import uuid
 from datetime import datetime
 

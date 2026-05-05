@@ -1,3 +1,9 @@
+"""Workspace request and response schemas.
+
+职责：定义工作区和成员管理接口的输入输出结构。
+边界：本模块不做成员权限判断或审计记录。
+"""
+
 import uuid
 from datetime import datetime
 from typing import Annotated, Self

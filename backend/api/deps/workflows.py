@@ -6,8 +6,8 @@ from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflo
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflow
 from backend.contracts.interfaces import (
-    AbstractUnitOfWork,
     AbstractTaskDispatcher,
+    AbstractUnitOfWork,
 )
 from backend.infra.task_dispatcher import TaskDispatcher
 from backend.services.knowledge_service import KnowledgeService

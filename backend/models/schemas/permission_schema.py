@@ -1,3 +1,9 @@
+"""Permission policy response schemas.
+
+职责：定义权限和角色策略的只读响应结构。
+边界：本模块不计算权限继承，也不执行鉴权判断。
+"""
+
 from pydantic import BaseModel
 
 from backend.models.orm.access import WorkspaceRole

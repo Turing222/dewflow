@@ -1,3 +1,9 @@
+"""Document chunk ORM model.
+
+职责：保存知识文件和历史消息切片，以及用于检索的向量和元数据。
+边界：本模块不负责切片生成、向量化或召回排序。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -22,16 +28,15 @@ class ChunkSourceType(StrEnum):
 
 
 class DocumentChunk(Base, BaseIdModel):
-    """RAG 切片表（支持知识库文件 & 历史对话等多态来源）"""
+    """可被 RAG 检索的文本切片。"""
 
     __tablename__ = "document_chunks"
 
-    # 区分来源
     source_type: Mapped[ChunkSourceType] = mapped_column(
         String(20), index=True, server_default=ChunkSourceType.FILE
     )
 
-    # 用多外键的方式保留 DB 外键约束 (且保证总有一个不为空)
+    # 多外键保留数据库约束，配合 check constraint 保证来源唯一。
     file_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("knowledge_files.id", ondelete="CASCADE"), index=True
     )
@@ -39,22 +44,17 @@ class DocumentChunk(Base, BaseIdModel):
         ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True
     )
 
-    # 原始切片内容
     content: Mapped[str] = mapped_column(Text)
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # 预计算 token 数，优化 LLM 上下文选择
     token_count: Mapped[int] = mapped_column(Integer)
-    # 序列号，用于拼接上下文
     chunk_index: Mapped[int] = mapped_column(Integer)
     chunking_version: Mapped[int] = mapped_column(
         Integer,
         default=1,
         server_default=text("1"),
     )
-    # 元数据：存储如 {"page_label": "12", "header": "Chapter 1"} 或 {"session_id": "..."}
     meta_info: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'"))
 
-    # 768 维降维向量
     embedding: Mapped[Vector] = mapped_column(Vector(768))
 
     __table_args__ = (
@@ -77,5 +77,4 @@ class DocumentChunk(Base, BaseIdModel):
     )
 
     file: Mapped[File | None] = relationship(back_populates="chunks")
-    # message 的反向关联会定义在 ChatMessage 里
     message: Mapped[ChatMessage | None] = relationship(back_populates="chunks")

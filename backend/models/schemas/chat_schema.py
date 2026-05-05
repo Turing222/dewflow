@@ -1,12 +1,7 @@
-"""
-Chat Schema 层 — 企业级 Pydantic 模型
+"""Chat request, response, and internal DTO schemas.
 
-分层设计：
-- Reusable Types: 可复用的类型约束
-- Base Schemas: 基础字段组合
-- Request Schemas: API 输入校验
-- Response Schemas: API 输出序列化
-- Internal DTOs: 服务间数据流转对象
+职责：定义聊天接口请求、响应，以及服务间传递的轻量 DTO。
+边界：本模块不组装 Prompt、不调用 LLM，也不访问数据库。
 """
 
 import uuid
@@ -15,10 +10,6 @@ from enum import StrEnum
 from typing import Annotated, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-# ============================================================
-# --- Reusable Types (提升代码一致性) ---
-# ============================================================
 
 QueryStr = Annotated[
     str, Field(min_length=1, max_length=5000, description="用户查询内容")
@@ -55,16 +46,8 @@ class ConversationMessage(TypedDict):
     content: str
 
 
-# ============================================================
-# --- Request Schemas (输入控制) ---
-# ============================================================
-
-
 class QuerySentRequest(BaseModel):
-    """
-    用户发送查询的请求体。
-    session_id 为空时自动创建新会话。
-    """
+    """用户发送查询的请求体。"""
 
     query: QueryStr
     session_id: uuid.UUID | None = Field(None, description="会话 ID，为空则创建新会话")
@@ -110,11 +93,6 @@ class SessionUpdateRequest(BaseModel):
         str_strip_whitespace=True,
         extra="forbid",
     )
-
-
-# ============================================================
-# --- Response Schemas (输出控制) ---
-# ============================================================
 
 
 class MessageResponse(BaseModel):
@@ -176,11 +154,6 @@ class SessionDetailResponse(BaseModel):
     session: SessionResponse
     messages: list[MessageResponse]
     total_messages: int
-
-
-# ============================================================
-# --- Internal DTOs (服务间数据流转，不暴露给 API) ---
-# ============================================================
 
 
 class LLMQueryDTO(BaseModel):

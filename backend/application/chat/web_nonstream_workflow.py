@@ -14,8 +14,8 @@ from backend.application.chat.history_projection import history_to_conversation_
 from backend.config.settings import settings
 from backend.contracts.chat_generation import GenerationPayload
 from backend.contracts.interfaces import (
-    AbstractUnitOfWork,
     AbstractTaskDispatcher,
+    AbstractUnitOfWork,
 )
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import (

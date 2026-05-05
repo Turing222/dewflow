@@ -1,3 +1,9 @@
+"""Audit response schemas.
+
+职责：定义审计事件查询接口的响应结构。
+边界：本模块不记录审计事件，也不做权限过滤。
+"""
+
 import uuid
 from datetime import datetime
 

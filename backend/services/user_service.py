@@ -26,6 +26,7 @@ from backend.models.schemas.user_schema import (
     UserLogin,
     UserUpdate,
 )
+from backend.repositories.user_repo import UserCreateData
 from backend.services.base import BaseService
 
 logger = logging.getLogger(__name__)
@@ -73,11 +74,13 @@ class UserService(BaseService[AbstractUnitOfWork]):
                 code="USERNAME_ALREADY_REGISTERED",
             )
 
-        # 明文密码只在 service 内短暂停留，入库前必须替换为哈希。
-        obj_in_data = user_in.model_dump()
-        obj_in_data.pop("password")
-        obj_in_data.pop("confirm_password")
-        obj_in_data["hashed_password"] = await get_password_hash(user_in.password)
+        # 明文密码只在 service 内短暂停留，repository 只接收哈希后的入库字段。
+        obj_in_data = UserCreateData(
+            username=user_in.username,
+            email=str(user_in.email),
+            hashed_password=await get_password_hash(user_in.password),
+            max_tokens=user_in.max_tokens,
+        )
 
         try:
             user = await self.uow.user_repo.create(obj_in=obj_in_data)
@@ -132,7 +135,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
             return None
         return user
 
-    async def get_multi(self, skip: int = 0, limit: int = 100) -> Sequence[User] | None:
+    async def get_multi(self, skip: int = 0, limit: int = 100) -> Sequence[User]:
         users = await self.uow.user_repo.get_multi(skip=skip, limit=limit)
         return users
 

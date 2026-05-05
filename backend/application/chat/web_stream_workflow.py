@@ -18,8 +18,8 @@ from backend.application.chat.stream_events import decode_stream_event
 from backend.config.settings import settings
 from backend.contracts.chat_generation import GenerationPayload
 from backend.contracts.interfaces import (
-    AbstractUnitOfWork,
     AbstractTaskDispatcher,
+    AbstractUnitOfWork,
 )
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_service_error

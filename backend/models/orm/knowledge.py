@@ -1,3 +1,9 @@
+"""Knowledge base and file ORM models.
+
+职责：定义知识库、上传文件、存储位置和文件处理状态。
+边界：本模块不处理文件解析、切片或对象存储读写。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -29,7 +35,7 @@ class FileVisibility(StrEnum):
 
 
 class KnowledgeBase(Base, BaseIdModel, AuditMixin):
-    """知识库：文件的逻辑集合"""
+    """知识文件的逻辑集合。"""
 
     __tablename__ = "knowledge_bases"
 
@@ -44,7 +50,6 @@ class KnowledgeBase(Base, BaseIdModel, AuditMixin):
         nullable=True,
     )
 
-    # 关联
     user: Mapped[User] = relationship(back_populates="knowledge_bases")
     workspace: Mapped[Workspace | None] = relationship(back_populates="knowledge_bases")
     files: Mapped[list[File]] = relationship(
@@ -54,9 +59,7 @@ class KnowledgeBase(Base, BaseIdModel, AuditMixin):
 
 
 class File(Base, BaseIdModel, AuditMixin):
-    """
-    文件表（依附于知识库）
-    """
+    """知识库文件及其存储元数据。"""
 
     __tablename__ = "knowledge_files"
     __table_args__ = (
@@ -75,7 +78,6 @@ class File(Base, BaseIdModel, AuditMixin):
         ForeignKey("knowledge_bases.id", ondelete="CASCADE"), index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    # 物理路径或 S3 Key
     file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     storage_backend: Mapped[str] = mapped_column(
         String(20),
