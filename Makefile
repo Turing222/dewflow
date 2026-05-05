@@ -24,13 +24,13 @@ export SMOKE_READY_PATH
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-boundaries qa-format qa-typecheck qa-test-unit qa-test-integration qa-test-all qa-checks \
+	qa-lint qa-boundaries qa-format qa-typecheck qa-alembic-check qa-config-check qa-test-unit qa-test-integration qa-test-all qa-checks \
 	image-build \
 	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
 	seed-dev \
 	verify-smoke \
-	flow-dev-check flow-ci \
+	flow-static flow-runtime flow-dev-check flow-ci \
 	lint format typecheck test check clean-cache
 
 help:
@@ -40,6 +40,8 @@ help:
 		'  qa-boundaries        Check Web/Worker import boundaries' \
 		'  qa-format            Run Ruff formatter' \
 		'  qa-typecheck         Run type checking' \
+		'  qa-alembic-check     Validate migration chain integrity' \
+		'  qa-config-check      Validate config/env for deployment contexts' \
 		'  qa-test-unit         Run unit tests (UNIT_TARGETS=...)' \
 		'  qa-test-integration  Run integration tests (INTEGRATION_TARGETS=...)' \
 		'  qa-test-all          Run all pytest suites except excluded markers' \
@@ -57,7 +59,9 @@ help:
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
 		'  env-smoke-down       Stop the smoke environment' \
 		'  env-smoke-logs       Show recent smoke logs' \
-		'  flow-dev-check       Run the full dev verification flow' \
+		'  flow-static          Run static checks (lint+boundaries+typecheck+alembic+config+tests)' \
+		'  flow-runtime         Run runtime checks (build+smoke up+smoke tests+smoke down)' \
+		'  flow-dev-check       Run the full dev verification flow (static + runtime)' \
 		'  flow-ci              Alias for the dev verification flow'
 
 qa-lint:
@@ -71,6 +75,12 @@ qa-format:
 
 qa-typecheck:
 	uv run ty check .
+
+qa-alembic-check:
+	bash scripts/qa/alembic_check.sh
+
+qa-config-check:
+	uv run python scripts/qa/config_check.py $(ARGS)
 
 qa-test-unit:
 	bash scripts/qa/run_unit.sh $(PYTEST_ARGS) $(UNIT_TARGETS)
@@ -123,8 +133,20 @@ env-debug-services:
 verify-smoke:
 	bash scripts/smoke/test.sh
 
+flow-static:
+	$(MAKE) qa-lint
+	$(MAKE) qa-boundaries
+	$(MAKE) qa-typecheck
+	$(MAKE) qa-alembic-check
+	$(MAKE) qa-config-check
+	$(MAKE) qa-test-all
+
+flow-runtime:
+	bash scripts/flow/runtime_check.sh
+
 flow-dev-check:
-	bash scripts/flow/dev_check.sh
+	$(MAKE) flow-static
+	$(MAKE) flow-runtime
 
 flow-ci: flow-dev-check
 
@@ -136,11 +158,7 @@ typecheck: qa-typecheck
 
 test: qa-test-all
 
-check:
-	$(MAKE) qa-lint
-	$(MAKE) qa-boundaries
-	$(MAKE) qa-typecheck
-	$(MAKE) qa-test-all
+check: flow-static
 
 clean-cache:
 	uv run python -c "import pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.py[co]')]; [p.rmdir() for p in pathlib.Path('.').rglob('__pycache__')]"

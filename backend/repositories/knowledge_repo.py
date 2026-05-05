@@ -1,3 +1,9 @@
+"""Knowledge base, file, and chunk persistence repository.
+
+职责：封装知识库文件 CRUD、切片管理以及向量/全文双路检索。
+边界：本模块不负责文件解析、向量化或对象存储读写。
+"""
+
 import uuid
 from collections.abc import Sequence
 
@@ -10,7 +16,7 @@ from backend.models.orm.knowledge import File, FileStatus, FileVisibility, Knowl
 
 
 class KnowledgeRepository:
-    """知识库聚合仓储（多模型组合，不继承 CRUDBase）。"""
+    """知识库聚合仓储，直接管理 KnowledgeBase/File/DocumentChunk 三表。"""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -105,6 +111,7 @@ class KnowledgeRepository:
         kb_id: uuid.UUID,
         content_sha256: str,
     ) -> File | None:
+        """按内容哈希查重，仅匹配状态为 READY 的文件，避免重复入库。"""
         stmt = (
             select(File)
             .where(File.kb_id == kb_id)
@@ -135,7 +142,6 @@ class KnowledgeRepository:
         await self.session.execute(stmt)
 
     async def add_chunks(self, chunks_data: list[dict]) -> None:
-        # chunks_data 包含 content 和 embedding(list)
         if not chunks_data:
             return
         stmt = insert(DocumentChunk).values(chunks_data)
@@ -146,9 +152,6 @@ class KnowledgeRepository:
         query_vector: list[float],
         limit: int = 5,
     ) -> Sequence[DocumentChunk]:
-        # 利用 pgvector 的 <=> 符号进行余弦相似度搜索
-        from sqlalchemy import select
-
         stmt = (
             select(DocumentChunk)
             .order_by(DocumentChunk.embedding.cosine_distance(query_vector))
@@ -164,8 +167,6 @@ class KnowledgeRepository:
         limit: int = 5,
     ) -> list[tuple[DocumentChunk, float]]:
         """在指定知识库内做向量检索，返回 (chunk, distance)。"""
-        from sqlalchemy import select
-
         distance = DocumentChunk.embedding.cosine_distance(query_vector).label(
             "distance"
         )
@@ -187,7 +188,10 @@ class KnowledgeRepository:
         kb_id: uuid.UUID,
         limit: int = 5,
     ) -> list[tuple[DocumentChunk, float]]:
-        """在指定知识库内做全文检索，返回 (chunk, distance)。"""
+        """在指定知识库内做 PostgreSQL 全文检索，返回 (chunk, distance)。
+
+        distance 由 ts_rank_cd 排名经过 _rank_to_distance 转换，与向量检索保持同方向（值越小越相关）。
+        """
         if not query_text.strip() or limit <= 0:
             return []
 
@@ -216,6 +220,4 @@ class KnowledgeRepository:
 
     @staticmethod
     def _rank_to_distance(rank: float) -> float:
-        # 与向量检索保持同方向：值越小越相关
-        safe_rank = max(0.0, rank)
-        return 1.0 / (1.0 + safe_rank)
+        return 1.0 / (1.0 + max(0.0, rank))

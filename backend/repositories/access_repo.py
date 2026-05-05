@@ -1,3 +1,9 @@
+"""Workspace access and membership persistence repository.
+
+职责：封装工作区 CRUD、软删除、成员角色管理和用户-工作区关联查询。
+边界：本模块不做权限策略判定，只执行数据读写。
+"""
+
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -11,7 +17,7 @@ from backend.models.orm.user import User
 
 
 class AccessRepository:
-    """Workspace/role access queries."""
+    """工作区与成员角色的持久化操作。"""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -31,10 +37,9 @@ class AccessRepository:
         return WorkspaceRole(role) if role else None
 
     async def get_workspace(self, workspace_id: uuid.UUID) -> Workspace | None:
-        """查询单个工作区，自动过滤软删除行。"""
         stmt = select(Workspace).where(
             Workspace.id == workspace_id,
-            Workspace.deleted_at.is_(None),  # R7: 过滤软删除
+            Workspace.deleted_at.is_(None),  # 软删除行不出现在常规查询中
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
@@ -42,7 +47,7 @@ class AccessRepository:
     async def get_workspace_by_slug(self, slug: str) -> Workspace | None:
         stmt = select(Workspace).where(
             Workspace.slug == slug,
-            Workspace.deleted_at.is_(None),  # R7: 过滤软删除
+            Workspace.deleted_at.is_(None),
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
@@ -74,20 +79,17 @@ class AccessRepository:
         return workspace
 
     async def soft_delete_workspace(self, workspace: Workspace) -> None:
-        """
-        R7 修复：软删除工作区（设置 deleted_at 时间戳）。
+        """软删除工作区：设置 deleted_at 时间戳而非物理删除。
 
-        软删除的优势：
-        - KB/File/ChatSession 的 workspace_id 外键保持不变，不会被置 NULL。
-        - 尔后可以对孤立资源批量归档或迁移，数据可捕捉。
-        - 取代物理删除，避免联级删除潫陷。
+        保留 workspace_id 外键关联不被置 NULL，后续可对孤立资源批量归档。
+        常规路径应使用此方法，物理删除仅限超管强制清除。
         """
         workspace.deleted_at = datetime.now(UTC)
         self.session.add(workspace)
         await self.session.flush()
 
     async def delete_workspace(self, workspace: Workspace) -> None:
-        """物理删除，仅供超管强制清除使用。常规删除请使用 soft_delete_workspace。"""
+        """物理删除工作区，仅供超管强制清除。常规删除请使用 soft_delete_workspace。"""
         await self.session.delete(workspace)
         await self.session.flush()
 
@@ -186,7 +188,7 @@ class AccessRepository:
             .join(UserWorkspaceRole, UserWorkspaceRole.workspace_id == Workspace.id)
             .where(
                 UserWorkspaceRole.user_id == user_id,
-                Workspace.deleted_at.is_(None),  # R7: 过滤软删除
+                Workspace.deleted_at.is_(None),
             )
             .order_by(Workspace.created_at.desc())
             .offset(skip)
@@ -202,7 +204,7 @@ class AccessRepository:
             .join(UserWorkspaceRole, UserWorkspaceRole.workspace_id == Workspace.id)
             .where(
                 UserWorkspaceRole.user_id == user_id,
-                Workspace.deleted_at.is_(None),  # R7: 过滤软删除
+                Workspace.deleted_at.is_(None),
             )
         )
         return await self.session.scalar(stmt) or 0

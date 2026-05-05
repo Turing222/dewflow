@@ -1,3 +1,9 @@
+"""Chat session and message persistence repository.
+
+职责：封装 ChatSession 和 ChatMessage 的 CRUD、分页查询、Token 统计和幂等键去重。
+边界：本模块不组装 Prompt、不调用 LLM，只做持久化读写。
+"""
+
 import uuid
 from collections.abc import Sequence
 
@@ -10,7 +16,7 @@ from backend.repositories.base import CRUDBase
 
 
 class ChatRepository:
-    """聊天相关的 Repository，包含 Session 和 Message 的操作"""
+    """会话和消息的持久化操作，组合两个 CRUDBase 实例管理双表。"""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -21,10 +27,7 @@ class ChatRepository:
             ChatMessage, session
         )
 
-    # ========== ChatSession 操作 ==========
-
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None:
-        """根据 ID 获取会话"""
         return await self.session_crud.get(session_id)
 
     async def create_session(
@@ -35,10 +38,9 @@ class ChatRepository:
         workspace_id: uuid.UUID | None = None,
         llm_config: dict | None = None,
     ) -> ChatSession:
-        """创建新会话"""
         data = {
             "user_id": user_id,
-            "title": title[:50] if title else "新对话",  # 限制长度
+            "title": title[:50] if title else "新对话",
             "kb_id": kb_id,
             "workspace_id": workspace_id,
             "llm_config": llm_config or {},
@@ -51,7 +53,6 @@ class ChatRepository:
         skip: int = 0,
         limit: int = 20,
     ) -> Sequence[ChatSession]:
-        """获取用户的会话列表"""
         stmt = (
             select(ChatSession)
             .where(ChatSession.user_id == user_id)
@@ -68,7 +69,7 @@ class ChatRepository:
         skip: int = 0,
         limit: int = 20,
     ) -> list[tuple[ChatSession, int]]:
-        """获取用户会话列表并附带每个会话的总 token（避免 N+1 查询）。"""
+        """一次 JOIN + GROUP BY 返回会话及其总 token，避免逐会话 COUNT 的 N+1 查询。"""
         total_tokens_expr = func.coalesce(
             func.sum(ChatMessage.tokens_input + ChatMessage.tokens_output),
             0,
@@ -87,7 +88,6 @@ class ChatRepository:
         return [(row[0], int(row[1] or 0)) for row in result.all()]
 
     async def count_user_sessions(self, user_id: uuid.UUID) -> int:
-        """统计用户会话总数（分页总量）。"""
         stmt = (
             select(func.count())
             .select_from(ChatSession)
@@ -97,7 +97,6 @@ class ChatRepository:
         return int(result.scalar() or 0)
 
     async def get_session_total_tokens(self, session_id: uuid.UUID) -> int:
-        """计算会话消耗的总 Token 数"""
         stmt = select(
             func.sum(ChatMessage.tokens_input + ChatMessage.tokens_output)
         ).where(ChatMessage.session_id == session_id)
@@ -105,7 +104,6 @@ class ChatRepository:
         return result.scalar() or 0
 
     async def count_session_messages(self, session_id: uuid.UUID) -> int:
-        """统计会话消息总数（分页总量）。"""
         stmt = (
             select(func.count())
             .select_from(ChatMessage)
@@ -114,10 +112,7 @@ class ChatRepository:
         result = await self.session.execute(stmt)
         return int(result.scalar() or 0)
 
-    # ========== ChatMessage 操作 ==========
-
     async def get_message(self, message_id: uuid.UUID) -> ChatMessage | None:
-        """根据 ID 获取消息"""
         return await self.message_crud.get(message_id)
 
     async def create_message(
@@ -134,7 +129,6 @@ class ChatRepository:
         user_id: uuid.UUID | None = None,
         message_metadata: dict | None = None,
     ) -> ChatMessage:
-        """创建新消息"""
         data = {
             "session_id": session_id,
             "role": role,
@@ -156,7 +150,6 @@ class ChatRepository:
         skip: int = 0,
         limit: int = 100,
     ) -> Sequence[ChatMessage]:
-        """获取会话的消息列表，按创建时间正序排列"""
         stmt = (
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)
@@ -178,7 +171,6 @@ class ChatRepository:
         search_context: dict | None = None,
         message_metadata: dict | None = None,
     ) -> ChatMessage | None:
-        """更新消息状态和内容"""
         message = await self.get_message(message_id)
         if not message:
             return None
@@ -206,7 +198,7 @@ class ChatRepository:
         content: str = "",
         user_id: uuid.UUID | None = None,
     ) -> ChatMessage:
-        """创建正在思考中的消息（用于流式输出）"""
+        """创建处于 thinking 状态的消息，供流式输出过程中逐步更新。"""
         return await self.create_message(
             session_id=session_id,
             role=role,
@@ -220,7 +212,7 @@ class ChatRepository:
         client_request_id: str,
         user_id: uuid.UUID,
     ) -> ChatMessage | None:
-        """根据客户端请求 ID 获取当前用户的消息"""
+        """按幂等键查消息，需要 JOIN session 限定当前用户，防止跨用户碰撞。"""
         stmt = (
             select(ChatMessage)
             .join(ChatSession, ChatMessage.session_id == ChatSession.id)

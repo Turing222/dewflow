@@ -14,3 +14,9 @@ uv run python scripts/check_import_boundaries.py
 
 log_section "Running typecheck"
 uv run ty check .
+
+log_section "Running Alembic migration check"
+bash scripts/qa/alembic_check.sh
+
+log_section "Running config/env check"
+uv run python scripts/qa/config_check.py
