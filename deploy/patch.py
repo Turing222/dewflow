@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-file_path = Path(__file__).parent / "monitoring" / "dashboards" / "mlops_main.json"
+file_path = Path(__file__).parent / "monitoring" / "dashboards" / "dewflow_main.json"
 with file_path.open(encoding="utf-8") as f:
     data = json.load(f)
 

@@ -1,11 +1,11 @@
 apiVersion: 1
 providers:
-  - name: 'MLOps Dashboards'
+  - name: 'Dewflow Dashboards'
     orgId: 1
-    folder: 'MLOps'
+    folder: 'Dewflow'
     type: file
     disableDeletion: false
     updateIntervalSeconds: 10
     allowUiUpdates: true
     options:
-      path: /etc/grafana/provisioning/dashboards/mlops
+      path: /etc/grafana/provisioning/dashboards/dewflow

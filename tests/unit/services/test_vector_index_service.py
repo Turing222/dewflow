@@ -90,9 +90,12 @@ async def test_replace_file_chunks_uses_embedding_content_for_structured_chunks(
     )
     records = repo.add_chunks.await_args.args[0]
     assert records[0]["content"] == "原文内容"
-    assert records[0]["content_hash"] == hashlib.sha256(
-        "[文档: demo.md] [章节: Intro]\n原文内容".encode()
-    ).hexdigest()
+    assert (
+        records[0]["content_hash"]
+        == hashlib.sha256(
+            "[文档: demo.md] [章节: Intro]\n原文内容".encode()
+        ).hexdigest()
+    )
     assert records[0]["meta_info"] == {
         "filename": "demo.md",
         "path": "/tmp/demo.md",

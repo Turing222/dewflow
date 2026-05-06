@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--embedding-text",
-        default="MLOps smoke embedding check",
+        default="Dewflow smoke embedding check",
         help="Text used for the live embedding check.",
     )
     return parser.parse_args()

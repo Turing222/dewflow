@@ -1,5 +1,5 @@
 groups:
-  - name: mlops_core_alerts
+  - name: dewflow_core_alerts
     rules:
       # 1. 服务存活告警 (最基础的：某个容器挂了)
       - alert: InstanceDown

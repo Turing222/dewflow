@@ -25,9 +25,9 @@ def make_prompt_config(
             fallback="yaml",
         ),
         langfuse_templates={
-            "default_system": LangfusePromptRef(name="mlops-default-system"),
-            "rag_system": LangfusePromptRef(name="mlops-rag-system"),
-            "summarize": LangfusePromptRef(name="mlops-summarize"),
+            "default_system": LangfusePromptRef(name="dewflow-default-system"),
+            "rag_system": LangfusePromptRef(name="dewflow-rag-system"),
+            "summarize": LangfusePromptRef(name="dewflow-summarize"),
         },
         default_variables={"app_name": "YamlBot"},
         templates={
@@ -53,15 +53,15 @@ source:
 langfuse:
   templates:
     default_system:
-      name: mlops-default-system
+      name: dewflow-default-system
       type: text
       version: 1
     rag_system:
-      name: mlops-rag-system
+      name: dewflow-rag-system
       type: text
       version: 1
     summarize:
-      name: mlops-summarize
+      name: dewflow-summarize
       type: text
       version: 1
 defaults:

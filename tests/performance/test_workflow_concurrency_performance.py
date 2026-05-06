@@ -12,8 +12,14 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.performance]
 
 async def test_workflow_concurrency():
     with (
-        patch("backend.application.chat.web_stream_workflow.settings.LLM_MAX_CONCURRENCY", 2),
-        patch("backend.application.chat.web_stream_workflow.settings.DB_MAX_CONCURRENCY", 2),
+        patch(
+            "backend.application.chat.web_stream_workflow.settings.LLM_MAX_CONCURRENCY",
+            2,
+        ),
+        patch(
+            "backend.application.chat.web_stream_workflow.settings.DB_MAX_CONCURRENCY",
+            2,
+        ),
     ):
         ChatWorkflow._llm_semaphore = asyncio.Semaphore(2)
         ChatWorkflow._db_semaphore = asyncio.Semaphore(2)
@@ -25,8 +31,12 @@ async def test_workflow_concurrency():
         dispatcher = AsyncMock()
 
         with (
-            patch("backend.application.chat.web_stream_workflow.SessionManager") as mock_sm,
-            patch("backend.application.chat.web_stream_workflow.ChatMessageUpdater") as mock_up,
+            patch(
+                "backend.application.chat.web_stream_workflow.SessionManager"
+            ) as mock_sm,
+            patch(
+                "backend.application.chat.web_stream_workflow.ChatMessageUpdater"
+            ) as mock_up,
         ):
             mock_sm_inst = mock_sm.return_value
             mock_sm_inst.ensure_session = AsyncMock(

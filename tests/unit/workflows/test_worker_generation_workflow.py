@@ -87,8 +87,7 @@ class StreamingLLM:
         self.stream_queries: list[LLMQueryDTO] = []
         self.generate_response = AsyncMock(
             return_value=LLMResultDTO(
-                content=rerank_content
-                or '{"rankings": [{"index": 1, "score": 10}]}',
+                content=rerank_content or '{"rankings": [{"index": 1, "score": 10}]}',
             )
         )
 
@@ -323,7 +322,9 @@ async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
         kb_id=uuid.uuid4(),
     )
 
-    await workflow.generate_nonstream(payload=payload, assistant_message_id=uuid.uuid4())
+    await workflow.generate_nonstream(
+        payload=payload, assistant_message_id=uuid.uuid4()
+    )
 
     rag_service.retrieve.assert_awaited_once_with(
         query_text="hi",

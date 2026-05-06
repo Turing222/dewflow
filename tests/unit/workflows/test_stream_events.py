@@ -28,4 +28,3 @@ def test_stream_events_accept_legacy_payloads():
         "message": "failed",
     }
     assert decode_stream_event("[DONE]") == {"type": "done"}
-

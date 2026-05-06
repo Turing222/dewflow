@@ -1,8 +1,8 @@
-# CLAUDE.md — MLOps Platform Backend
+# CLAUDE.md — Dewflow Backend
 
 ## Project Overview
 
-**MLOps Platform Backend** — Python 3.12, FastAPI async web server + TaskIQ worker.
+**Dewflow Backend** — Python 3.12, FastAPI async web server + TaskIQ worker.
 
 - **Web**: FastAPI HTTP API at `backend/api/v1/`
 - **Worker**: TaskIQ async tasks at `backend/worker/`

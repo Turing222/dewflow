@@ -252,7 +252,7 @@
     "schemaVersion": 39,
     "style": "dark",
     "tags": [
-        "mlops"
+        "dewflow"
     ],
     "templating": {
         "list": [
@@ -277,6 +277,6 @@
         "from": "now-1h",
         "to": "now"
     },
-    "title": "MLOps Core Monitoring",
-    "uid": "mlops-core-001"
+    "title": "Dewflow Core Monitoring",
+    "uid": "dewflow-core-001"
 }

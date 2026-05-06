@@ -34,7 +34,9 @@ def test_split_markdown_keeps_fenced_code_block_together():
 def test_split_text_merges_small_paragraphs():
     service = ChunkingService(chunk_size=200, chunk_overlap=20)
 
-    chunks = service.split_text("first paragraph\n\nsecond paragraph", file_suffix=".txt")
+    chunks = service.split_text(
+        "first paragraph\n\nsecond paragraph", file_suffix=".txt"
+    )
 
     assert len(chunks) == 1
     assert chunks[0]["content"] == "first paragraph\n\nsecond paragraph"
