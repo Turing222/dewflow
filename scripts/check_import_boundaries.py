@@ -70,6 +70,21 @@ RULES: list[ImportBoundaryRule] = [
         "forbidden_prefixes": ["backend.api"],
         "skip_patterns": [],
     },
+    {
+        "name": "shared-not-import-fastapi",
+        "desc": "Shared application/service/infra/core code must not import FastAPI",
+        "files": [
+            SRC / "application",
+            SRC / "core",
+            SRC / "infra",
+            SRC / "services",
+            SRC / "worker",
+        ],
+        "forbidden_prefixes": ["fastapi"],
+        "skip_patterns": [
+            "backend/core/exception_handlers.py",
+        ],
+    },
 ]
 
 
@@ -104,9 +119,7 @@ def main() -> int:
                 continue  # skip if path doesn't exist yet
 
             for filepath in files:
-                if any(
-                    pat in str(filepath) for pat in rule.get("skip_patterns", [])
-                ):
+                if any(pat in str(filepath) for pat in rule.get("skip_patterns", [])):
                     continue
                 violations = check_file(filepath, rule["forbidden_prefixes"])
                 if violations:

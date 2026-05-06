@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 
-from backend.core.exceptions import setup_exception_handlers
+from backend.core.exception_handlers import setup_exception_handlers
 from backend.middleware.rate_limit import RateLimiter
 
 

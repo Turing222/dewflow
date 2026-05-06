@@ -4,7 +4,8 @@ import pytest
 from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 
-from backend.core.exceptions import app_not_found, setup_exception_handlers
+from backend.core.exception_handlers import setup_exception_handlers
+from backend.core.exceptions import app_not_found
 
 
 @pytest.fixture

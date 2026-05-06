@@ -14,4 +14,10 @@ set -a
 source "$smoke_env_path"
 set +a
 
-exec .venv/bin/python scripts/smoke/create_kb.py "$@"
+# Docker secrets are not accessible from the host; read the password file instead.
+SMOKE_POSTGRES_PASSWORD_FILE="${SMOKE_POSTGRES_PASSWORD_FILE:-$PROJECT_ROOT/secrets/smoke/postgres_password.txt}"
+if [[ -f "$SMOKE_POSTGRES_PASSWORD_FILE" ]]; then
+    export POSTGRES_PASSWORD="$(< "$SMOKE_POSTGRES_PASSWORD_FILE")"
+fi
+
+exec .venv/bin/python scripts/smoke/create_kb.py --username "${SMOKE_TEST_USER:-smoke-test-user}" "$@"

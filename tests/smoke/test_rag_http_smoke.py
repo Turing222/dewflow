@@ -33,7 +33,7 @@ async def _ensure_live_environment(client: httpx.AsyncClient) -> None:
 
 
 async def _create_auth_headers(client: httpx.AsyncClient) -> tuple[dict[str, str], str]:
-    suffix = uuid.uuid4().hex[:12]
+    suffix = uuid.uuid4().hex[:8]
     username = f"rag_smoke_{suffix}"
     password = "Password123"
 

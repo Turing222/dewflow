@@ -10,7 +10,8 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from backend.api.v1.endpoint import user_api
-from backend.core.exceptions import app_forbidden, setup_exception_handlers
+from backend.core.exception_handlers import setup_exception_handlers
+from backend.core.exceptions import app_forbidden
 from backend.models.schemas.user_schema import UserImportResponse
 
 

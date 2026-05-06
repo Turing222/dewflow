@@ -73,10 +73,16 @@ async def _create_kb(
             result = await session.execute(stmt)
             user = result.scalars().first()
             if user is None:
-                identity = username or email or "<unknown>"
-                raise SystemExit(
-                    f"User not found: {identity}. Register/login the user first, then rerun this command."
+                smoke_username = username or f"smoke-{email or 'user'}"
+                smoke_email = email or f"{smoke_username}@smoke.local"
+                user = User(
+                    username=smoke_username,
+                    email=smoke_email,
+                    hashed_password="smoke-placeholder-not-for-auth",
                 )
+                session.add(user)
+                await session.flush()
+                await session.refresh(user)
 
             kb = KnowledgeBase(
                 name=name,

@@ -20,14 +20,18 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.config.loader import ConfigurationError, get_config_dir, load_yaml_config
+from backend.config.loader import (  # noqa: E402
+    ConfigurationError,
+    get_config_dir,
+    load_yaml_config,
+)
 
 # ═══════════════════════════════════════════════════════════════════════
 # Rule framework
@@ -88,20 +92,24 @@ def _check_secret_files() -> CheckResult:
     return CheckResult(
         name="Secret file references",
         ok=not (missing or empty),
-        detail="; ".join(parts) if parts else "All referenced secret files present and non-empty",
+        detail="; ".join(parts)
+        if parts
+        else "All referenced secret files present and non-empty",
     )
 
 
 def _check_yaml_app_config() -> CheckResult:
     """Validate app YAML configs are parseable and are mappings.
-    
+
     Note: The app/ directory is considered required for the application to run.
     If it is missing, this check will fail.
     """
     try:
         config_dir = get_config_dir()
     except Exception:
-        return CheckResult(name="YAML app config", ok=False, detail="Cannot resolve CONFIG_DIR")
+        return CheckResult(
+            name="YAML app config", ok=False, detail="Cannot resolve CONFIG_DIR"
+        )
 
     app_dir = config_dir / "app"
     if not app_dir.is_dir():
@@ -121,19 +129,23 @@ def _check_yaml_app_config() -> CheckResult:
     return CheckResult(
         name="YAML app config",
         ok=not errors,
-        detail="; ".join(errors) if errors else f"All YAML configs valid ({config_dir / 'app'})",
+        detail="; ".join(errors)
+        if errors
+        else f"All YAML configs valid ({config_dir / 'app'})",
     )
 
 
 def _check_yaml_llm_config() -> CheckResult:
     """Validate LLM provider YAML configs are parseable.
-    
+
     Note: The llm/ directory is optional. If missing, default LLM settings are used.
     """
     try:
         config_dir = get_config_dir()
     except Exception:
-        return CheckResult(name="YAML LLM config", ok=False, detail="Cannot resolve CONFIG_DIR")
+        return CheckResult(
+            name="YAML LLM config", ok=False, detail="Cannot resolve CONFIG_DIR"
+        )
 
     llm_dir = config_dir / "llm"
     if not llm_dir.is_dir():
@@ -153,19 +165,23 @@ def _check_yaml_llm_config() -> CheckResult:
     return CheckResult(
         name="YAML LLM config",
         ok=not errors,
-        detail="; ".join(errors) if errors else f"All LLM YAML configs valid ({llm_dir})",
+        detail="; ".join(errors)
+        if errors
+        else f"All LLM YAML configs valid ({llm_dir})",
     )
 
 
 def _check_yaml_access_config() -> CheckResult:
     """Validate access control YAML configs are parseable.
-    
+
     Note: The access/ directory is optional. If missing, default access settings are used.
     """
     try:
         config_dir = get_config_dir()
     except Exception:
-        return CheckResult(name="YAML access config", ok=False, detail="Cannot resolve CONFIG_DIR")
+        return CheckResult(
+            name="YAML access config", ok=False, detail="Cannot resolve CONFIG_DIR"
+        )
 
     access_dir = config_dir / "access"
     if not access_dir.is_dir():
@@ -185,7 +201,9 @@ def _check_yaml_access_config() -> CheckResult:
     return CheckResult(
         name="YAML access config",
         ok=not errors,
-        detail="; ".join(errors) if errors else f"All access YAML configs valid ({access_dir})",
+        detail="; ".join(errors)
+        if errors
+        else f"All access YAML configs valid ({access_dir})",
     )
 
 
@@ -198,7 +216,9 @@ def _validate_settings(factory: Callable[[], object], label: str) -> CheckResult
     try:
         factory()
     except Exception as exc:
-        return CheckResult(name=label, ok=False, detail=f"Failed to load settings: {exc}")
+        return CheckResult(
+            name=label, ok=False, detail=f"Failed to load settings: {exc}"
+        )
     return CheckResult(name=label, ok=True, detail="Settings loaded successfully")
 
 
@@ -276,7 +296,9 @@ def _check_worker_requirements() -> CheckResult:
         )
 
     return CheckResult(
-        name="Worker requirements", ok=True, detail=f"LLM_PROVIDER={provider} configured"
+        name="Worker requirements",
+        ok=True,
+        detail=f"LLM_PROVIDER={provider} configured",
     )
 
 
@@ -288,25 +310,31 @@ CONTEXTS: dict[str, Context] = {
     "web": Context(
         name="web",
         desc="Web/HTTP API",
-        settings_factory=lambda: _lazy_import("backend.config.web_settings", "get_web_settings")(),
+        settings_factory=lambda: _lazy_import(
+            "backend.config.web_settings", "get_web_settings"
+        )(),
         extra_checks=[_check_web_requirements],
     ),
     "worker": Context(
         name="worker",
         desc="Worker + AI",
-        settings_factory=lambda: _lazy_import("backend.config.ai_settings", "get_ai_settings")(),
+        settings_factory=lambda: _lazy_import(
+            "backend.config.ai_settings", "get_ai_settings"
+        )(),
         extra_checks=[_check_worker_requirements],
     ),
     "all": Context(
         name="all",
         desc="Full application",
-        settings_factory=lambda: _lazy_import("backend.config.settings", "get_settings")(),
+        settings_factory=lambda: _lazy_import(
+            "backend.config.settings", "get_settings"
+        )(),
         extra_checks=[_check_web_requirements, _check_worker_requirements],
     ),
 }
 
 
-def _lazy_import(module: str, attr: str) -> object:
+def _lazy_import(module: str, attr: str) -> Callable[..., object]:
     import importlib
 
     return getattr(importlib.import_module(module), attr)
@@ -366,7 +394,9 @@ def run_checks(context_name: str) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate application config and environment")
+    parser = argparse.ArgumentParser(
+        description="Validate application config and environment"
+    )
     parser.add_argument(
         "--context",
         choices=list(CONTEXTS),
