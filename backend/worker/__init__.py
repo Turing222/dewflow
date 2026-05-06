@@ -1,2 +1,1 @@
 """Worker process package."""
-

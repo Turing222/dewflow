@@ -5,16 +5,18 @@
 失败处理：唯一性和数据库异常转换为统一业务错误。
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import secrets
 from typing import Any
 
-from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.contracts.uploads import UploadFileLike
 from backend.core.exceptions import (
     AppException,
     app_service_error,
@@ -38,7 +40,10 @@ class UserImportService(BaseService[AbstractUnitOfWork]):
         "email": "email",
     }
 
-    async def import_from_upload(self, upload_file: UploadFile) -> UserImportResponse:
+    async def import_from_upload(
+        self,
+        upload_file: UploadFileLike,
+    ) -> UserImportResponse:
         if not upload_file.filename:
             raise app_validation_error("文件名不能为空", code="UPLOAD_FILENAME_EMPTY")
 

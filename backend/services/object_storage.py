@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from fastapi import UploadFile
-
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+from backend.contracts.uploads import UploadFileLike
 
 
 class UploadSizeLimitExceeded(Exception):
@@ -56,7 +56,7 @@ class ObjectStorage(Protocol):
         *,
         kb_id: uuid.UUID,
         filename: str,
-        upload_file: UploadFile,
+        upload_file: UploadFileLike,
         max_size_bytes: int,
     ) -> StoredObject: ...
 
@@ -81,7 +81,7 @@ class LocalObjectStorage:
         *,
         kb_id: uuid.UUID,
         filename: str,
-        upload_file: UploadFile,
+        upload_file: UploadFileLike,
         max_size_bytes: int,
     ) -> StoredObject:
         key = self._build_key(kb_id=kb_id, filename=filename)
@@ -169,7 +169,7 @@ class S3ObjectStorage:
         *,
         kb_id: uuid.UUID,
         filename: str,
-        upload_file: UploadFile,
+        upload_file: UploadFileLike,
         max_size_bytes: int,
     ) -> StoredObject:
         key = self._build_key(kb_id=kb_id, filename=filename)
@@ -281,7 +281,7 @@ def create_object_storage(settings) -> ObjectStorage:
 
 async def _stream_upload_to_path(
     *,
-    upload_file: UploadFile,
+    upload_file: UploadFileLike,
     path: Path,
     max_size_bytes: int,
 ) -> UploadStreamStats:
@@ -303,7 +303,7 @@ async def _stream_upload_to_path(
 
 async def _copy_upload_to_temp(
     *,
-    upload_file: UploadFile,
+    upload_file: UploadFileLike,
     max_size_bytes: int,
     suffix: str,
 ) -> tuple[Path, UploadStreamStats]:

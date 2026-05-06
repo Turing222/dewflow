@@ -1,5 +1,5 @@
 [project]
-name = "mlops-project"
+name = "dewflow"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -25,6 +25,8 @@ dependencies = [
     "taskiq-redis~=1.2.0",
     "langfuse~=3.14.0",
     "boto3~=1.42.0",
+    # File parsing (shared by web and worker)
+    "openpyxl~=3.1.0",
 ]
 
 [project.optional-dependencies]
@@ -46,7 +48,6 @@ ai = [
     "tiktoken~=0.9.0",
     # Knowledge processing
     "pypdfium2~=5.3.0",
-    "openpyxl~=3.1.0",
 ]
 
 [tool.ruff]

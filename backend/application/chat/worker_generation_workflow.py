@@ -87,7 +87,9 @@ class LLMGenerationWorkerWorkflow:
                     "chat.assistant_message_id": assistant_message_id,
                     "chat.prompt.tokens_input": tokens_input,
                     "chat.prompt.uses_rag": search_context is not None,
-                    "llm.provider": getattr(self.llm_service, "provider_name", "unknown"),
+                    "llm.provider": getattr(
+                        self.llm_service, "provider_name", "unknown"
+                    ),
                     "gen_ai.request.model": getattr(
                         self.llm_service, "model_name", "unknown"
                     ),
@@ -118,7 +120,10 @@ class LLMGenerationWorkerWorkflow:
                     search_context=search_context,
                     start_time=start_time,
                 )
-                if idempotency_lock_key is not None and assistant_message_id is not None:
+                if (
+                    idempotency_lock_key is not None
+                    and assistant_message_id is not None
+                ):
                     await redis_connection.set(
                         idempotency_lock_key,
                         str(assistant_message_id),
@@ -189,7 +194,9 @@ class LLMGenerationWorkerWorkflow:
                     "chat.assistant_message_id": assistant_message_id,
                     "chat.prompt.tokens_input": tokens_input,
                     "chat.prompt.uses_rag": search_context is not None,
-                    "llm.provider": getattr(self.llm_service, "provider_name", "unknown"),
+                    "llm.provider": getattr(
+                        self.llm_service, "provider_name", "unknown"
+                    ),
                     "gen_ai.request.model": getattr(
                         self.llm_service, "model_name", "unknown"
                     ),

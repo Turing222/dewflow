@@ -32,7 +32,11 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     """
 
     # ── App Metadata ──────────────────────────────────────────────
-    APP_ENV: str = Field(default_factory=lambda: __import__("os").getenv("APP_ENV", "local").strip().lower() or "local")
+    APP_ENV: str = Field(
+        default_factory=lambda: (
+            __import__("os").getenv("APP_ENV", "local").strip().lower() or "local"
+        )
+    )
     CONFIG_DIR: Path = Field(default_factory=_config_dir)
     BASE_DIR: Path = BASE_DIR
     LOG_DIR: Path = BASE_DIR / "logs/backend"
@@ -171,6 +175,7 @@ class Settings(WebSettings, AISettings, WorkerSettings):
         if normalized not in {"disable", "require"}:
             raise ValueError("POSTGRES_SSL_MODE must be one of: disable, require")
         return normalized
+
 
 @lru_cache
 def get_settings() -> Settings:

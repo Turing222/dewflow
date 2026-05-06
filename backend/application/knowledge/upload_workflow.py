@@ -5,13 +5,14 @@
 失败处理：任务创建或投递失败时，尽力回写文件和任务失败状态。
 """
 
+from __future__ import annotations
+
 import logging
 import uuid
 from types import TracebackType
 
-from fastapi import UploadFile
-
 from backend.contracts.interfaces import AbstractTaskDispatcher
+from backend.contracts.uploads import UploadFileLike
 from backend.core.exceptions import AppException
 from backend.models.orm.knowledge import File, FileStatus
 from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
@@ -42,7 +43,7 @@ class IngestionStateGuard:
         self.file_id = file_id
         self.task_id: uuid.UUID | None = None
 
-    async def __aenter__(self) -> "IngestionStateGuard":
+    async def __aenter__(self) -> IngestionStateGuard:
         return self
 
     async def __aexit__(
@@ -109,7 +110,7 @@ class KnowledgeUploadWorkflow:
         self,
         *,
         user_id: uuid.UUID,
-        upload_file: UploadFile,
+        upload_file: UploadFileLike,
         kb_id: uuid.UUID | None = None,
     ) -> KnowledgeUploadResponse:
         """保存上传文件，并为需要入库的文件创建异步任务。"""
@@ -189,13 +190,15 @@ class KnowledgeUploadWorkflow:
                             user_id=user_id,
                         )
                     else:
-                        task = await self.task_service.create_completed_kb_ingestion_task(
-                            kb_id=kb_id,
-                            file_id=file_obj.id,
-                            file_path=file_obj.file_path,
-                            filename=file_obj.filename,
-                            user_id=user_id,
-                            deduplicated=deduplicated,
+                        task = (
+                            await self.task_service.create_completed_kb_ingestion_task(
+                                kb_id=kb_id,
+                                file_id=file_obj.id,
+                                file_path=file_obj.file_path,
+                                filename=file_obj.filename,
+                                user_id=user_id,
+                                deduplicated=deduplicated,
+                            )
                         )
                 set_span_attributes(
                     span, {"task.id": task.id, "task.status": task.status}

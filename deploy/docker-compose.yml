@@ -54,7 +54,7 @@ services:
     networks:
       - app_net
   api:
-    image: ai-tutor-backend:v1
+    image: ai-tutor-backend:web-v1
     container_name: api
     volumes:
       - knowledge_files_volume:/data/knowledge_files
@@ -199,7 +199,7 @@ services:
     volumes:
       - ./monitoring/grafana_datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./monitoring/grafana_dashboards_provisioning.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
-      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/mlops:ro
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/dewflow:ro
     networks:
       - monitor_net
 
@@ -240,7 +240,7 @@ services:
   # 1. 专门负责“更新数据库”的工具人
 
   db_migrator:
-    image: ai-tutor-backend:v1
+    image: ai-tutor-backend:web-v1
     depends_on:
       postgres:
         condition: service_healthy
@@ -279,7 +279,7 @@ services:
 
   # 5. 异步长连接任务队列 Taskiq Worker
   task_worker:
-    image: ai-tutor-backend:v1
+    image: ai-tutor-backend:ai-v1
     container_name: task_worker
     volumes:
       - knowledge_files_volume:/data/knowledge_files

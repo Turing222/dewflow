@@ -11,7 +11,7 @@ from backend.api.v1.api import api_router
 from backend.config.llm import validate_llm_configs
 from backend.config.permissions import get_permission_policy
 from backend.config.settings import settings
-from backend.core.exceptions import setup_exception_handlers
+from backend.core.exception_handlers import setup_exception_handlers
 from backend.infra.database import init_db
 from backend.infra.redis import redis_client
 from backend.middleware.tracing import setup_tracing

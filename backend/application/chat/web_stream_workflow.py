@@ -291,9 +291,7 @@ class ChatWorkflow:
                     else:
                         content = event.get("content", "")
                         accumulated_content.append(content)
-                        first_chunk = json.dumps(
-                            {"type": "chunk", "content": content}
-                        )
+                        first_chunk = json.dumps({"type": "chunk", "content": content})
                         yield f"data: {first_chunk}\n\n"
                     break
 

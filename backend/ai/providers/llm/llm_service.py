@@ -217,8 +217,10 @@ class LLMService(AbstractLLMService):
 
                 usage = completion.usage
                 prompt_tokens = usage.prompt_tokens if usage else None
-                completion_tokens = usage.completion_tokens if usage else count_tokens(
-                    content, self.model_name
+                completion_tokens = (
+                    usage.completion_tokens
+                    if usage
+                    else count_tokens(content, self.model_name)
                 )
                 set_span_attributes(
                     span,

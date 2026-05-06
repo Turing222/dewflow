@@ -37,9 +37,7 @@ class UserRepository:
     async def get(self, id: Any) -> User | None:
         return await self.crud.get(id)
 
-    async def get_multi(
-        self, *, skip: int = 0, limit: int = 100
-    ) -> Sequence[User]:
+    async def get_multi(self, *, skip: int = 0, limit: int = 100) -> Sequence[User]:
         return await self.crud.get_multi(skip=skip, limit=limit)
 
     async def create(self, *, obj_in: UserCreateData) -> User:

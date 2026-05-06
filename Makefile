@@ -1,6 +1,7 @@
 SHELL := /bin/bash
 
-DOCKER_IMAGE_NAME ?= ai-tutor-backend:v1
+DOCKER_IMAGE_NAME_WEB ?= ai-tutor-backend:web-v1
+DOCKER_IMAGE_NAME_AI ?= ai-tutor-backend:ai-v1
 SMOKE_COMPOSE_FILE ?= docker-compose.db.yml
 DEBUG_COMPOSE_FILE ?= docker-compose.debug.yml
 SMOKE_ENV_FILE ?= .env.smoke
@@ -12,7 +13,7 @@ UNIT_TARGETS ?= tests/unit
 INTEGRATION_TARGETS ?= tests/integration
 PYTEST_ARGS ?=
 
-export DOCKER_IMAGE_NAME
+export DOCKER_IMAGE_NAME_WEB DOCKER_IMAGE_NAME_AI
 export SMOKE_COMPOSE_FILE
 export DEBUG_COMPOSE_FILE
 export SMOKE_ENV_FILE
@@ -24,13 +25,13 @@ export SMOKE_READY_PATH
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-boundaries qa-format qa-typecheck qa-alembic-check qa-config-check qa-test-unit qa-test-integration qa-test-all qa-checks \
+	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-unit qa-test-integration qa-test-all qa-checks \
 	image-build \
 	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
 	seed-dev \
 	verify-smoke \
-	flow-static flow-runtime flow-dev-check flow-ci \
+	flow-static flow-runtime flow-dev-check flow-ci layer-deps \
 	lint format typecheck test check clean-cache
 
 help:
@@ -40,6 +41,7 @@ help:
 		'  qa-boundaries        Check Web/Worker import boundaries' \
 		'  qa-format            Run Ruff formatter' \
 		'  qa-typecheck         Run type checking' \
+		'  qa-layer-deps        Verify each extras layer can import independently' \
 		'  qa-alembic-check     Validate migration chain integrity' \
 		'  qa-config-check      Validate config/env for deployment contexts' \
 		'  qa-test-unit         Run unit tests (UNIT_TARGETS=...)' \
@@ -75,6 +77,9 @@ qa-format:
 
 qa-typecheck:
 	uv run ty check .
+
+qa-layer-deps:
+	bash scripts/qa/layer_deps_check.sh
 
 qa-alembic-check:
 	bash scripts/qa/alembic_check.sh
@@ -137,6 +142,7 @@ flow-static:
 	$(MAKE) qa-lint
 	$(MAKE) qa-boundaries
 	$(MAKE) qa-typecheck
+	$(MAKE) qa-layer-deps
 	$(MAKE) qa-alembic-check
 	$(MAKE) qa-config-check
 	$(MAKE) qa-test-all
@@ -157,6 +163,8 @@ format: qa-format
 typecheck: qa-typecheck
 
 test: qa-test-all
+
+layer-deps: qa-layer-deps
 
 check: flow-static
 

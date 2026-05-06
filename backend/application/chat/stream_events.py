@@ -56,4 +56,3 @@ def _decode_legacy_payload(payload: str) -> StreamEvent:
     if payload.startswith("[ERROR]"):
         return {"type": "error", "message": payload[7:]}
     return {"type": "chunk", "content": payload}
-

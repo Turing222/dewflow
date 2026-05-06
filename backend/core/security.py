@@ -5,11 +5,11 @@
 副作用：CPU 密集的密码操作放入线程池，避免阻塞事件循环。
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
-from fastapi.concurrency import run_in_threadpool
 from pwdlib import PasswordHash
 from pwdlib.exceptions import PwdlibError
 
@@ -21,8 +21,10 @@ password_hasher = PasswordHash.recommended()
 async def verify_password(plain_password: str, hashed_password: str) -> bool:
     """在线程池中校验密码，避免阻塞事件循环。"""
     try:
-        return await run_in_threadpool(
-            password_hasher.verify, plain_password, hashed_password
+        return await asyncio.to_thread(
+            password_hasher.verify,
+            plain_password,
+            hashed_password,
         )
     except PwdlibError:
         # 非法哈希按认证失败处理，避免把内部格式错误暴露给调用方。
@@ -32,7 +34,7 @@ async def verify_password(plain_password: str, hashed_password: str) -> bool:
 async def get_password_hash(password: str) -> str:
     """在线程池中生成密码哈希。"""
 
-    return await run_in_threadpool(password_hasher.hash, password)
+    return await asyncio.to_thread(password_hasher.hash, password)
 
 
 def create_access_token(

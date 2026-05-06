@@ -246,7 +246,11 @@ class ChatNonStreamWorkflow:
             ) from exc
 
         if not result or not result.get("success"):
-            error_msg = result.get("error", "LLM 服务返回失败") if result else "LLM 服务返回失败"
+            error_msg = (
+                result.get("error", "LLM 服务返回失败")
+                if result
+                else "LLM 服务返回失败"
+            )
             raise app_service_error(
                 error_msg,
                 code="LLM_SERVICE_FAILED",

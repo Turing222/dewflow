@@ -141,7 +141,7 @@ services:
     restart: "no"
 
   db_migrator:
-    image: ai-tutor-backend:v1
+    image: ai-tutor-backend:web-v1
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     secrets: *app-secrets
     environment:
@@ -174,7 +174,7 @@ services:
     restart: "no"
 
   api:
-    image: ai-tutor-backend:v1
+    image: ai-tutor-backend:web-v1
     logging: *default-logging
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     volumes:
@@ -215,7 +215,7 @@ services:
       - "8000:8000"
 
   task_worker:
-    image: ai-tutor-backend:v1
+    image: ai-tutor-backend:ai-v1
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     logging: *default-logging
     volumes:
@@ -327,7 +327,7 @@ services:
     volumes:
       - ./deploy/monitoring/grafana_datasources_db.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./deploy/monitoring/grafana_dashboards_provisioning.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
-      - ./deploy/monitoring/dashboards:/etc/grafana/provisioning/dashboards/mlops:ro
+      - ./deploy/monitoring/dashboards:/etc/grafana/provisioning/dashboards/dewflow:ro
       - grafana_data_db:/var/lib/grafana
     depends_on:
       prometheus:

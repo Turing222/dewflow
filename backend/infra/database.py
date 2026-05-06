@@ -5,12 +5,14 @@
 副作用：init_db 会在 FastAPI lifespan 中预热连接并在关闭时释放连接池。
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI
 from opentelemetry import trace
 from sqlalchemy import event, text
 from sqlalchemy.engine import ExceptionContext
@@ -118,7 +120,7 @@ def create_db_assets() -> tuple[AsyncEngine, async_sessionmaker]:
 
 
 @asynccontextmanager
-async def init_db(app: FastAPI) -> AsyncGenerator[None, None]:
+async def init_db(app: Any) -> AsyncGenerator[None, None]:
     """在 FastAPI lifespan 中注册数据库资源并负责关闭。"""
     engine, session_factory = create_db_assets()
 

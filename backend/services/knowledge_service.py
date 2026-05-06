@@ -5,13 +5,14 @@
 失败处理：数据库记录创建失败时会删除已保存对象，避免产生孤儿文件。
 """
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import UploadFile
-
 from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.contracts.uploads import UploadFileLike
 from backend.core.exceptions import (
     AppException,
     app_not_found,
@@ -67,7 +68,7 @@ class KnowledgeService:
         *,
         kb_id: uuid.UUID,
         user_id: uuid.UUID,
-        upload_file: UploadFile,
+        upload_file: UploadFileLike,
     ) -> File:
         result = await self.save_upload_file_for_ingestion(
             kb_id=kb_id,
@@ -81,7 +82,7 @@ class KnowledgeService:
         *,
         kb_id: uuid.UUID,
         user_id: uuid.UUID,
-        upload_file: UploadFile,
+        upload_file: UploadFileLike,
     ) -> SavedKnowledgeFile:
         safe_filename = self._validate_upload_file(upload_file)
         kb = await self._ensure_kb_access(
@@ -197,7 +198,7 @@ class KnowledgeService:
         base = base.replace("\x00", "")
         return base
 
-    def _validate_upload_file(self, upload_file: UploadFile) -> str:
+    def _validate_upload_file(self, upload_file: UploadFileLike) -> str:
         if not upload_file.filename:
             raise app_validation_error(
                 "上传文件名不能为空", code="UPLOAD_FILENAME_EMPTY"
