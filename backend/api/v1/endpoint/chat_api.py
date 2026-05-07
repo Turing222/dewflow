@@ -19,7 +19,6 @@ from backend.api.dependencies import (
     get_chat_nonstream_workflow,
     get_chat_workflow,
     get_current_active_user,
-    get_permission_service,
     get_session_query_service,
 )
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
@@ -35,7 +34,6 @@ from backend.models.schemas.chat.api import (
 )
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.services.audit_service import AuditAction, AuditService, capture_audit
-from backend.services.permission_service import PermissionService
 from backend.services.session_query_service import SessionQueryService
 
 # R8 修复：限流参数从 settings 读取，通过环境变量控制（CHAT_RATE_LIMIT_TIMES / CHAT_RATE_LIMIT_SECONDS）
@@ -47,7 +45,7 @@ chat_limiter = RateLimiter(
 
 router = APIRouter()
 
-CurrentUser = Annotated[User, Depends(get_current_active_user)]
+CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 SessionQueryServiceDep = Annotated[
     SessionQueryService, Depends(get_session_query_service)
 ]
@@ -55,20 +53,16 @@ NonStreamWorkflowDep = Annotated[
     ChatNonStreamWorkflow, Depends(get_chat_nonstream_workflow)
 ]
 StreamWorkflowDep = Annotated[ChatWorkflow, Depends(get_chat_workflow)]
-ChatRateLimitDep = Annotated[None, Depends(chat_limiter)]
-SessionSkipParam = Annotated[int, Query(ge=0, description="跳过的记录数")]
-SessionListLimitParam = Annotated[int, Query(ge=1, le=100, description="每页记录数")]
-SessionDetailLimitParam = Annotated[int, Query(ge=1, le=500)]
+AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
 @router.post("/query_sent", response_model=ChatQueryResponse)
 async def query_sent(
     request: QuerySentRequest,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     workflow: NonStreamWorkflowDep,
-    _: ChatRateLimitDep,
-    permission_service: PermissionService = Depends(get_permission_service),
-    audit_service: AuditService = Depends(get_audit_service),
+    _: Annotated[None, Depends(chat_limiter)],
+    audit_service: AuditServiceDep,
 ) -> ChatQueryResponse:
     """
     用户发送查询（非流式）。
@@ -102,11 +96,10 @@ async def query_sent(
 @router.post("/query_stream")
 async def query_stream(
     request: QuerySentRequest,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     workflow: StreamWorkflowDep,
-    _: ChatRateLimitDep,
-    permission_service: PermissionService = Depends(get_permission_service),
-    audit_service: AuditService = Depends(get_audit_service),
+    _: Annotated[None, Depends(chat_limiter)],
+    audit_service: AuditServiceDep,
 ) -> StreamingResponse:
     """
     用户发送查询（SSE 流式响应）。
@@ -189,11 +182,10 @@ async def query_stream(
 
 @router.get("/sessions", response_model=SessionListResponse)
 async def get_sessions(
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     session_query_service: SessionQueryServiceDep,
-    skip: SessionSkipParam = 0,
-    limit: SessionListLimitParam = 20,
-    permission_service: PermissionService = Depends(get_permission_service),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> SessionListResponse:
     """获取当前用户的会话列表（侧边栏）"""
     async with session_query_service.uow:
@@ -207,11 +199,10 @@ async def get_sessions(
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
 async def get_session_detail(
     session_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     session_query_service: SessionQueryServiceDep,
-    skip: SessionSkipParam = 0,
-    limit: SessionDetailLimitParam = 100,
-    permission_service: PermissionService = Depends(get_permission_service),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> SessionDetailResponse:
     """获取会话详情及历史消息"""
     async with session_query_service.uow:

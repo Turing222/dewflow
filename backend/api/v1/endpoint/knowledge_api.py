@@ -24,12 +24,13 @@ from backend.services.task_service import TaskService
 
 router = APIRouter()
 UpFile = Annotated[UploadFile, File()]
-CurrentUser = Annotated[User, Depends(get_current_active_user)]
+CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 KnowledgeUploadWorkflowDep = Annotated[
     KnowledgeUploadWorkflow, Depends(get_knowledge_upload_workflow)
 ]
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
 KnowledgeServiceDep = Annotated[KnowledgeService, Depends(get_knowledge_service)]
+AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
 @router.post(
@@ -39,9 +40,9 @@ KnowledgeServiceDep = Annotated[KnowledgeService, Depends(get_knowledge_service)
 )
 async def upload_file_to_default_kb(
     file: UpFile,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     upload_workflow: KnowledgeUploadWorkflowDep,
-    audit_service: AuditService = Depends(get_audit_service),
+    audit_service: AuditServiceDep,
 ) -> KnowledgeUploadResponse:
     async with capture_audit(
         audit_service,
@@ -77,9 +78,9 @@ async def upload_file_to_default_kb(
 async def upload_file(
     kb_id: uuid.UUID,
     file: UpFile,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     upload_workflow: KnowledgeUploadWorkflowDep,
-    audit_service: AuditService = Depends(get_audit_service),
+    audit_service: AuditServiceDep,
 ) -> KnowledgeUploadResponse:
     async with capture_audit(
         audit_service,
@@ -101,7 +102,7 @@ async def upload_file(
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
 async def get_task_status(
     task_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     task_service: TaskServiceDep,
 ) -> TaskResponse:
     async with task_service.uow:
@@ -116,7 +117,7 @@ async def get_task_status(
 @router.get("/files/{file_id}", response_model=KnowledgeFileResponse)
 async def get_file_status(
     file_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: KnowledgeServiceDep,
 ) -> KnowledgeFileResponse:
     async with service.uow:

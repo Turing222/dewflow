@@ -19,12 +19,13 @@ from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.services.user_service import UserService
 
 router = APIRouter()
-UOW = Annotated[AbstractUnitOfWork, Depends(get_uow)]
+UOWDep = Annotated[AbstractUnitOfWork, Depends(get_uow)]
 LoginDataDep = Annotated[UserLogin, Depends(get_login_data)]
+AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_in: UserCreate, uow: UOW) -> UserResponse:
+async def register(user_in: UserCreate, uow: UOWDep) -> UserResponse:
     async with uow:
         user = await UserService(uow).user_register_with_personal_workspace(user_in)
     return UserResponse.model_validate(user)
@@ -33,8 +34,8 @@ async def register(user_in: UserCreate, uow: UOW) -> UserResponse:
 @router.post("/login", response_model=Token)
 async def login(
     login_data: LoginDataDep,
-    uow: UOW,
-    audit_service: AuditService = Depends(get_audit_service),
+    uow: UOWDep,
+    audit_service: AuditServiceDep,
 ) -> Token:
     # 1. 调用 Service 验证
     async with uow:

@@ -70,9 +70,6 @@ def api_context():
     app.dependency_overrides[user_api.get_current_superuser] = lambda: super_user
     app.dependency_overrides[user_api.get_user_service] = lambda: user_service
     app.dependency_overrides[user_api.get_user_import_service] = lambda: import_service
-    app.dependency_overrides[user_api.get_permission_service] = lambda: (
-        SimpleNamespace()
-    )
     app.dependency_overrides[user_api.get_audit_service] = lambda: SimpleNamespace()
 
     ctx = SimpleNamespace(

@@ -14,12 +14,12 @@ from backend.services.permission_types import Permission
 
 router = APIRouter()
 
-CurrentUser = Annotated[User, Depends(get_current_active_user)]
+CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 
 
 @router.get("/policy", response_model=PermissionPolicyResponse)
 async def get_permission_policy_metadata(
-    _: CurrentUser,
+    _: CurrentUserDep,
 ) -> PermissionPolicyResponse:
     config = get_permissions_config()
     policy = get_permission_policy()

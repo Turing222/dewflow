@@ -21,11 +21,9 @@ from backend.services.permission_service import Permission, PermissionService
 
 router = APIRouter()
 
-CurrentUser = Annotated[User, Depends(get_current_active_user)]
-UOW = Annotated[AbstractUnitOfWork, Depends(get_uow)]
+CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
+UOWDep = Annotated[AbstractUnitOfWork, Depends(get_uow)]
 PermissionServiceDep = Annotated[PermissionService, Depends(get_permission_service)]
-SkipParam = Annotated[int, Query(ge=0, description="跳过的记录数")]
-LimitParam = Annotated[int, Query(ge=1, le=200, description="每页记录数")]
 
 
 def _apply_audit_filters(
@@ -73,11 +71,11 @@ async def _ensure_audit_access(
 
 @router.get("/events", response_model=AuditEventListResponse)
 async def list_audit_events(
-    current_user: CurrentUser,
-    uow: UOW,
+    current_user: CurrentUserDep,
+    uow: UOWDep,
     permission_service: PermissionServiceDep,
-    skip: SkipParam = 0,
-    limit: LimitParam = 20,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 20,
     action: str | None = Query(None, max_length=80),
     outcome: AuditOutcome | None = None,
     request_id: str | None = Query(None, max_length=64),

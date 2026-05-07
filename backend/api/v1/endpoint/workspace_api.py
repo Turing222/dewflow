@@ -25,10 +25,9 @@ from backend.services.workspace_service import WorkspaceService
 
 router = APIRouter()
 
-CurrentUser = Annotated[User, Depends(get_current_active_user)]
+CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 WorkspaceServiceDep = Annotated[WorkspaceService, Depends(get_workspace_service)]
-SkipParam = Annotated[int, Query(ge=0, description="跳过的记录数")]
-LimitParam = Annotated[int, Query(ge=1, le=100, description="每页记录数")]
+AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
 def _workspace_response(
@@ -70,9 +69,9 @@ def _member_response(user_role, user: User) -> WorkspaceMemberResponse:
 )
 async def create_workspace(
     workspace_in: WorkspaceCreate,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
-    audit_service: AuditService = Depends(get_audit_service),
+    audit_service: AuditServiceDep,
 ) -> WorkspaceResponse:
     async with capture_audit(
         audit_service,
@@ -92,10 +91,10 @@ async def create_workspace(
 
 @router.get("", response_model=WorkspaceListResponse)
 async def list_workspaces(
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
-    skip: SkipParam = 0,
-    limit: LimitParam = 20,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> WorkspaceListResponse:
     async with service.uow:
         items, total = await service.list_user_workspaces(
@@ -114,7 +113,7 @@ async def list_workspaces(
 @router.get("/{workspace_id}", response_model=WorkspaceResponse)
 async def get_workspace(
     workspace_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
 ) -> WorkspaceResponse:
     async with service.uow:
@@ -129,9 +128,9 @@ async def get_workspace(
 async def update_workspace(
     workspace_id: uuid.UUID,
     workspace_in: WorkspaceUpdate,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
-    audit_service: AuditService = Depends(get_audit_service),
+    audit_service: AuditServiceDep,
 ) -> WorkspaceResponse:
     async with capture_audit(
         audit_service,
@@ -154,9 +153,9 @@ async def update_workspace(
 @router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workspace(
     workspace_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
-    audit_service: AuditService = Depends(get_audit_service),
+    audit_service: AuditServiceDep,
 ) -> Response:
     async with capture_audit(
         audit_service,
@@ -177,10 +176,10 @@ async def delete_workspace(
 @router.get("/{workspace_id}/members", response_model=WorkspaceMemberListResponse)
 async def list_workspace_members(
     workspace_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
-    skip: SkipParam = 0,
-    limit: LimitParam = 20,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> WorkspaceMemberListResponse:
     async with service.uow:
         items, total = await service.list_workspace_members(
@@ -205,9 +204,9 @@ async def list_workspace_members(
 async def add_workspace_member(
     workspace_id: uuid.UUID,
     member_in: WorkspaceMemberCreate,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
-    audit_service: AuditService = Depends(get_audit_service),
+    audit_service: AuditServiceDep,
 ) -> WorkspaceMemberResponse:
     async with capture_audit(
         audit_service,
@@ -235,9 +234,9 @@ async def update_workspace_member(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     member_in: WorkspaceMemberUpdate,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
-    audit_service: AuditService = Depends(get_audit_service),
+    audit_service: AuditServiceDep,
 ) -> WorkspaceMemberResponse:
     async with capture_audit(
         audit_service,
@@ -265,9 +264,9 @@ async def update_workspace_member(
 async def remove_workspace_member(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
-    audit_service: AuditService = Depends(get_audit_service),
+    audit_service: AuditServiceDep,
 ) -> Response:
     async with capture_audit(
         audit_service,

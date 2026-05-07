@@ -30,6 +30,7 @@ async def test_upload_file_delegates_to_submit_workflow():
         file=upload_file,
         current_user=SimpleNamespace(id=user_id),
         upload_workflow=upload_workflow,
+        audit_service=SimpleNamespace(),
     )
 
     assert result == expected
@@ -57,6 +58,7 @@ async def test_upload_file_to_default_kb_delegates_to_submit_workflow():
         file=upload_file,
         current_user=SimpleNamespace(id=user_id),
         upload_workflow=upload_workflow,
+        audit_service=SimpleNamespace(),
     )
 
     assert result == expected

@@ -132,8 +132,9 @@ async def test_update_user_success(user_service):
     result = await user_api.update_user(
         user_id=user_id,
         user_in=user_in,
-        _=make_user(is_superuser=True),
+        current_user=make_user(is_superuser=True),
         user_service=user_service,
+        audit_service=SimpleNamespace(),
     )
 
     assert result.id == user_id
@@ -149,8 +150,9 @@ async def test_update_user_returns_404_when_not_found(user_service):
         await user_api.update_user(
             user_id=uuid.uuid4(),
             user_in=UserUpdate(username="new_name"),
-            _=make_user(is_superuser=True),
+            current_user=make_user(is_superuser=True),
             user_service=user_service,
+            audit_service=SimpleNamespace(),
         )
 
     assert exc_info.value.status_code == 404
@@ -170,8 +172,9 @@ async def test_create_user_success(user_service):
 
     result = await user_api.create_user(
         user_in=user_in,
-        _=make_user(is_superuser=True),
+        current_user=make_user(is_superuser=True),
         user_service=user_service,
+        audit_service=SimpleNamespace(),
     )
 
     assert result.username == "new_user"
@@ -190,8 +193,9 @@ async def test_create_user_returns_400_when_service_returns_none(user_service):
                 password="Password123",
                 confirm_password="Password123",
             ),
-            _=make_user(is_superuser=True),
+            current_user=make_user(is_superuser=True),
             user_service=user_service,
+            audit_service=SimpleNamespace(),
         )
 
     assert exc_info.value.status_code == 400
@@ -211,8 +215,9 @@ async def test_csv_bulk_insert_users_success(import_service):
 
     result = await user_api.csv_balk_insert_users(
         file=upload_file,
-        _=make_user(is_superuser=True),
+        current_user=make_user(is_superuser=True),
         import_service=import_service,
+        audit_service=SimpleNamespace(),
     )
 
     assert result == expected

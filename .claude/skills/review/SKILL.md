@@ -49,38 +49,38 @@ Check:
 
 ## Output Format
 
-Group findings by pass. Each finding includes file:line, severity, and a one-line fix.
+用中文按 pass 分组输出，不使用表格。每个 finding 用编号文本，包含严重级别、文件行号、问题和修复建议。
 
-```
+严重级别：
+
+- `必须修复`：违反 CRITICAL 规则，或会导致实际 bug。
+- `建议修复`：违反约定，或降低可维护性。
+- `提示`：观察项，可选改进。
+
+Good template:
+
+```md
 ## Review: [branch or files]
 
-### Style & Naming
-| Severity | File:Line | Issue | Fix |
-|----------|-----------|-------|-----|
+### 风格与命名
+未发现问题。
 
-### Architecture
-| Severity | File:Line | Issue | Fix |
-|----------|-----------|-------|-----|
+### 架构
+未发现问题。
 
-### Logic & Correctness
-| Severity | File:Line | Issue | Fix |
-|----------|-----------|-------|-----|
+### 逻辑与正确性
+
+1. [建议修复] `backend/config/schemas/prompts.py:24`
+   问题：`PromptTemplateDefinition.content` 使用了会返回 `strip()` 后内容的 validator，会改变 prompt 模板首尾空白。
+   修复建议：保留非空校验，但返回原始字符串。
 ```
-
-Severity labels:
-
-| Label | Meaning |
-|-------|---------|
-| `Must Fix` | violates a CRITICAL rule, would cause bugs |
-| `Should Fix` | violates a convention, degrades maintainability |
-| `Note` | observation, optional improvement |
 
 ## Rules
 
 - Only report actual problems.
-- When a pass has **no findings**: write `No issues found.` only. Do NOT list verified items or "all changes align" commentary — a clean pass speaks for itself.
-- When a pass has **findings**: use the table format. One row per finding.
+- When a pass has **no findings**: write `未发现问题。` only. Do NOT list verified items or "all changes align" commentary — a clean pass speaks for itself.
+- When a pass has **findings**: use numbered text. One numbered item per finding.
 - Do NOT re-state CLAUDE.md rules in findings — reference them by name (e.g. "violates naming: banned short name `res`")
 - When a finding spans multiple lines, reference the first line
-- Architecture violations are always `Must Fix`
+- Architecture violations are always `必须修复`
 - Never combine unrelated issues into one finding
