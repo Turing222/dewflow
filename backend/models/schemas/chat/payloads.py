@@ -1,10 +1,7 @@
-"""Shared chat generation payload contracts.
-
-This module is intentionally lightweight so Web workflows can build worker
-payloads without importing worker-side AI orchestration.
+"""Worker payload schemas.
 
 职责：定义 Web → Worker 任务投递的数据契约。
-边界：不依赖 worker 侧 AI 编排模块，Web 和 Worker 共同引用此模块。
+边界：必须完全可 JSON 序列化，且 Web 和 Worker 共同引用此模块，不依赖具体实现。
 """
 
 import uuid
@@ -12,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from backend.models.schemas.chat_schema import ConversationMessage
+from backend.models.schemas.chat.dto import ConversationMessage
 
 
 class GenerationPayload(BaseModel):
@@ -24,3 +21,15 @@ class GenerationPayload(BaseModel):
     kb_id: uuid.UUID | None = None
     rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
     extra_body: dict[str, object] | None = None
+
+
+class GenerationResult(BaseModel):
+    """Worker → Web non-stream task result."""
+
+    success: bool
+    content: str = ""
+    tokens_input: int | None = None
+    tokens_output: int | None = None
+    search_context: dict | None = None
+    latency_ms: int | None = None
+    error: str | None = None

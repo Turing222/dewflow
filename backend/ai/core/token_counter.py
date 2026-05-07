@@ -8,7 +8,7 @@
 import logging
 from collections.abc import Sequence
 
-from backend.models.schemas.chat_schema import ConversationMessage
+from backend.models.schemas.chat.dto import ConversationMessage
 
 logger = logging.getLogger(__name__)
 

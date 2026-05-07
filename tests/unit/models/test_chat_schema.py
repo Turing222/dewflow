@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from backend.models.schemas.chat_schema import QuerySentRequest
+from backend.models.schemas.chat.api import QuerySentRequest
 
 
 def test_query_request_extra_body_accepts_thinking_mode():

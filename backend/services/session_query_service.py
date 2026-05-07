@@ -10,7 +10,7 @@ import uuid
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden, app_not_found
-from backend.models.schemas.chat_schema import (
+from backend.models.schemas.chat.api import (
     MessageResponse,
     SessionDetailResponse,
     SessionListResponse,

@@ -9,7 +9,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 
 from backend.contracts.interfaces import AbstractLLMService
-from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
 

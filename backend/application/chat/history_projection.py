@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any, cast
 
-from backend.models.schemas.chat_schema import ChatMessageRole, ConversationMessage
+from backend.models.schemas.chat.dto import ChatMessageRole, ConversationMessage
 
 
 def history_to_conversation_messages(

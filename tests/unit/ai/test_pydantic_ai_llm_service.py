@@ -8,7 +8,7 @@ from backend.ai.providers.llm.llm_service import LLMService
 from backend.ai.providers.llm.pydantic_ai_service import PydanticAILLMService
 from backend.ai.providers.llm.routing_service import LLMRoutingService
 from backend.core.exceptions import AppException
-from backend.models.schemas.chat_schema import LLMQueryDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO
 
 
 def make_query(messages: list[dict] | None = None) -> LLMQueryDTO:

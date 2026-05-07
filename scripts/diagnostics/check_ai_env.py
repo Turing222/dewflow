@@ -77,7 +77,7 @@ def check_llm(*, live: bool, prompt: str) -> bool:
 async def _run_llm_live_check(prompt: str):
     from backend.ai.providers.llm.factory import LLMProviderFactory
     from backend.config.settings import settings
-    from backend.models.schemas.chat_schema import LLMQueryDTO
+    from backend.models.schemas.chat.dto import LLMQueryDTO
 
     service = LLMProviderFactory.create(settings.LLM_PROVIDER)
     return await service.generate_response(

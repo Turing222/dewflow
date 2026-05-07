@@ -18,7 +18,7 @@ from backend.ai.core.token_counter import count_messages_tokens
 from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.core.exceptions import app_payload_too_large
-from backend.models.schemas.chat_schema import ConversationMessage
+from backend.models.schemas.chat.dto import ConversationMessage
 
 logger = logging.getLogger(__name__)
 

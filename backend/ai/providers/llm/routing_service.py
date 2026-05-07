@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from backend.contracts.interfaces import AbstractLLMService
 from backend.core.exceptions import app_service_error
-from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 
 logger = logging.getLogger(__name__)
 

@@ -15,7 +15,7 @@ from backend.ai.providers.llm.mock_provider import MockLLMService
 from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.infra.database import create_db_assets
-from backend.models.schemas.chat_schema import LLMQueryDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.services.rag_service import RAGService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.vector_index_service import VectorIndexService

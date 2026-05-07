@@ -13,7 +13,7 @@ from typing import Any, cast
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractRAGService
-from backend.models.schemas.chat_schema import ChatMessageRole, ConversationMessage
+from backend.models.schemas.chat.dto import ChatMessageRole, ConversationMessage
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)

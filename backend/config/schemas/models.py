@@ -13,7 +13,7 @@ from backend.config.schemas._validators import (
     validate_unique_non_empty_list,
 )
 from backend.config.schemas.embeddings import EmbeddingModelsConfig
-from backend.models.schemas.llm_params import LLMExtraBody
+from backend.models.schemas.chat.params import LLMExtraBody
 
 
 class LLMModelProfile(BaseModel):

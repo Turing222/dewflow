@@ -14,7 +14,7 @@ from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractLLMService
 from backend.core.exceptions import AppException, app_service_error
-from backend.models.schemas.chat_schema import (
+from backend.models.schemas.chat.dto import (
     ConversationMessage,
     LLMQueryDTO,
     LLMResultDTO,

@@ -13,8 +13,8 @@ from langfuse import observe
 from backend.application.chat.worker_generation_workflow import (
     LLMGenerationWorkerWorkflow,
 )
-from backend.contracts.chat_generation import GenerationPayload
 from backend.infra.task_broker import broker
+from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
 from backend.observability.trace_utils import trace_span, use_trace_context
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.worker.dependencies import (
@@ -99,7 +99,7 @@ async def generate_llm_nonstream_task(
     assistant_message_id: str | None = None,
     user_id: str | None = None,
     idempotency_lock_key: str | None = None,
-) -> dict[str, Any]:
+) -> GenerationResult:
     """TaskIQ 入口：恢复 trace context 后执行非流式生成，返回结果 dict。"""
     with use_trace_context(trace_context):
         return await _generate_llm_nonstream_task(
@@ -116,7 +116,7 @@ async def _generate_llm_nonstream_task(
     assistant_message_id: str | None = None,
     user_id: str | None = None,
     idempotency_lock_key: str | None = None,
-) -> dict[str, Any]:
+) -> GenerationResult:
     logger.info(
         "TaskIQ Worker 开始处理非流式请求: message_id=%s",
         assistant_message_id,

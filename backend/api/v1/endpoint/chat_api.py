@@ -27,12 +27,13 @@ from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.config.settings import settings
 from backend.middleware.rate_limit import RateLimiter
 from backend.models.orm.user import User
-from backend.models.schemas.chat_schema import (
+from backend.models.schemas.chat.api import (
     ChatQueryResponse,
     QuerySentRequest,
     SessionDetailResponse,
     SessionListResponse,
 )
+from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.services.audit_service import AuditAction, AuditService, capture_audit
 from backend.services.permission_service import PermissionService
 from backend.services.session_query_service import SessionQueryService
@@ -84,7 +85,7 @@ async def query_sent(
         },
     ) as audit:
         extra_body = request.extra_body.to_provider_dict() if request.extra_body else None
-        result = await workflow.handle_query(
+        command = ChatQueryCommand(
             user_id=current_user.id,
             query_text=request.query,
             session_id=request.session_id,
@@ -92,6 +93,7 @@ async def query_sent(
             client_request_id=request.client_request_id,
             extra_body=extra_body,
         )
+        result = await workflow.handle_query(command)
         audit.set_resource(resource_id=result.answer.id)
         audit.add_metadata(session_id=str(result.session_id))
         return result
@@ -137,14 +139,15 @@ async def query_stream(
                 request.extra_body.to_provider_dict() if request.extra_body else None
             )
             meta_captured = False
-            async for chunk in workflow.handle_query_stream(
+            command = ChatQueryCommand(
                 user_id=current_user.id,
                 query_text=request.query,
                 session_id=request.session_id,
                 kb_id=request.kb_id,
                 client_request_id=request.client_request_id,
                 extra_body=extra_body,
-            ):
+            )
+            async for chunk in workflow.handle_query_stream(command):
                 # 仅在首个 meta 事件时更新 audit resource_id（session_id / message_id）
                 if (
                     not meta_captured

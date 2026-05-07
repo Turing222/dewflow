@@ -14,7 +14,8 @@ from backend.api.v1.endpoint import chat_api
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.config.settings import settings
 from backend.models.orm.chat import MessageStatus
-from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat.payloads import GenerationResult
 
 
 class _FakeEncoding:
@@ -282,14 +283,14 @@ def api_context():
     llm_service = RecordingLLMService()
     mock_dispatcher = AsyncMock()
     mock_dispatcher.enqueue_nonstream = AsyncMock(
-        return_value={
-            "success": True,
-            "content": "这是集成测试里的回答",
-            "tokens_input": 10,
-            "tokens_output": 5,
-            "search_context": None,
-            "latency_ms": 200,
-        }
+        return_value=GenerationResult(
+            success=True,
+            content="这是集成测试里的回答",
+            tokens_input=10,
+            tokens_output=5,
+            search_context=None,
+            latency_ms=200,
+        )
     )
     workflow = ChatNonStreamWorkflow(uow=uow, dispatcher=mock_dispatcher)
 

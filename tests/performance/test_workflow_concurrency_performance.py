@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.application.chat.web_stream_workflow import ChatWorkflow
+from backend.models.schemas.chat.commands import ChatQueryCommand
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.performance]
 
@@ -59,7 +60,10 @@ async def test_workflow_concurrency():
 
             async def consume_stream():
                 async for _ in workflow.handle_query_stream(
-                    user_id=user_id, query_text="hello"
+                    ChatQueryCommand(
+                        user_id=user_id,
+                        query_text="hello",
+                    )
                 ):
                     pass
 

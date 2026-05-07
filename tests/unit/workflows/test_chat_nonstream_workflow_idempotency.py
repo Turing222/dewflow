@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
+from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.schemas.chat.payloads import GenerationResult
 
 pytestmark = pytest.mark.asyncio
 
@@ -41,14 +43,22 @@ async def test_idempotency():
 
         try:
             await workflow.handle_query(
-                user_id, "hello", client_request_id=client_req_id
+                ChatQueryCommand(
+                    user_id=user_id,
+                    query_text="hello",
+                    client_request_id=client_req_id,
+                )
             )
         except Exception:
             pass
 
         with pytest.raises(Exception, match="正在加速计算中"):
             await workflow.handle_query(
-                user_id, "hello", client_request_id=client_req_id
+                ChatQueryCommand(
+                    user_id=user_id,
+                    query_text="hello",
+                    client_request_id=client_req_id,
+                )
             )
 
 
@@ -64,7 +74,12 @@ async def test_token_quota():
     uow.__aenter__.return_value = uow
 
     with pytest.raises(Exception, match="Token 余额不足"):
-        await workflow.handle_query(user_id, "hello")
+        await workflow.handle_query(
+            ChatQueryCommand(
+                user_id=user_id,
+                query_text="hello",
+            )
+        )
 
 
 async def test_worker_dispatch_on_success():
@@ -72,14 +87,14 @@ async def test_worker_dispatch_on_success():
     uow = MagicMock()
     user_id = uuid.uuid4()
 
-    mock_worker_result = {
-        "success": True,
-        "content": "Hello from worker",
-        "tokens_input": 10,
-        "tokens_output": 5,
-        "search_context": None,
-        "latency_ms": 200,
-    }
+    mock_worker_result = GenerationResult(
+        success=True,
+        content="Hello from worker",
+        tokens_input=10,
+        tokens_output=5,
+        search_context=None,
+        latency_ms=200,
+    )
     mock_dispatcher = AsyncMock()
     mock_dispatcher.enqueue_nonstream = AsyncMock(return_value=mock_worker_result)
     workflow = _build_workflow(uow=uow, dispatcher=mock_dispatcher)
@@ -123,7 +138,12 @@ async def test_worker_dispatch_on_success():
             return_value=[],
         ),
     ):
-        result = await workflow.handle_query(user_id, "hello")
+        result = await workflow.handle_query(
+            ChatQueryCommand(
+                user_id=user_id,
+                query_text="hello",
+            )
+        )
 
     assert result is not None
     assert result.session_id == session.id

@@ -6,7 +6,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat.payloads import GenerationResult
 from backend.repositories.access_repo import AccessRepository
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.knowledge_repo import KnowledgeRepository
@@ -157,7 +158,7 @@ class AbstractTaskDispatcher(ABC):
         assistant_message_id: str | None = None,
         user_id: str | None = None,
         idempotency_lock_key: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> GenerationResult:
         """投递非流式 LLM 生成任务并等待结果返回。"""
         ...
 

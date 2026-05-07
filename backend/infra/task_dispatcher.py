@@ -14,6 +14,7 @@ from taskiq.kicker import AsyncKicker
 from backend.config.ai_settings import ai_settings
 from backend.contracts.interfaces import AbstractTaskDispatcher
 from backend.infra.task_broker import broker
+from backend.models.schemas.chat.payloads import GenerationResult
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class TaskDispatcher(AbstractTaskDispatcher):
         assistant_message_id: str | None = None,
         user_id: str | None = None,
         idempotency_lock_key: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> GenerationResult:
         kicker = self._get_kicker(TASK_NONSTREAM)
         task = await kicker.kiq(
             generation_payload,
@@ -79,7 +80,7 @@ class TaskDispatcher(AbstractTaskDispatcher):
         taskiq_result = await task.wait_result(
             timeout=ai_settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS + 300
         )
-        return taskiq_result.return_value
+        return GenerationResult.model_validate(taskiq_result.return_value)
 
     async def enqueue_ingestion(
         self,

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from backend.ai.providers.llm.llm_service import LLMService
-from backend.models.schemas.chat_schema import LLMQueryDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.performance]
 

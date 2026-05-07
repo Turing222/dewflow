@@ -14,9 +14,9 @@ from backend.application.chat.stream_events import (
 from backend.application.chat.worker_generation_workflow import (
     LLMGenerationWorkerWorkflow,
 )
-from backend.contracts.chat_generation import GenerationPayload
 from backend.core.exceptions import app_service_error
-from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
+from backend.models.schemas.chat.payloads import GenerationPayload
 
 
 class DummyUoW:
@@ -257,8 +257,8 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
         idempotency_lock_key="idempotency:test",
     )
 
-    assert result["success"] is True
-    assert result["content"] == "full answer"
+    assert result.success is True
+    assert result.content == "full answer"
     llm_service.generate_response.assert_awaited_once()
     uow.chat_repo.update_message_status.assert_awaited_once()
     update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs

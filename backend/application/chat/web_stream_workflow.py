@@ -16,7 +16,6 @@ from langfuse import get_client, observe
 from backend.application.chat.history_projection import history_to_conversation_messages
 from backend.application.chat.stream_events import decode_stream_event
 from backend.config.settings import settings
-from backend.contracts.chat_generation import GenerationPayload
 from backend.contracts.interfaces import (
     AbstractTaskDispatcher,
     AbstractUnitOfWork,
@@ -24,6 +23,8 @@ from backend.contracts.interfaces import (
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_service_error
 from backend.infra.redis import redis_client
+from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import (
     inject_trace_context,
     set_span_attributes,
@@ -49,13 +50,14 @@ class ChatWorkflow:
     @observe()
     async def handle_query_stream(
         self,
-        user_id: uuid.UUID,
-        query_text: str,
-        session_id: uuid.UUID | None = None,
-        kb_id: uuid.UUID | None = None,
-        client_request_id: str | None = None,
-        extra_body: dict[str, object] | None = None,
+        command: ChatQueryCommand,
     ) -> AsyncGenerator[str, None]:
+        user_id = command.user_id
+        query_text = command.query_text
+        session_id = command.session_id
+        kb_id = command.kb_id
+        client_request_id = command.client_request_id
+        extra_body = command.extra_body
         """处理 SSE 流式查询请求。"""
         # Langfuse trace 需要在业务入口绑定用户和会话信息。
         get_client().update_current_trace(

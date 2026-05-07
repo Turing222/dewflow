@@ -17,7 +17,7 @@ from backend.contracts.interfaces import (
 )
 from backend.core.exceptions import AppException
 from backend.models.orm.chunk import DocumentChunk
-from backend.models.schemas.chat_schema import LLMQueryDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.vector_index_service import VectorIndexService
 

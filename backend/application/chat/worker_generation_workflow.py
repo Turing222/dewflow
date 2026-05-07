@@ -19,7 +19,6 @@ from backend.application.chat.stream_events import (
 )
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
-from backend.contracts.chat_generation import GenerationPayload
 from backend.contracts.interfaces import (
     AbstractLLMService,
     AbstractRAGService,
@@ -28,7 +27,8 @@ from backend.contracts.interfaces import (
 from backend.core.concurrency import llm_concurrency_slot
 from backend.core.exceptions import AppException
 from backend.infra.redis import redis_client
-from backend.models.schemas.chat_schema import LLMQueryDTO
+from backend.models.schemas.chat.dto import LLMQueryDTO
+from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import ChatMessageUpdater
 from backend.services.rag_service import RAGService
@@ -172,7 +172,7 @@ class LLMGenerationWorkerWorkflow:
         assistant_message_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
         idempotency_lock_key: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> GenerationResult:
         """Generate a non-streaming answer, persist final state, and return result."""
         redis_connection = await redis_client.init()
         start_time = time.time()
@@ -229,7 +229,7 @@ class LLMGenerationWorkerWorkflow:
                     error_content=error_msg,
                     idempotency_lock_key=idempotency_lock_key,
                 )
-                return {"success": False, "error": error_msg}
+                return GenerationResult(success=False, error=error_msg)
 
             full_content = result.content
             tokens_output = result.completion_tokens or self._count_output_tokens(
@@ -257,14 +257,14 @@ class LLMGenerationWorkerWorkflow:
                 payload.session_id,
                 assistant_message_id,
             )
-            return {
-                "success": True,
-                "content": full_content,
-                "tokens_input": tokens_input,
-                "tokens_output": tokens_output,
-                "search_context": search_context,
-                "latency_ms": result.latency_ms,
-            }
+            return GenerationResult(
+                success=True,
+                content=full_content,
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                search_context=search_context,
+                latency_ms=result.latency_ms,
+            )
 
         except AppException as exc:
             logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
@@ -273,7 +273,7 @@ class LLMGenerationWorkerWorkflow:
                 error_content=str(exc),
                 idempotency_lock_key=idempotency_lock_key,
             )
-            return {"success": False, "error": str(exc)}
+            return GenerationResult(success=False, error=str(exc))
         except Exception:
             logger.exception("TaskIQ 调用 LLM 系统异常")
             await self._persist_failure(
@@ -281,7 +281,7 @@ class LLMGenerationWorkerWorkflow:
                 error_content="服务暂时不可用，请稍后重试",
                 idempotency_lock_key=idempotency_lock_key,
             )
-            return {"success": False, "error": "服务暂时不可用，请稍后重试"}
+            return GenerationResult(success=False, error="服务暂时不可用，请稍后重试")
 
     # ── Shared Helpers ─────────────────────────────────────────────
 

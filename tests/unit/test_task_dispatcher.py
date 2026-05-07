@@ -56,6 +56,7 @@ async def test_enqueue_stream_passes_params_through():
 @pytest.mark.asyncio
 async def test_enqueue_nonstream_passes_params_and_returns_result():
     from backend.infra.task_dispatcher import TaskDispatcher
+    from backend.models.schemas.chat.payloads import GenerationResult
 
     dispatcher = TaskDispatcher()
     payload = {"session_id": str(uuid.uuid4()), "query_text": "hello"}
@@ -89,7 +90,9 @@ async def test_enqueue_nonstream_passes_params_and_returns_result():
         )
 
     mock_task.wait_result.assert_awaited_once()
-    assert result == expected_result
+    assert isinstance(result, GenerationResult)
+    assert result.success is True
+    assert result.content == "answer"
 
 
 @pytest.mark.asyncio

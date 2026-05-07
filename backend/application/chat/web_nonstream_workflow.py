@@ -6,13 +6,11 @@
 """
 
 import logging
-import uuid
 
 from langfuse import get_client, observe
 
 from backend.application.chat.history_projection import history_to_conversation_messages
 from backend.config.settings import settings
-from backend.contracts.chat_generation import GenerationPayload
 from backend.contracts.interfaces import (
     AbstractTaskDispatcher,
     AbstractUnitOfWork,
@@ -25,11 +23,13 @@ from backend.core.exceptions import (
 )
 from backend.infra.redis import redis_client
 from backend.models.orm.chat import MessageStatus
-from backend.models.schemas.chat_schema import (
+from backend.models.schemas.chat.api import (
     ChatQueryResponse,
     MessageResponse,
     MessageStatusEnum,
 )
+from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import (
     inject_trace_context,
     set_span_attributes,
@@ -57,13 +57,14 @@ class ChatNonStreamWorkflow:
     @observe()
     async def handle_query(
         self,
-        user_id: uuid.UUID,
-        query_text: str,
-        session_id: uuid.UUID | None = None,
-        kb_id: uuid.UUID | None = None,
-        client_request_id: str | None = None,
-        extra_body: dict[str, object] | None = None,
+        command: ChatQueryCommand,
     ) -> ChatQueryResponse:
+        user_id = command.user_id
+        query_text = command.query_text
+        session_id = command.session_id
+        kb_id = command.kb_id
+        client_request_id = command.client_request_id
+        extra_body = command.extra_body
         get_client().update_current_trace(
             user_id=str(user_id),
             session_id=str(session_id) if session_id else None,
@@ -247,10 +248,10 @@ class ChatNonStreamWorkflow:
                 code="LLM_SERVICE_ERROR",
             ) from exc
 
-        if not result or not result.get("success"):
+        if not result or not result.success:
             error_msg = (
-                result.get("error", "LLM 服务返回失败")
-                if result
+                result.error
+                if result and result.error
                 else "LLM 服务返回失败"
             )
             raise app_service_error(
@@ -264,10 +265,10 @@ class ChatNonStreamWorkflow:
             id=assistant_msg.id,
             session_id=session.id,
             role="assistant",
-            content=result["content"],
+            content=result.content,
             status=MessageStatusEnum.SUCCESS,
-            latency_ms=result.get("latency_ms"),
-            search_context=result.get("search_context"),
+            latency_ms=result.latency_ms,
+            search_context=result.search_context,
             created_at=assistant_msg.created_at,
             updated_at=assistant_msg.updated_at,
         )
