@@ -11,6 +11,10 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from backend.config.schemas.embeddings import (
+    EmbeddingModelProfile as _SchemaEmbeddingProfile,
+)
+
 if TYPE_CHECKING:
     from backend.config.schemas import LLMModelsConfig
 
@@ -38,6 +42,20 @@ class EmbeddingProfile:
     def resolve_base_url(self) -> str | None:
         settings = _get_settings()
         return self.base_url or settings.RAG_EMBED_BASE_URL
+
+    @classmethod
+    def from_schema(
+        cls, name: str, profile: _SchemaEmbeddingProfile
+    ) -> EmbeddingProfile:
+        return cls(
+            name=name,
+            provider=profile.provider,
+            model=profile.model,
+            base_url=profile.base_url,
+            api_key_envs=tuple(profile.api_key_envs),
+            aliases=tuple(profile.aliases),
+            dimensions=profile.dimensions,
+        )
 
 
 def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProfile]:
@@ -78,15 +96,7 @@ def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProf
         }
 
     return {
-        name: EmbeddingProfile(
-            name=name,
-            provider=profile.provider,
-            model=profile.model,
-            base_url=profile.base_url,
-            api_key_envs=tuple(profile.api_key_envs),
-            aliases=tuple(profile.aliases),
-            dimensions=profile.dimensions,
-        )
+        name: EmbeddingProfile.from_schema(name, profile)
         for name, profile in config.embeddings.profiles.items()
     }
 

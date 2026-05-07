@@ -18,6 +18,8 @@ from backend.config.embedding import EmbeddingProfile, build_embedding_profiles
 from backend.config.loader import ConfigurationError, load_yaml_config
 from backend.config.prompts import get_prompt_config
 from backend.config.schemas import LLMModelsConfig
+from backend.config.schemas.models import LLMModelProfile as _SchemaLLMProfile
+from backend.config.schemas.models import LLMModelRoute as _SchemaLLMRoute
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +50,20 @@ class LLMProfile:
     def resolve_base_url(self) -> str | None:
         return self.base_url or _provider_default_base_url(self.provider)
 
+    @classmethod
+    def from_schema(cls, name: str, profile: _SchemaLLMProfile) -> LLMProfile:
+        return cls(
+            name=name,
+            provider=profile.provider,
+            model=profile.model,
+            base_url=profile.base_url,
+            api_key_envs=tuple(profile.api_key_envs),
+            aliases=tuple(profile.aliases),
+            extra_body=(
+                profile.extra_body.to_provider_dict() if profile.extra_body else None
+            ),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class LLMRoute:
@@ -56,6 +72,14 @@ class LLMRoute:
     name: str
     profiles: tuple[str, ...]
     aliases: tuple[str, ...]
+
+    @classmethod
+    def from_schema(cls, name: str, route: _SchemaLLMRoute) -> LLMRoute:
+        return cls(
+            name=name,
+            profiles=tuple(route.profiles),
+            aliases=tuple(route.aliases),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +141,45 @@ class LLMModelConfig:
             )
         return self.embedding_profiles[profile_name]
 
+    @classmethod
+    def from_schema(cls, config: LLMModelsConfig) -> LLMModelConfig:
+        profiles = {
+            name: LLMProfile.from_schema(name, profile)
+            for name, profile in config.profiles.items()
+        }
+        alias_map: dict[str, str] = {}
+        for profile_name, profile in profiles.items():
+            for identifier in (profile_name, *profile.aliases):
+                alias_map[identifier.lower()] = profile_name
+
+        routes = {
+            name: LLMRoute.from_schema(name, route)
+            for name, route in config.routes.items()
+        }
+        route_alias_map: dict[str, str] = {}
+        for route_name, route in routes.items():
+            for identifier in (route_name, *route.aliases):
+                route_alias_map[identifier.lower()] = route_name
+
+        embedding_profiles = build_embedding_profiles(config)
+        embedding_alias_map: dict[str, str] = {}
+        for profile_name, profile in embedding_profiles.items():
+            for identifier in (profile_name, *profile.aliases):
+                embedding_alias_map[identifier.lower()] = profile_name
+
+        return cls(
+            default_profile=config.default_profile,
+            profiles=profiles,
+            alias_map=alias_map,
+            routes=routes,
+            route_alias_map=route_alias_map,
+            embedding_default_profile=(
+                config.embeddings.default_profile if config.embeddings else "mock"
+            ),
+            embedding_profiles=embedding_profiles,
+            embedding_alias_map=embedding_alias_map,
+        )
+
 
 def load_llm_model_config(
     *,
@@ -128,57 +191,7 @@ def load_llm_model_config(
         config = LLMModelsConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigurationError(f"Invalid LLM models config: {exc}") from exc
-
-    profiles = {
-        name: LLMProfile(
-            name=name,
-            provider=profile.provider,
-            model=profile.model,
-            base_url=profile.base_url,
-            api_key_envs=tuple(profile.api_key_envs),
-            aliases=tuple(profile.aliases),
-            extra_body=(
-                profile.extra_body.to_provider_dict() if profile.extra_body else None
-            ),
-        )
-        for name, profile in config.profiles.items()
-    }
-    alias_map: dict[str, str] = {}
-    for profile_name, profile in profiles.items():
-        for identifier in (profile_name, *profile.aliases):
-            alias_map[identifier.lower()] = profile_name
-
-    routes = {
-        name: LLMRoute(
-            name=name,
-            profiles=tuple(route.profiles),
-            aliases=tuple(route.aliases),
-        )
-        for name, route in config.routes.items()
-    }
-    route_alias_map: dict[str, str] = {}
-    for route_name, route in routes.items():
-        for identifier in (route_name, *route.aliases):
-            route_alias_map[identifier.lower()] = route_name
-
-    embedding_profiles = build_embedding_profiles(config)
-    embedding_alias_map: dict[str, str] = {}
-    for profile_name, profile in embedding_profiles.items():
-        for identifier in (profile_name, *profile.aliases):
-            embedding_alias_map[identifier.lower()] = profile_name
-
-    return LLMModelConfig(
-        default_profile=config.default_profile,
-        profiles=profiles,
-        alias_map=alias_map,
-        routes=routes,
-        route_alias_map=route_alias_map,
-        embedding_default_profile=(
-            config.embeddings.default_profile if config.embeddings else "mock"
-        ),
-        embedding_profiles=embedding_profiles,
-        embedding_alias_map=embedding_alias_map,
-    )
+    return LLMModelConfig.from_schema(config)
 
 
 @lru_cache

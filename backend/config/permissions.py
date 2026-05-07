@@ -41,6 +41,25 @@ class PermissionPolicy:
     def allows_missing_workspace(self) -> bool:
         return self.missing_workspace == "allow"
 
+    @classmethod
+    def from_schema(cls, config: PermissionsConfig) -> PermissionPolicy:
+        all_permissions = frozenset(Permission)
+        role_permissions: dict[WorkspaceRole, frozenset[Permission]] = {}
+        for role_name, role_config in config.roles.items():
+            role = WorkspaceRole(role_name)
+            if role_config.permissions == ["*"]:
+                role_permissions[role] = all_permissions
+                continue
+            role_permissions[role] = frozenset(
+                Permission(permission) for permission in role_config.permissions
+            )
+        return cls(
+            role_permissions=role_permissions,
+            superuser_bypass=config.defaults.superuser_bypass,
+            missing_workspace=config.defaults.missing_workspace,
+            missing_role=config.defaults.missing_role,
+        )
+
 
 def load_permission_policy(
     *,
@@ -48,24 +67,7 @@ def load_permission_policy(
 ) -> PermissionPolicy:
     """加载权限策略并转换为枚举集合。"""
     config = load_permissions_config(config_dir=config_dir)
-
-    all_permissions = frozenset(Permission)
-    role_permissions: dict[WorkspaceRole, frozenset[Permission]] = {}
-    for role_name, role_config in config.roles.items():
-        role = WorkspaceRole(role_name)
-        if role_config.permissions == ["*"]:
-            role_permissions[role] = all_permissions
-            continue
-        role_permissions[role] = frozenset(
-            Permission(permission) for permission in role_config.permissions
-        )
-
-    return PermissionPolicy(
-        role_permissions=role_permissions,
-        superuser_bypass=config.defaults.superuser_bypass,
-        missing_workspace=config.defaults.missing_workspace,
-        missing_role=config.defaults.missing_role,
-    )
+    return PermissionPolicy.from_schema(config)
 
 
 def load_permissions_config(

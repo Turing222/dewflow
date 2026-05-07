@@ -62,6 +62,33 @@ class PromptConfig:
         except KeyError as exc:
             raise ConfigurationError(f"Prompt template not found: {name}") from exc
 
+    @classmethod
+    def from_schema(cls, config: PromptsConfig) -> PromptConfig:
+        return cls(
+            version=config.version,
+            source=PromptSourceConfig(
+                provider=config.source.provider,
+                label=config.source.label,
+                ttl_seconds=config.source.ttl_seconds,
+                cache_path=config.source.cache_path,
+                fallback=config.source.fallback,
+                synced_at=config.source.synced_at,
+            ),
+            langfuse_templates={
+                name: LangfusePromptRef(
+                    name=template.name,
+                    type=template.type,
+                    version=template.version,
+                )
+                for name, template in config.langfuse.templates.items()
+            },
+            default_variables=dict(config.defaults.variables),
+            templates={
+                name: PromptTemplateConfig(content=template.content)
+                for name, template in config.templates.items()
+            },
+        )
+
 
 def load_prompt_config(
     *,
@@ -73,31 +100,7 @@ def load_prompt_config(
         config = PromptsConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigurationError(f"Invalid LLM prompts config: {exc}") from exc
-
-    return PromptConfig(
-        version=config.version,
-        source=PromptSourceConfig(
-            provider=config.source.provider,
-            label=config.source.label,
-            ttl_seconds=config.source.ttl_seconds,
-            cache_path=config.source.cache_path,
-            fallback=config.source.fallback,
-            synced_at=config.source.synced_at,
-        ),
-        langfuse_templates={
-            name: LangfusePromptRef(
-                name=template.name,
-                type=template.type,
-                version=template.version,
-            )
-            for name, template in config.langfuse.templates.items()
-        },
-        default_variables=dict(config.defaults.variables),
-        templates={
-            name: PromptTemplateConfig(content=template.content)
-            for name, template in config.templates.items()
-        },
-    )
+    return PromptConfig.from_schema(config)
 
 
 @lru_cache

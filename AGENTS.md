@@ -129,6 +129,10 @@ make qa-test-all          # All tests except performance markers
 - **Docker checks**: `docker compose ps` for status, `docker compose logs --tail=50 <svc>` for failures
 - **uv commands**: always prefix with `uv run`
 
+## Local Skills
+
+- For code review requests, read and apply `.codex/skills/review/SKILL.md` before producing findings.
+
 ## Change Summary
 
 After completing code changes, append a summary block at the end of the normal response:
