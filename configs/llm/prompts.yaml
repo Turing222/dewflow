@@ -21,7 +21,7 @@ langfuse:
 
 defaults:
   variables:
-    app_name: Obsidian Mentor AI
+    app_name: Dewflow
     user_name: ""
     conversation_summary: ""
 

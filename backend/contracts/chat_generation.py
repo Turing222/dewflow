@@ -23,3 +23,4 @@ class GenerationPayload(BaseModel):
     conversation_history: list[ConversationMessage] = Field(default_factory=list)
     kb_id: uuid.UUID | None = None
     rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    extra_body: dict[str, object] | None = None

@@ -22,25 +22,6 @@ profiles:
       - openai-compatible
       - external-api
 
-  deepseek:
-    provider: deepseek
-    model: deepseek-chat
-    base_url: https://api.deepseek.com
-    api_key_envs:
-      - DEEPSEEK_API_KEY
-      - LLM_API_KEY
-    aliases:
-      - deepseek
-
-  deepseek_reasoner:
-    provider: deepseek
-    model: deepseek-reasoner
-    base_url: https://api.deepseek.com
-    api_key_envs:
-      - DEEPSEEK_API_KEY
-      - LLM_API_KEY
-    aliases:
-      - deepseek-reasoner
 
   deepseek_v4_flash:
     provider: deepseek
@@ -50,7 +31,11 @@ profiles:
       - DEEPSEEK_API_KEY
       - LLM_API_KEY
     aliases:
+      - deepseek
       - deepseek-v4-flash
+    extra_body:
+      thinking:
+        type: enabled
 
   deepseek_v4_pro:
     provider: deepseek
@@ -61,6 +46,9 @@ profiles:
       - LLM_API_KEY
     aliases:
       - deepseek-v4-pro
+    extra_body:
+      thinking:
+        type: enabled
 
   gemini:
     provider: gemini
@@ -78,7 +66,6 @@ profiles:
 routes:
   resilient:
     profiles:
-      - deepseek
       - deepseek_v4_flash
       - gemini
     aliases:
@@ -111,6 +98,21 @@ embeddings:
         - google
         - gemini
         - google-genai
+
+    qwen3_text_embedding_v4:
+      provider: openai-compatible
+      model: text-embedding-v4
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      dimensions: 768
+      api_key_envs:
+        - DASHSCOPE_API_KEY
+        - RAG_EMBED_API_KEY
+      aliases:
+        - qwen3
+        - qwen3-embedding
+        - text-embedding-v4
+        - dashscope
+        - aliyun
 
     openai_compatible:
       provider: openai-compatible

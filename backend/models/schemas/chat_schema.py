@@ -11,6 +11,8 @@ from typing import Annotated, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.models.schemas.llm_params import LLMExtraBody
+
 QueryStr = Annotated[
     str, Field(min_length=1, max_length=5000, description="用户查询内容")
 ]
@@ -56,6 +58,9 @@ class QuerySentRequest(BaseModel):
         None,
         max_length=64,
         description="客户端生成的唯一请求 ID，用于幂等控制",
+    )
+    extra_body: LLMExtraBody | None = Field(
+        None, description="透传到 LLM API 的受控额外参数，如 thinking 模式控制"
     )
 
     @field_validator("query")
@@ -162,6 +167,7 @@ class LLMQueryDTO(BaseModel):
     session_id: uuid.UUID
     query_text: str
     conversation_history: list[ConversationMessage] = Field(default_factory=list)
+    extra_body: dict[str, object] | None = None
 
 
 class LLMResultDTO(BaseModel):

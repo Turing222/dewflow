@@ -30,6 +30,7 @@ class LLMProfile:
     base_url: str | None
     api_key_envs: tuple[str, ...]
     aliases: tuple[str, ...]
+    extra_body: dict[str, object] | None
 
     def resolve_api_key(self) -> str | None:
         api_keys = self.resolve_api_keys()
@@ -136,6 +137,9 @@ def load_llm_model_config(
             base_url=profile.base_url,
             api_key_envs=tuple(profile.api_key_envs),
             aliases=tuple(profile.aliases),
+            extra_body=(
+                profile.extra_body.to_provider_dict() if profile.extra_body else None
+            ),
         )
         for name, profile in config.profiles.items()
     }

@@ -71,14 +71,14 @@ class TestTemplateRendering:
     def test_default_template_renders(self):
         """默认模板可以正常渲染"""
         result = render_system_prompt()
-        assert "Obsidian Mentor AI" in result
+        assert "Dewflow" in result
         assert len(result) > 0
 
     def test_template_with_custom_app_name(self):
         """自定义 app_name 变量"""
         result = render_system_prompt(app_name="MyBot")
         assert "MyBot" in result
-        assert "Obsidian Mentor AI" not in result
+        assert "Dewflow" not in result
 
     def test_template_with_user_name(self):
         """注入 user_name 时包含用户信息"""

@@ -90,7 +90,7 @@ class AISettings(BaseSettings):
 
     # ── LLM Provider Config ───────────────────────────────────────
     LLM_PROVIDER: str = "mock"
-    LLM_BASE_URL: str = "https://api.openai.com/v1"
+    LLM_BASE_URL: str = "https://api.deepseek.com"
     LLM_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
 
@@ -120,15 +120,12 @@ class AISettings(BaseSettings):
     RAG_EMBED_BASE_URL: str | None = None
     RAG_EMBED_API_KEY: str | None = None
     RAG_EMBED_DIM: int = Field(default=768, ge=1)
-    RAG_EMBED_BATCH_SIZE: int = Field(default=32, ge=1, le=256)
+    RAG_EMBED_BATCH_SIZE: int = Field(default=10, ge=1, le=256)
 
     # ── Knowledge Chunking ────────────────────────────────────────
     KNOWLEDGE_CHUNK_SIZE: int = 800
     KNOWLEDGE_CHUNK_OVERLAP: int = 120
     KNOWLEDGE_MAX_UPLOAD_SIZE_MB: int = 20
-
-    # ── Obsidian ──────────────────────────────────────────────────
-    OBSIDIAN_VAULT_PATH: str = "/data/obsidian"
 
     model_config = SettingsConfigDict(
         env_file=_env_files(),

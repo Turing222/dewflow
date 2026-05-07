@@ -36,7 +36,8 @@ class EmbeddingProfile:
         return None
 
     def resolve_base_url(self) -> str | None:
-        return self.base_url or _embedding_provider_default_base_url(self.provider)
+        settings = _get_settings()
+        return self.base_url or settings.RAG_EMBED_BASE_URL
 
 
 def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProfile]:
@@ -88,19 +89,6 @@ def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProf
         )
         for name, profile in config.embeddings.profiles.items()
     }
-
-
-def _embedding_provider_default_base_url(provider: str) -> str | None:
-    """Embedding provider 的默认 base URL fallback。"""
-    settings = _get_settings()
-    # embedding 专用 URL 优先，避免误用聊天模型的 base URL。
-    if settings.RAG_EMBED_BASE_URL:
-        return settings.RAG_EMBED_BASE_URL
-    # openai-compatible embedding 可复用通用 LLM endpoint 作为兼容 fallback。
-    normalized = provider.strip().lower()
-    if normalized in {"openai", "openai-compatible"}:
-        return settings.LLM_BASE_URL
-    return None
 
 
 def _get_settings():

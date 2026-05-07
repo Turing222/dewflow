@@ -1,4 +1,4 @@
-# CLAUDE.md — Dewflow Backend
+# AGENTS.md — Dewflow Backend
 
 ## Project Overview
 
@@ -140,7 +140,7 @@ After completing code changes, append a summary block at the end of the normal r
 **Affected**: [1-3 files/modules touched]
 ```
 
-This is additive — normal response still comes first, summary serves as a compact handoff for downstream review by other AI tools.
+This is additive — normal response still comes first, summary serves as a compact handoff for downstream review by maintainers and other AI tools.
 
 ## Commit Messages
 

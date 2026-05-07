@@ -406,7 +406,8 @@ async def test_worker_generation_reranks_candidates_when_enabled(
     stream_query = llm_service.stream_queries[0]
     system_message = stream_query.conversation_history[0]
     assert "high" in system_message["content"]
-    assert "low" not in system_message["content"]
+    # "a.md" 是 "low" 内容 chunk 的来源文件，rerank 后应被过滤
+    assert "a.md" not in system_message["content"]
     assert slot_calls == [
         {
             "chat.session_id": payload.session_id,

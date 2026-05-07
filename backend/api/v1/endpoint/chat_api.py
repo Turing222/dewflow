@@ -83,12 +83,14 @@ async def query_sent(
             "client_request_id": request.client_request_id,
         },
     ) as audit:
+        extra_body = request.extra_body.to_provider_dict() if request.extra_body else None
         result = await workflow.handle_query(
             user_id=current_user.id,
             query_text=request.query,
             session_id=request.session_id,
             kb_id=request.kb_id,
             client_request_id=request.client_request_id,
+            extra_body=extra_body,
         )
         audit.set_resource(resource_id=result.answer.id)
         audit.add_metadata(session_id=str(result.session_id))
@@ -131,6 +133,9 @@ async def query_stream(
                 "client_request_id": request.client_request_id,
             },
         ) as audit:
+            extra_body = (
+                request.extra_body.to_provider_dict() if request.extra_body else None
+            )
             meta_captured = False
             async for chunk in workflow.handle_query_stream(
                 user_id=current_user.id,
@@ -138,6 +143,7 @@ async def query_stream(
                 session_id=request.session_id,
                 kb_id=request.kb_id,
                 client_request_id=request.client_request_id,
+                extra_body=extra_body,
             ):
                 # 仅在首个 meta 事件时更新 audit resource_id（session_id / message_id）
                 if (

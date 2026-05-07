@@ -70,6 +70,7 @@ class LLMProviderFactory:
                 api_key=api_key,
                 model_name=profile.model,
                 max_retries=max_retries,
+                extra_body=profile.extra_body,
             )
 
         if normalized_provider == "deepseek":
@@ -79,6 +80,7 @@ class LLMProviderFactory:
                 api_key=api_key,
                 model_name=profile.model,
                 max_retries=max_retries,
+                extra_body=profile.extra_body,
             )
 
         if normalized_provider in {"pydantic-ai", "pydantic_ai", "gemini", "google"}:

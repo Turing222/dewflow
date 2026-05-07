@@ -1,4 +1,4 @@
-# Obsidian Mentor AI Backend
+# Dewflow AI Backend
 
 基于 FastAPI + PostgreSQL(pgvector) + Redis + TaskIQ 的异步 AI 服务后端，采用分层架构与 Ports & Adapters（六边形架构）模式。
 

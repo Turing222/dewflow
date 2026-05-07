@@ -54,6 +54,7 @@ class ChatWorkflow:
         session_id: uuid.UUID | None = None,
         kb_id: uuid.UUID | None = None,
         client_request_id: str | None = None,
+        extra_body: dict[str, object] | None = None,
     ) -> AsyncGenerator[str, None]:
         """处理 SSE 流式查询请求。"""
         # Langfuse trace 需要在业务入口绑定用户和会话信息。
@@ -187,6 +188,7 @@ class ChatWorkflow:
             query_text=query_text,
             conversation_history=conversation_history,
             kb_id=effective_kb_id,
+            extra_body=extra_body,
         )
 
         task_id = str(uuid.uuid4())

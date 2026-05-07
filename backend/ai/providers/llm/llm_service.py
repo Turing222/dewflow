@@ -34,6 +34,20 @@ from backend.observability.trace_utils import set_span_attributes, trace_span
 logger = logging.getLogger(__name__)
 
 
+def _merge_extra_body(
+    profile_body: dict[str, object] | None,
+    request_body: dict[str, object] | None,
+) -> dict[str, object] | None:
+    """Shallow-merge per-request extra_body over profile defaults."""
+    if profile_body is None and request_body is None:
+        return None
+    if profile_body is None:
+        return dict(request_body)  # type: ignore[arg-type]
+    if request_body is None:
+        return dict(profile_body)
+    return {**profile_body, **request_body}
+
+
 class LLMService(AbstractLLMService):
     """OpenAI-compatible chat completions 适配器。"""
 
@@ -45,6 +59,7 @@ class LLMService(AbstractLLMService):
         api_key: str | None = None,
         model_name: str | None = None,
         max_retries: int | None = None,
+        extra_body: dict[str, object] | None = None,
     ) -> None:
         profile = get_llm_model_config().resolve_profile(provider_name)
         self.provider_name = provider_name
@@ -56,6 +71,7 @@ class LLMService(AbstractLLMService):
         )
         self.model_name = model_name or profile.model
         self.max_retries = max_retries
+        self._extra_body = extra_body
         self._client: openai.AsyncOpenAI | None = None
         self._circuit = CircuitBreaker(
             name="llm",
@@ -137,11 +153,15 @@ class LLMService(AbstractLLMService):
                 client = self._create_client()
                 await self._circuit.acquire()
 
-                response = await client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    stream=True,
-                )
+                merged_extra = _merge_extra_body(self._extra_body, query.extra_body)
+                create_kwargs: dict[str, Any] = {
+                    "model": self.model_name,
+                    "messages": messages,
+                    "stream": True,
+                }
+                if merged_extra is not None:
+                    create_kwargs["extra_body"] = merged_extra
+                response = await client.chat.completions.create(**create_kwargs)
 
                 # API 连接成功，标记断路器恢复。
                 await self._circuit.on_success()
@@ -205,11 +225,15 @@ class LLMService(AbstractLLMService):
                 client = self._create_client()
                 await self._circuit.acquire()
 
-                completion = await client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    stream=False,
-                )
+                merged_extra = _merge_extra_body(self._extra_body, query.extra_body)
+                create_kwargs: dict[str, Any] = {
+                    "model": self.model_name,
+                    "messages": messages,
+                    "stream": False,
+                }
+                if merged_extra is not None:
+                    create_kwargs["extra_body"] = merged_extra
+                completion = await client.chat.completions.create(**create_kwargs)
                 await self._circuit.on_success()
 
                 content = completion.choices[0].message.content or ""

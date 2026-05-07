@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from sqlalchemy import text
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -169,6 +170,51 @@ async def _poll_json(
     )
 
 
+def _build_chunking_probe_document(suffix: str) -> str:
+    paragraphs = []
+    for index in range(1, 6):
+        marker = f"CHUNK_SPLIT_PROBE_{suffix}_{index}"
+        sentence = (
+            f"{marker} proves paragraph {index} survived worker chunking and "
+            "database indexing with deterministic searchable content. "
+        )
+        paragraphs.append(sentence * 10)
+    return "\n\n".join(paragraphs)
+
+
+async def _fetch_file_chunks(file_id: str) -> list[dict]:
+    db_url = _smoke_database_url()
+    if not db_url:
+        pytest.skip(
+            "Chunk DB verification requires SMOKE_DATABASE_URL or POSTGRES_* env vars."
+        )
+
+    engine = create_async_engine(db_url, pool_pre_ping=True)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    """
+                    SELECT
+                        id::text AS id,
+                        content,
+                        token_count,
+                        chunk_index,
+                        chunking_version,
+                        meta_info,
+                        vector_dims(embedding) AS embedding_dim
+                    FROM document_chunks
+                    WHERE file_id = :file_id
+                    ORDER BY chunk_index ASC
+                    """
+                ),
+                {"file_id": file_id},
+            )
+            return [dict(row._mapping) for row in result]
+    finally:
+        await engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_knowledge_upload_over_http_reaches_ready_state(
     smoke_client: httpx.AsyncClient,
@@ -184,13 +230,14 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
         suffix=suffix,
     )
 
+    probe_document = _build_chunking_probe_document(suffix)
     upload_response = await smoke_client.post(
         UPLOAD_PATH_TEMPLATE.format(kb_id=kb_id),
         headers=headers,
         files={
             "file": (
                 f"smoke_{suffix}.txt",
-                f"Smoke knowledge upload {suffix}\nThis file proves task worker ingestion.\n".encode(),
+                probe_document.encode(),
                 "text/plain",
             )
         },
@@ -233,3 +280,16 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
     assert file_body["status"] == "ready", file_body
     assert file_body["filename"].endswith(".txt")
     assert file_body["file_size"] > 0
+
+    chunks = await _fetch_file_chunks(file_id)
+    assert len(chunks) >= 2
+    assert [chunk["chunk_index"] for chunk in chunks] == list(range(len(chunks)))
+    assert all(chunk["chunking_version"] == 2 for chunk in chunks)
+    assert all(chunk["token_count"] == len(chunk["content"]) for chunk in chunks)
+    assert all(chunk["embedding_dim"] == 768 for chunk in chunks)
+    assert all(chunk["meta_info"]["filename"] == f"smoke_{suffix}.txt" for chunk in chunks)
+    assert all(chunk["meta_info"]["path"] == file_body["file_path"] for chunk in chunks)
+
+    indexed_text = "\n".join(chunk["content"] for chunk in chunks)
+    for index in range(1, 6):
+        assert f"CHUNK_SPLIT_PROBE_{suffix}_{index}" in indexed_text

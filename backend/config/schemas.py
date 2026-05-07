@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.models.orm.access import WorkspaceRole
+from backend.models.schemas.llm_params import LLMExtraBody
 from backend.services.permission_types import Permission
 
 
@@ -200,6 +201,7 @@ class LLMModelProfile(BaseModel):
     base_url: str | None = None
     api_key_envs: list[str] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
+    extra_body: LLMExtraBody | None = None
 
     model_config = ConfigDict(extra="forbid")
 

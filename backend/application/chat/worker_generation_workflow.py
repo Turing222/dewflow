@@ -77,6 +77,7 @@ class LLMGenerationWorkerWorkflow:
                 session_id=payload.session_id,
                 query_text=payload.query_text,
                 conversation_history=assembled.messages,
+                extra_body=payload.extra_body,
             )
 
             with trace_span(
@@ -185,6 +186,7 @@ class LLMGenerationWorkerWorkflow:
                 session_id=payload.session_id,
                 query_text=payload.query_text,
                 conversation_history=assembled.messages,
+                extra_body=payload.extra_body,
             )
 
             with trace_span(

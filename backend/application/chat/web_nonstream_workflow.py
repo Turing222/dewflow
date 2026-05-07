@@ -62,6 +62,7 @@ class ChatNonStreamWorkflow:
         session_id: uuid.UUID | None = None,
         kb_id: uuid.UUID | None = None,
         client_request_id: str | None = None,
+        extra_body: dict[str, object] | None = None,
     ) -> ChatQueryResponse:
         get_client().update_current_trace(
             user_id=str(user_id),
@@ -216,6 +217,7 @@ class ChatNonStreamWorkflow:
             query_text=query_text,
             conversation_history=conversation_history,
             kb_id=effective_kb_id,
+            extra_body=extra_body,
         )
 
         try:

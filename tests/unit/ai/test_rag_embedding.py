@@ -111,6 +111,8 @@ def test_openai_embedder_encode_documents_batches_inputs(monkeypatch):
 
     assert vectors == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
     assert calls[0]["input"] == ["first", "second"]
+    assert calls[0]["model"] == "text-embedding-3-small"
+    assert calls[0]["dimensions"] == 3
 
 
 def test_openai_embedder_encode_query_dim_mismatch(monkeypatch):
