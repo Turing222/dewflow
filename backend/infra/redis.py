@@ -37,3 +37,15 @@ class RedisClient:
 
 
 redis_client = RedisClient()
+
+
+async def safe_release_lock(redis_client: redis.Redis, lock_key: str, lock_token: str) -> None:
+    """安全释放 Redis 锁（Lua 脚本）。"""
+    script = """
+    if redis.call("get",KEYS[1]) == ARGV[1] then
+        return redis.call("del",KEYS[1])
+    else
+        return 0
+    end
+    """
+    await redis_client.eval(script, 1, lock_key, lock_token)  # type: ignore[invalid-await]  # redis-py lacks async type stubs for eval

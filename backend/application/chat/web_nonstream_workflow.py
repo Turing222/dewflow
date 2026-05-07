@@ -6,7 +6,9 @@
 """
 
 import logging
+import uuid
 
+import redis.asyncio as redis
 from langfuse import get_client, observe
 
 from backend.application.chat.history_projection import history_to_conversation_messages
@@ -21,7 +23,7 @@ from backend.core.exceptions import (
     app_service_error,
     app_validation_error,
 )
-from backend.infra.redis import redis_client
+from backend.infra.redis import safe_release_lock
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat.api import (
     ChatQueryResponse,
@@ -48,9 +50,11 @@ class ChatNonStreamWorkflow:
         self,
         uow: AbstractUnitOfWork,
         dispatcher: AbstractTaskDispatcher,
+        redis_client: redis.Redis,
     ) -> None:
         self.uow = uow
         self.dispatcher = dispatcher
+        self.redis = redis_client
 
     # ── Main handler ──────────────────────────────────────────────
 
@@ -77,8 +81,8 @@ class ChatNonStreamWorkflow:
             len(query_text),
         )
 
-        redis = None
         lock_key: str | None = None
+        lock_token: str | None = None
         trace_attrs = {
             "chat.user_id": user_id,
             "chat.session_id": session_id,
@@ -92,14 +96,14 @@ class ChatNonStreamWorkflow:
 
         with trace_span("chat.nonstream.idempotency_check", trace_attrs) as span:
             if client_request_id:
-                redis = await redis_client.init()
                 lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
-                is_new = await redis.set(lock_key, "PROCESSING", nx=True, ex=300)
+                lock_token = f"processing:{uuid.uuid4()}"
+                is_new = await self.redis.set(lock_key, lock_token, nx=True, ex=300)
                 set_span_attributes(span, {"chat.idempotency.is_new": bool(is_new)})
                 if not is_new:
-                    val = await redis.get(lock_key)
+                    val = await self.redis.get(lock_key)
                     set_span_attributes(span, {"chat.idempotency.value": val})
-                    if val == "PROCESSING":
+                    if val is not None and val.startswith("processing:"):
                         raise app_service_error(
                             "正在加速计算中...",
                             code="CHAT_REQUEST_PROCESSING",
@@ -138,8 +142,8 @@ class ChatNonStreamWorkflow:
                 async with self.uow:
                     user = await self.uow.user_repo.get_with_lock(user_id)
                     if user and user.used_tokens >= user.max_tokens:
-                        if redis is not None and lock_key is not None:
-                            await redis.delete(lock_key)
+                        if lock_key is not None and lock_token is not None:
+                            await safe_release_lock(self.redis, lock_key, lock_token)
                         raise app_validation_error(
                             "Token 余额不足",
                             code="TOKEN_QUOTA_EXCEEDED",
@@ -237,12 +241,12 @@ class ChatNonStreamWorkflow:
                     lock_key,
                 )
         except AppException:
-            if redis is not None and lock_key is not None:
-                await redis.delete(lock_key)
+            if lock_key is not None and lock_token is not None:
+                await safe_release_lock(self.redis, lock_key, lock_token)
             raise
         except Exception as exc:
-            if redis is not None and lock_key is not None:
-                await redis.delete(lock_key)
+            if lock_key is not None and lock_token is not None:
+                await safe_release_lock(self.redis, lock_key, lock_token)
             raise app_service_error(
                 "LLM 服务调用失败，请稍后重试",
                 code="LLM_SERVICE_ERROR",

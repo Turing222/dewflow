@@ -11,55 +11,51 @@ from backend.models.schemas.chat.payloads import GenerationResult
 pytestmark = pytest.mark.asyncio
 
 
-def _build_workflow(uow=None, dispatcher=None):
+def _build_workflow(uow=None, dispatcher=None, redis_client=None):
     return ChatNonStreamWorkflow(
         uow=uow or MagicMock(),
         dispatcher=dispatcher or AsyncMock(),
+        redis_client=redis_client or AsyncMock(),
     )
 
 
 async def test_idempotency():
     uow = MagicMock()
-    workflow = _build_workflow(uow=uow)
 
     mock_redis = AsyncMock()
     mock_redis.set.side_effect = [True, False]
-    mock_redis.get.return_value = "PROCESSING"
+    mock_redis.get.return_value = "processing:test-uuid"
 
-    with (
-        patch(
-            "backend.application.chat.web_nonstream_workflow.redis_client.init",
-            return_value=mock_redis,
-        ),
-    ):
-        user_id = uuid.uuid4()
-        client_req_id = "test-req-123"
+    workflow = _build_workflow(uow=uow, redis_client=mock_redis)
 
-        mock_user = MagicMock(used_tokens=0, max_tokens=1000)
-        uow.user_repo = AsyncMock()
-        uow.user_repo.get = AsyncMock(return_value=mock_user)
-        uow.user_repo.get_with_lock = AsyncMock(return_value=mock_user)
-        uow.__aenter__.return_value = uow
+    user_id = uuid.uuid4()
+    client_req_id = "test-req-123"
 
-        try:
-            await workflow.handle_query(
-                ChatQueryCommand(
-                    user_id=user_id,
-                    query_text="hello",
-                    client_request_id=client_req_id,
-                )
+    mock_user = MagicMock(used_tokens=0, max_tokens=1000)
+    uow.user_repo = AsyncMock()
+    uow.user_repo.get = AsyncMock(return_value=mock_user)
+    uow.user_repo.get_with_lock = AsyncMock(return_value=mock_user)
+    uow.__aenter__.return_value = uow
+
+    try:
+        await workflow.handle_query(
+            ChatQueryCommand(
+                user_id=user_id,
+                query_text="hello",
+                client_request_id=client_req_id,
             )
-        except Exception:
-            pass
+        )
+    except Exception:
+        pass
 
-        with pytest.raises(Exception, match="正在加速计算中"):
-            await workflow.handle_query(
-                ChatQueryCommand(
-                    user_id=user_id,
-                    query_text="hello",
-                    client_request_id=client_req_id,
-                )
+    with pytest.raises(Exception, match="正在加速计算中"):
+        await workflow.handle_query(
+            ChatQueryCommand(
+                user_id=user_id,
+                query_text="hello",
+                client_request_id=client_req_id,
             )
+        )
 
 
 async def test_token_quota():

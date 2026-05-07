@@ -11,6 +11,7 @@ import logging
 import uuid
 from collections.abc import AsyncGenerator
 
+import redis.asyncio as redis
 from langfuse import get_client, observe
 
 from backend.application.chat.history_projection import history_to_conversation_messages
@@ -22,7 +23,7 @@ from backend.contracts.interfaces import (
 )
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_service_error
-from backend.infra.redis import redis_client
+from backend.infra.redis import safe_release_lock
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import (
@@ -43,9 +44,11 @@ class ChatWorkflow:
         self,
         uow: AbstractUnitOfWork,
         dispatcher: AbstractTaskDispatcher,
+        redis_client: redis.Redis,
     ) -> None:
         self.uow = uow
         self.dispatcher = dispatcher
+        self.redis = redis_client
 
     @observe()
     async def handle_query_stream(
@@ -72,8 +75,8 @@ class ChatWorkflow:
             len(query_text),
         )
 
-        redis = None
         lock_key: str | None = None
+        lock_token: str | None = None
         trace_attrs = {
             "chat.user_id": user_id,
             "chat.session_id": session_id,
@@ -86,14 +89,14 @@ class ChatWorkflow:
         # 幂等锁避免同一 client_request_id 并发生成多条助手消息。
         with trace_span("chat.stream.idempotency_check", trace_attrs) as span:
             if client_request_id:
-                redis = await redis_client.init()
                 lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
-                is_new = await redis.set(lock_key, "PROCESSING", nx=True, ex=300)
+                lock_token = f"processing:{uuid.uuid4()}"
+                is_new = await self.redis.set(lock_key, lock_token, nx=True, ex=300)
                 set_span_attributes(span, {"chat.idempotency.is_new": bool(is_new)})
                 if not is_new:
-                    val = await redis.get(lock_key)
+                    val = await self.redis.get(lock_key)
                     set_span_attributes(span, {"chat.idempotency.value": val})
-                    if val == "PROCESSING":
+                    if val is not None and val.startswith("processing:"):
                         yield f"data: {json.dumps({'type': 'error', 'message': '正在加速计算中...'})}\n\n"
                         return
                     else:
@@ -107,8 +110,8 @@ class ChatWorkflow:
                     # 悲观锁保护 token 余额检查，避免并发请求同时通过额度判断。
                     user = await self.uow.user_repo.get_with_lock(user_id)
                     if user and user.used_tokens >= user.max_tokens:
-                        if redis is not None and lock_key is not None:
-                            await redis.delete(lock_key)
+                        if lock_key is not None and lock_token is not None:
+                            await safe_release_lock(self.redis, lock_key, lock_token)
                         yield f"data: {json.dumps({'type': 'error', 'message': 'Token 余额不足'})}\n\n"
                         return
 
@@ -203,7 +206,7 @@ class ChatWorkflow:
                 {**trace_attrs, "task.id": task_id, "redis.channel": channel},
             ):
                 # 必须先订阅后投递，避免 worker 首包发布过快导致丢消息。
-                pubsub = (await redis_client.init()).pubsub()
+                pubsub = self.redis.pubsub()
                 await pubsub.subscribe(channel)
                 await self.dispatcher.enqueue_stream(
                     generation_payload.model_dump(mode="json"),
@@ -214,8 +217,8 @@ class ChatWorkflow:
                     lock_key,
                 )
         except AppException as exc:
-            if redis is not None and lock_key is not None:
-                await redis.delete(lock_key)
+            if lock_key is not None and lock_token is not None:
+                await safe_release_lock(self.redis, lock_key, lock_token)
             logger.warning("流式任务初始化失败: %s", exc)
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
             async with db_concurrency_slot(trace_attrs):
@@ -225,8 +228,8 @@ class ChatWorkflow:
             yield "data: [DONE]\n\n"
             return
         except Exception as exc:
-            if redis is not None and lock_key is not None:
-                await redis.delete(lock_key)
+            if lock_key is not None and lock_token is not None:
+                await safe_release_lock(self.redis, lock_key, lock_token)
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
             async with db_concurrency_slot(trace_attrs):

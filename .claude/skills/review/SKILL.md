@@ -1,11 +1,15 @@
 ---
 name: review
-description: Multi-angle code review against project conventions. Covers architecture, logic, naming, and style as separate passes with different context depths. Triggers on: review, code review, review my code, check this, pre-commit check, /review.
+description: Use when the user asks to review code changes, run a pre-commit review, check staged changes, or perform /review against project conventions.
 ---
 
 # Code Review
 
-Review staged or specified changes against project conventions defined in CLAUDE.md.
+Review staged or explicitly specified changes against project conventions defined in CLAUDE.md.
+
+This skill is project-specific. Use it only when the repository defines compatible conventions in CLAUDE.md or clearly matches this backend architecture. If CLAUDE.md and this skill conflict, CLAUDE.md is the source of truth for project conventions; this skill defines the review procedure.
+
+Do not review the entire repository by default. Review only staged changes or explicitly specified files unless the user asks for a broader review.
 
 ## Review Strategy
 
@@ -84,3 +88,13 @@ Good template:
 - When a finding spans multiple lines, reference the first line
 - Architecture violations are always `必须修复`
 - Never combine unrelated issues into one finding
+
+## Red Flags - Stop and Correct
+
+- Do not invent findings to fill every pass. If no actual problem is found, write `未发现问题。`
+- Do not report style preferences unless backed by CLAUDE.md or this skill.
+- Do not expand references or trace call chains during Pass 1.
+- Do not claim caller/callee relationships unless the references were inspected.
+- Do not mark an issue as `必须修复` unless it violates a CRITICAL rule, an architecture rule, or causes an actual bug.
+- Do not review unrelated files outside the staged/specified changes except when needed to verify a changed function's behavior.
+- If CLAUDE.md is missing, say so and limit the review to rules explicitly present in this skill and facts verified from the code.

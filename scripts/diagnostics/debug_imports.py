@@ -15,7 +15,8 @@ async def main() -> None:
 
     uow = MagicMock()
     dispatcher = MagicMock()
-    ChatWorkflow(uow, dispatcher)
+    redis_client = MagicMock()
+    ChatWorkflow(uow, dispatcher, redis_client)
     print("ChatWorkflow initialized.")
 
 
