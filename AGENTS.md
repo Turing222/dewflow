@@ -135,7 +135,7 @@ make qa-test-all          # All tests except performance markers
 
 ## Change Summary
 
-After completing code changes, append a summary block at the end of the normal response:
+If and only if files were modified during this turn, append a summary block at the end of the normal response:
 
 ```
 ## Change Summary

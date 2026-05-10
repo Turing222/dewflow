@@ -53,6 +53,11 @@ async def test_replace_file_chunks_uses_batch_embedding():
         hashlib.sha256(text.encode("utf-8")).hexdigest()
         for text in ["chunk 1", "chunk 2", "chunk 3"]
     ]
+    assert [record["search_text"] for record in records] == [
+        "chunk 1",
+        "chunk 2",
+        "chunk 3",
+    ]
     assert {record["chunking_version"] for record in records} == {CHUNKING_VERSION}
 
 
@@ -90,6 +95,7 @@ async def test_replace_file_chunks_uses_embedding_content_for_structured_chunks(
     )
     records = repo.add_chunks.await_args.args[0]
     assert records[0]["content"] == "原文内容"
+    assert records[0]["search_text"].startswith("原文内容")
     assert (
         records[0]["content_hash"]
         == hashlib.sha256(
@@ -128,3 +134,30 @@ async def test_replace_file_chunks_rejects_mismatched_embedding_count():
 
     repo.delete_chunks_for_file.assert_not_awaited()
     repo.add_chunks.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_fulltext_search_normalizes_query_before_repository_call():
+    kb_id = uuid.uuid4()
+    repo = SimpleNamespace(
+        search_chunks_for_kb_fulltext=AsyncMock(return_value=[]),
+    )
+    uow = SimpleNamespace(knowledge_repo=repo)
+    service = VectorIndexService(
+        uow=uow,
+        embedder=MagicMock(),
+    )
+
+    result = await service.search_chunks_for_kb_fulltext(
+        query_text="数据库 max_connections",
+        kb_id=kb_id,
+        limit=5,
+    )
+
+    assert result == []
+    repo.search_chunks_for_kb_fulltext.assert_awaited_once()
+    call_kwargs = repo.search_chunks_for_kb_fulltext.await_args.kwargs
+    assert call_kwargs["kb_id"] == kb_id
+    assert call_kwargs["limit"] == 5
+    assert call_kwargs["normalized_query"].startswith("数据库 max_connections")
+    assert "query_text" not in call_kwargs

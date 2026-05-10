@@ -71,6 +71,7 @@ services:
     # 1. 在服务内挂载卷
     volumes:
       - pg_data_v17_test:/var/lib/postgresql/data
+      - ./scripts/pg_init:/docker-entrypoint-initdb.d:ro
     #  - ./scripts/pgsql_backup.sh:/usr/local/bin/pg_backup.sh:ro
     logging: *default-logging
     #entrypoint: [ "/bin/sh", "/usr/local/bin/pg_backup.sh" ]

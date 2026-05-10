@@ -97,6 +97,33 @@ HTTP endpoint → Service → Repository → ORM Model
 - `error_code`: machine-readable, `UPPER_SNAKE_CASE` English
 - `details`: structured info only, keys in `snake_case`, UUIDs stringified
 
+## Config vs. Hardcode
+
+**Rule of thumb**: If changing a value should require zero code changes and zero test changes — it's config. If changing it changes algorithm semantics — it's code.
+
+### Hardcode (code-level constants)
+
+- **Algorithm implementation details** — regex patterns, character sets, tokenization rules
+- **Logic-coupled thresholds** — values where changing them silently breaks correctness (e.g., min token length)
+- **Data definitions** — what counts as "punctuation", what counts as a "keyword"
+
+### Config (env vars or YAML)
+
+- **Tuning knobs** — values you'd experiment with to improve search relevance, ranking quality, etc.
+- **Environment-specific values** — dev/staging/prod differ (API keys already follow this)
+- **Model-dependent parameters** — values that change when the downstream model/embedding provider changes
+- **Ops-adjustable thresholds** — limits, timeouts, batch sizes that non-developers may need to tweak
+
+### Implementation
+
+| Mechanism | When |
+|-----------|------|
+| `AISettings` (env var overridable) | 1-3 related tuning params; matches existing `RAG_*` pattern |
+| YAML config (`configs/`) + Pydantic schema (`backend/config/schemas/`) | Complex nested config, or params that will grow into a subdomain |
+| Module-level constant | Only if it's an algorithm detail (regex, char set) |
+
+**Test**: If you'd tell someone "just change the env var, don't touch the code" — put it in config.
+
 ## Quality Gates
 
 Always use `uv run` for Python commands. Full validation pipeline:

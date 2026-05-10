@@ -184,7 +184,7 @@ class KnowledgeRepository:
     async def search_chunks_for_kb_fulltext(
         self,
         *,
-        query_text: str,
+        normalized_query: str,
         kb_id: uuid.UUID,
         limit: int = 5,
     ) -> list[tuple[DocumentChunk, float]]:
@@ -192,19 +192,17 @@ class KnowledgeRepository:
 
         distance 由 ts_rank_cd 排名经过 _rank_to_distance 转换，与向量检索保持同方向（值越小越相关）。
         """
-        if not query_text.strip() or limit <= 0:
+        if not normalized_query.strip() or limit <= 0:
             return []
 
-        normalized_query = query_text.strip()
-        ts_vector = func.to_tsvector("simple", DocumentChunk.content)
         ts_query = func.plainto_tsquery("simple", normalized_query)
-        rank = func.ts_rank_cd(ts_vector, ts_query).label("rank")
+        rank = func.ts_rank_cd(DocumentChunk.search_vector, ts_query).label("rank")
         stmt = (
             select(DocumentChunk, rank)
             .join(File, DocumentChunk.file_id == File.id)
             .options(contains_eager(DocumentChunk.file))
             .where(File.kb_id == kb_id)
-            .where(ts_vector.op("@@")(ts_query))
+            .where(DocumentChunk.search_vector.op("@@")(ts_query))
             .order_by(rank.desc())
             .limit(limit)
         )

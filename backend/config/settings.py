@@ -73,6 +73,12 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     S3_ACCESS_KEY_ID: str | None = None
     S3_SECRET_ACCESS_KEY: str | None = None
 
+    # ── Observability ───────────────────────────────────────────────
+    ENABLE_OTEL_METRICS: bool = True
+    ENABLE_OTEL_TRACES: bool = False
+    OTEL_METRICS_ENDPOINT: str = "http://prometheus:9090/api/v1/otlp"
+    OTEL_TRACES_ENDPOINT: str = "http://jaeger:4318/v1/traces"
+
     # ── Properties ────────────────────────────────────────────────
 
     @property

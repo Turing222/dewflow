@@ -65,3 +65,6 @@ test_demo.py
 !.codex/skills/
 !.codex/skills/**
 .cache/
+
+# 测试快照归档（不提交到仓库）
+snapshots/*.json

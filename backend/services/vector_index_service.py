@@ -16,6 +16,7 @@ from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.base import BaseService
 from backend.services.chunking_service import ChunkPayload
+from backend.utils.search_text import build_search_texts, normalize_query
 
 CHUNKING_VERSION = 2
 
@@ -80,9 +81,13 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 )
                 if len(embeddings) != len(batch):
                     raise ValueError("RAG embedding 批量返回数量与输入切片数量不一致")
+                search_texts = await asyncio.to_thread(
+                    build_search_texts,
+                    [chunk["content"] for chunk in batch],
+                )
 
-                for offset, (chunk, embedding) in enumerate(
-                    zip(batch, embeddings, strict=True)
+                for offset, (chunk, embedding, search_text) in enumerate(
+                    zip(batch, embeddings, search_texts, strict=True)
                 ):
                     idx = start + offset
                     content = chunk["content"]
@@ -92,6 +97,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                             "source_type": ChunkSourceType.FILE,
                             "file_id": file_id,
                             "content": content,
+                            "search_text": search_text,
                             "content_hash": hashlib.sha256(
                                 embedding_content.encode("utf-8")
                             ).hexdigest(),
@@ -196,8 +202,12 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 "rag.query.char_count": len(query_text),
             },
         ) as span:
+            normalized_query = await asyncio.to_thread(normalize_query, query_text)
+            if not normalized_query:
+                set_span_attributes(span, {"rag.hit_count": 0})
+                return []
             hits = await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
-                query_text=query_text,
+                normalized_query=normalized_query,
                 kb_id=kb_id,
                 limit=limit,
             )
@@ -227,8 +237,9 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 "rag.fulltext_weight": fulltext_weight,
             },
         ) as span:
-            query_vector = await asyncio.to_thread(
-                self.embedder.encode_query, query_text
+            query_vector, normalized_query = await asyncio.gather(
+                asyncio.to_thread(self.embedder.encode_query, query_text),
+                asyncio.to_thread(normalize_query, query_text),
             )
             candidate_limit = max(limit, limit * max(1, candidate_multiplier))
 
@@ -237,11 +248,16 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 kb_id=kb_id,
                 limit=candidate_limit,
             )
-            fulltext_hits = await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
-                query_text=query_text,
-                kb_id=kb_id,
-                limit=candidate_limit,
-            )
+            if normalized_query:
+                fulltext_hits = (
+                    await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
+                        normalized_query=normalized_query,
+                        kb_id=kb_id,
+                        limit=candidate_limit,
+                    )
+                )
+            else:
+                fulltext_hits = []
 
             hits = self._fuse_hybrid_hits(
                 vector_hits=vector_hits,

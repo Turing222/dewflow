@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import Base, BaseIdModel
@@ -45,6 +45,8 @@ class DocumentChunk(Base, BaseIdModel):
     )
 
     content: Mapped[str] = mapped_column(Text)
+    search_text: Mapped[str] = mapped_column(Text, server_default="")
+    search_vector: Mapped[str | None] = mapped_column(TSVECTOR)
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     token_count: Mapped[int] = mapped_column(Integer)
     chunk_index: Mapped[int] = mapped_column(Integer)
@@ -73,6 +75,11 @@ class DocumentChunk(Base, BaseIdModel):
             "ix_document_chunks_file_content_hash",
             "file_id",
             "content_hash",
+        ),
+        Index(
+            "ix_document_chunks_search_vector",
+            "search_vector",
+            postgresql_using="gin",
         ),
     )
 

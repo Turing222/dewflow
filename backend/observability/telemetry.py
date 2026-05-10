@@ -6,7 +6,6 @@
 """
 
 import logging
-import os
 
 from fastapi import FastAPI
 from opentelemetry import metrics, trace
@@ -24,7 +23,6 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from backend.config.settings import settings
 
 logger = logging.getLogger(__name__)
-_TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 # service.name 会成为 Prometheus/trace 后端中的服务标识。
 _RESOURCE = Resource.create(
@@ -34,37 +32,20 @@ _RESOURCE = Resource.create(
     }
 )
 
-_PROMETHEUS_OTLP_ENDPOINT = os.getenv(
-    "PROMETHEUS_OTLP_ENDPOINT",
-    "http://prometheus:9090/api/v1/otlp",
-)
-_OTEL_TRACES_ENDPOINT = os.getenv(
-    "OTEL_TRACES_ENDPOINT",
-    "http://jaeger:4318/v1/traces",
-)
-
-
-def _env_flag(name: str, default: str) -> bool:
-    return os.getenv(name, default).strip().lower() in _TRUTHY_ENV_VALUES
-
-
-_ENABLE_OTEL_METRICS = _env_flag("ENABLE_OTEL_METRICS", "true")
-_ENABLE_OTEL_TRACES = _env_flag("ENABLE_OTEL_TRACES", "false")
-
 
 def setup_telemetry(app: FastAPI) -> None:
     """初始化 OTel provider，并在路由挂载前 instrument FastAPI。"""
     # 先创建 TracerProvider，Langfuse SDK 才能把 SpanProcessor 挂到同一 provider。
     tracer_provider = TracerProvider(resource=_RESOURCE)
-    if _ENABLE_OTEL_TRACES:
-        span_exporter = OTLPSpanExporter(endpoint=_OTEL_TRACES_ENDPOINT)
+    if settings.ENABLE_OTEL_TRACES:
+        span_exporter = OTLPSpanExporter(endpoint=settings.OTEL_TRACES_ENDPOINT)
         tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
     trace.set_tracer_provider(tracer_provider)
 
     metric_readers = []
-    if _ENABLE_OTEL_METRICS:
+    if settings.ENABLE_OTEL_METRICS:
         metric_exporter = OTLPMetricExporter(
-            endpoint=_PROMETHEUS_OTLP_ENDPOINT,
+            endpoint=settings.OTEL_METRICS_ENDPOINT,
         )
         metric_readers.append(
             PeriodicExportingMetricReader(
@@ -84,10 +65,10 @@ def setup_telemetry(app: FastAPI) -> None:
 
     logger.info(
         "OpenTelemetry 初始化完成: metrics=%s%s, traces=%s%s",
-        "enabled" if _ENABLE_OTEL_METRICS else "disabled",
-        f"→{_PROMETHEUS_OTLP_ENDPOINT}" if _ENABLE_OTEL_METRICS else "",
-        "enabled" if _ENABLE_OTEL_TRACES else "disabled",
-        f"→{_OTEL_TRACES_ENDPOINT}" if _ENABLE_OTEL_TRACES else "",
+        "enabled" if settings.ENABLE_OTEL_METRICS else "disabled",
+        f"→{settings.OTEL_METRICS_ENDPOINT}" if settings.ENABLE_OTEL_METRICS else "",
+        "enabled" if settings.ENABLE_OTEL_TRACES else "disabled",
+        f"→{settings.OTEL_TRACES_ENDPOINT}" if settings.ENABLE_OTEL_TRACES else "",
     )
 
 

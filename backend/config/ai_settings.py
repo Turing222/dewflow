@@ -127,6 +127,11 @@ class AISettings(BaseSettings):
     KNOWLEDGE_CHUNK_OVERLAP: int = 120
     KNOWLEDGE_MAX_UPLOAD_SIZE_MB: int = 20
 
+    # ── Search Text ───────────────────────────────────────────────
+    SEARCH_TEXT_DEFAULT_TOKEN_LIMIT: int = 60
+    SEARCH_TEXT_KEYWORD_TOKEN_LIMIT: int = 30
+    SEARCH_TEXT_KEYWORD_REPEAT: int = 2
+
     model_config = SettingsConfigDict(
         env_file=_env_files(),
         env_file_encoding="utf-8",
