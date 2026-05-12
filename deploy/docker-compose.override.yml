@@ -20,8 +20,8 @@ services:
     ports:
       - "8000:8000"
     # 覆盖镜像的启动命令，增加 --reload 参数实现热更新
-    # 假设你使用的是 uvicorn，如果是其他请自行替换
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers
+    # --timeout-graceful-shutdown 必须与 base 文件保持一致，command 覆盖会丢失 base 里的参数
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --timeout-graceful-shutdown 30
 
     # 开发环境特有的变量（会与 .env 合并）
     environment:

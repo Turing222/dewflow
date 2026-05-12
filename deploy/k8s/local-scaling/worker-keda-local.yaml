@@ -1,0 +1,32 @@
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: dewflow-redis-auth
+  namespace: dewflow
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: dewflow-secret
+      key: REDIS_PASSWORD
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: dewflow-worker-redis-queue
+  namespace: dewflow
+spec:
+  scaleTargetRef:
+    name: dewflow-worker
+  pollingInterval: 5
+  cooldownPeriod: 30
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  triggers:
+    - type: redis
+      authenticationRef:
+        name: dewflow-redis-auth
+      metadata:
+        address: redis.dewflow.svc.cluster.local:6379
+        databaseIndex: "1"
+        listName: taskiq
+        listLength: "3"

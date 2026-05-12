@@ -180,6 +180,7 @@ services:
     image: ai-tutor-backend:web-v1
     logging: *default-logging
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
+    stop_grace_period: 40s
     volumes:
       - ./backend:/app/backend
       - ./configs:/app/configs:ro
@@ -213,7 +214,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --timeout-graceful-shutdown 30
     ports:
       - "8000:8000"
 
@@ -221,6 +222,7 @@ services:
     image: ai-tutor-backend:ai-v1
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     logging: *default-logging
+    stop_grace_period: 120s
     volumes:
       - ./backend:/app/backend
       - ./configs:/app/configs:ro
@@ -236,7 +238,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
-    command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks --workers 2
+    command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks --workers 2 --wait-tasks-timeout 105 --shutdown-timeout 10
     restart: unless-stopped
     depends_on:
       redis:
