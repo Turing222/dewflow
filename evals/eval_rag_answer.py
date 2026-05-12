@@ -10,7 +10,7 @@ from backend.ai.core import PromptManager
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.prompt_templates import RAG_SYSTEM_TEMPLATE
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
-from backend.ai.providers.llm.llm_service import LLMService
+from backend.ai.providers.llm.factory import LLMProviderFactory
 from backend.ai.providers.llm.mock_provider import MockLLMService
 from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
@@ -146,7 +146,7 @@ async def run(
             vector_index_service=vector_index_service,
             top_k=top_k,
         )
-        llm = MockLLMService() if llm_mode == "mock" else LLMService()
+        llm = MockLLMService() if llm_mode == "mock" else LLMProviderFactory.create()
         prompt_manager = PromptManager(system_template=RAG_SYSTEM_TEMPLATE)
 
         rows = []

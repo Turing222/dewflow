@@ -140,7 +140,6 @@ So 30+ diagnostics does not necessarily mean 30+ unrelated bugs.
 
 Most diagnostics were concentrated in these files:
 
-- [`backend/ai/providers/llm/llm_service.py`](../backend/ai/providers/llm/llm_service.py)
 - [`backend/services/vector_index_service.py`](../backend/services/vector_index_service.py)
 - [`backend/workflow/chat_nonstream_workflow.py`](../backend/workflow/chat_nonstream_workflow.py)
 - [`backend/workflow/chat_workflow.py`](../backend/workflow/chat_workflow.py)
@@ -416,9 +415,7 @@ Warnings like:
 
 - `no-matching-overload`
 
-This happened in:
-
-- [`backend/ai/providers/llm/llm_service.py`](../backend/ai/providers/llm/llm_service.py)
+This happened in the removed legacy OpenAI-compatible LLM adapter.
 
 ### Original Problem
 

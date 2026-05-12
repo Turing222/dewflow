@@ -44,7 +44,7 @@ web = [
 ai = [
     # ── AI / Worker Generation 专用 ──
     "openai~=2.21.0",
-    "pydantic-ai-slim[google]>=1.30.0",
+    "pydantic-ai-slim[google,openai]>=1.30.0",
     "jinja2~=3.1.0",
     "tiktoken~=0.9.0",
     # Knowledge processing

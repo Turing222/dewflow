@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.models.schemas.chat.dto import ConversationMessage
@@ -156,27 +157,7 @@ class RAGPlanningService:
         profile = get_llm_model_config().resolve_profile(
             self.provider or ai_settings.RAG_PLANNER_PROVIDER or ai_settings.LLM_PROVIDER
         )
-        normalized_provider = profile.provider.strip().lower()
-        api_key = profile.resolve_api_key()
-
-        if normalized_provider in {"google", "gemini", "pydantic-ai", "pydantic_ai"}:
-            from pydantic_ai.models.google import GoogleModel
-            from pydantic_ai.providers.google import GoogleProvider
-
-            provider = GoogleProvider(api_key=api_key)
-            return GoogleModel(profile.model, provider=provider)
-
-        if normalized_provider in {"openai", "openai-compatible", "deepseek"}:
-            from pydantic_ai.models.openai import OpenAIChatModel
-            from pydantic_ai.providers.openai import OpenAIProvider
-
-            provider = OpenAIProvider(
-                base_url=profile.resolve_base_url(),
-                api_key=api_key,
-            )
-            return OpenAIChatModel(profile.model, provider=provider)
-
-        raise ValueError(f"Unsupported RAG planner provider: {profile.provider}")
+        return create_pydantic_ai_model(profile=profile, api_key=profile.resolve_api_key())
 
 
 def _clamp(value: int, minimum: int, maximum: int) -> int:

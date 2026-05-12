@@ -13,12 +13,10 @@ from backend.config.ai_settings import _env_files
 
 
 class WorkerSettings(BaseSettings):
-    """Worker 执行配置 —— LLM 并发、断路器、DB 并发。"""
+    """Worker 执行配置 —— worker 并发与 DB 并发。"""
 
-    # ── LLM Concurrency / Circuit Breaker ──────────────────────────
+    # ── LLM Concurrency ────────────────────────────────────────────
     LLM_MAX_CONCURRENCY: int = 5
-    LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
-    LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 30
 
     # ── DB Concurrency ─────────────────────────────────────────────
     DB_MAX_CONCURRENCY: int = 10

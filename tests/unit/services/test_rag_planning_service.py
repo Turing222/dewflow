@@ -49,6 +49,29 @@ def test_rag_execution_plan_clamps_to_config(monkeypatch):
     assert plan.rerank_top_k == 3
 
 
+def test_rag_planning_service_uses_shared_model_builder(monkeypatch):
+    captured = {}
+
+    def fake_create_model(*, profile, api_key, max_retries=None):
+        captured["profile"] = profile
+        captured["api_key"] = api_key
+        captured["max_retries"] = max_retries
+        return "model"
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "planner-key")
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.create_pydantic_ai_model",
+        fake_create_model,
+    )
+
+    model = RAGPlanningService(provider="deepseek")._create_model()
+
+    assert model == "model"
+    assert captured["profile"].provider == "deepseek"
+    assert captured["api_key"] == "planner-key"
+    assert captured["max_retries"] is None
+
+
 @pytest.mark.asyncio
 async def test_rag_planning_service_falls_back_on_invalid_output(monkeypatch):
     monkeypatch.setattr(

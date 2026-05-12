@@ -39,7 +39,7 @@ class ConversationMessage(TypedDict):
 
 
 class LLMQueryDTO(BaseModel):
-    """传递给 LLMService 的查询参数"""
+    """传递给 LLM provider 的查询参数。"""
 
     session_id: uuid.UUID
     query_text: str
@@ -48,7 +48,7 @@ class LLMQueryDTO(BaseModel):
 
 
 class LLMResultDTO(BaseModel):
-    """LLMService 返回的结果"""
+    """LLM provider 返回的结果。"""
 
     content: str
     latency_ms: int | None = None

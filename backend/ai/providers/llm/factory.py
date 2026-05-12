@@ -9,8 +9,8 @@ from backend.config.llm import LLMProfile, get_llm_model_config
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractLLMService
 
-from .llm_service import LLMService
 from .mock_provider import MockLLMService
+from .pydantic_ai_models import SUPPORTED_PROVIDERS
 from .pydantic_ai_service import PydanticAILLMService
 from .routing_service import LLMRouteCandidate, LLMRoutingService
 
@@ -63,30 +63,13 @@ class LLMProviderFactory:
         if normalized_provider == "mock":
             return MockLLMService()
 
-        if normalized_provider in {"openai", "openai-compatible"}:
-            return LLMService(
-                provider_name=profile.provider,
-                base_url=profile.resolve_base_url(),
-                api_key=api_key,
-                model_name=profile.model,
-                max_retries=max_retries,
-                extra_body=profile.extra_body,
-            )
-
-        if normalized_provider == "deepseek":
-            return LLMService(
-                provider_name=profile.provider,
-                base_url=profile.resolve_base_url(),
-                api_key=api_key,
-                model_name=profile.model,
-                max_retries=max_retries,
-                extra_body=profile.extra_body,
-            )
-
-        if normalized_provider in {"pydantic-ai", "pydantic_ai", "gemini", "google"}:
+        if normalized_provider in SUPPORTED_PROVIDERS:
             return PydanticAILLMService(
+                profile=profile,
+                provider_name=profile.provider,
                 api_key=api_key,
-                model_name=profile.model,
+                max_retries=max_retries,
+                extra_body=profile.extra_body,
             )
 
         raise ValueError(f"Unsupported LLM provider: {profile.provider}")
