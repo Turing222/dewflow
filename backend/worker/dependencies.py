@@ -18,6 +18,7 @@ from backend.contracts.interfaces import (
 )
 from backend.infra.database import create_db_assets
 from backend.services.object_storage import ObjectStorage, create_object_storage
+from backend.services.rag_planning_service import RAGPlanningService
 from backend.services.rag_service import RAGService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.vector_index_service import VectorIndexService
@@ -27,6 +28,7 @@ _session_factory: async_sessionmaker | None = None
 _llm_service: AbstractLLMService | None = None
 _embedder: AbstractRAGEmbedder | None = None
 _rag_service: AbstractRAGService | None = None
+_rag_planning_service: RAGPlanningService | None = None
 _object_storage: ObjectStorage | None = None
 
 
@@ -87,6 +89,16 @@ def get_worker_rag_service(
             rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
         )
     return _rag_service
+
+
+def get_worker_rag_planning_service() -> RAGPlanningService:
+    """Return the cached worker-side RAG planning service."""
+    global _rag_planning_service
+    if _rag_planning_service is None:
+        _rag_planning_service = RAGPlanningService(
+            provider=ai_settings.RAG_PLANNER_PROVIDER
+        )
+    return _rag_planning_service
 
 
 def get_worker_object_storage() -> ObjectStorage:

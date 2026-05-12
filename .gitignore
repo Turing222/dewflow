@@ -70,3 +70,4 @@ test_demo.py
 snapshots/*.json
 # 工具目录
 tools/
+test-debug-agent/

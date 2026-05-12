@@ -125,3 +125,8 @@ exclude = [
 
 [tool.ty.terminal]
 output-format = "full"
+
+[tool.uv.workspace]
+members = [
+    "test-debug-agent",
+]

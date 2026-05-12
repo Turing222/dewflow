@@ -31,6 +31,11 @@ from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import ChatMessageUpdater
+from backend.services.rag_planning_service import (
+    RAG_PLANNER_FALLBACK_REASON,
+    RAGExecutionPlan,
+    RAGPlanningService,
+)
 from backend.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
@@ -45,11 +50,13 @@ class LLMGenerationWorkerWorkflow:
         uow: AbstractUnitOfWork,
         llm_service: AbstractLLMService,
         rag_service: AbstractRAGService | None = None,
+        rag_planning_service: RAGPlanningService | None = None,
         chat_context_builder: ChatContextBuilder | None = None,
     ) -> None:
         self.uow = uow
         self.llm_service = llm_service
         self.rag_service = rag_service
+        self.rag_planning_service = rag_planning_service
         self.chat_context_builder = chat_context_builder or ChatContextBuilder()
 
     # ── Streaming ──────────────────────────────────────────────────
@@ -286,10 +293,12 @@ class LLMGenerationWorkerWorkflow:
     # ── Shared Helpers ─────────────────────────────────────────────
 
     async def _prepare_context(self, payload: GenerationPayload):
-        candidates = await self._retrieve_rag_candidates(payload)
+        rag_plan, planner_used = await self._build_rag_plan(payload)
+        candidates = await self._retrieve_rag_candidates(payload, rag_plan)
         reranked_chunks = await self._rerank_candidates_if_enabled(
             payload,
             candidates,
+            rag_plan,
         )
         with trace_span(
             "taskiq.llm_stream.prepare_context",
@@ -297,8 +306,17 @@ class LLMGenerationWorkerWorkflow:
                 "chat.session_id": payload.session_id,
                 "rag.kb_id": payload.kb_id,
                 "rag.candidate_count": len(candidates),
-                "rag.rerank.enabled": ai_settings.RAG_RERANK_ENABLED,
+                "rag.rerank.enabled": rag_plan.use_rerank,
+                "rag.rerank.config_enabled": ai_settings.RAG_RERANK_ENABLED,
                 "rag.hit_count": len(reranked_chunks),
+                "rag.planner.enabled": ai_settings.RAG_PLANNER_ENABLED,
+                "rag.planner.used": planner_used,
+                "rag.planner.should_use_rag": rag_plan.should_use_rag,
+                "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
+                "rag.planner.use_rerank": rag_plan.use_rerank,
+                "rag.planner.fallback": (
+                    rag_plan.reason == RAG_PLANNER_FALLBACK_REASON
+                ),
             },
         ) as span:
             prepared_context = self.chat_context_builder.build_from_chunks(
@@ -319,21 +337,54 @@ class LLMGenerationWorkerWorkflow:
             )
             return prepared_context
 
+    async def _build_rag_plan(
+        self,
+        payload: GenerationPayload,
+    ) -> tuple[RAGExecutionPlan, bool]:
+        default_plan = RAGExecutionPlan.from_settings(
+            has_kb=payload.kb_id is not None,
+            query_text=payload.query_text,
+        )
+        if payload.rag_candidates:
+            return default_plan, False
+        if payload.kb_id is None or not payload.query_text.strip():
+            return default_plan, False
+        if not ai_settings.RAG_PLANNER_ENABLED:
+            return default_plan, False
+        if self.rag_planning_service is None:
+            return default_plan, False
+
+        try:
+            plan = await self.rag_planning_service.plan(
+                query_text=payload.query_text,
+                conversation_history=payload.conversation_history,
+                kb_id=payload.kb_id,
+            )
+            return plan.clamped(), True
+        except Exception as exc:
+            logger.warning("Worker RAG Planner 规划失败，降级为默认计划: %s", exc)
+            return default_plan, False
+
     async def _retrieve_rag_candidates(
         self,
         payload: GenerationPayload,
+        rag_plan: RAGExecutionPlan,
     ) -> list[dict[str, Any]]:
         if payload.rag_candidates:
             return list(payload.rag_candidates)
-        if self.rag_service is None or payload.kb_id is None:
+        if (
+            self.rag_service is None
+            or payload.kb_id is None
+            or not rag_plan.should_use_rag
+        ):
             return []
 
         try:
             uow = getattr(self.rag_service, "uow", None)
             if uow is None or getattr(uow, "_session", None) is not None:
-                return await self._retrieve_from_rag_service(payload)
+                return await self._retrieve_from_rag_service(payload, rag_plan)
             async with uow:
-                return await self._retrieve_from_rag_service(payload)
+                return await self._retrieve_from_rag_service(payload, rag_plan)
         except Exception as exc:
             logger.warning("Worker RAG 候选检索失败，降级为普通对话: %s", exc)
             return []
@@ -341,34 +392,48 @@ class LLMGenerationWorkerWorkflow:
     async def _retrieve_from_rag_service(
         self,
         payload: GenerationPayload,
+        rag_plan: RAGExecutionPlan,
     ) -> list[dict[str, Any]]:
         if self.rag_service is None:
             return []
-        if ai_settings.RAG_RERANK_ENABLED:
+        if rag_plan.retrieval_mode == "fulltext":
+            fulltext_top_k = (
+                rag_plan.candidate_count if rag_plan.use_rerank else rag_plan.top_k
+            )
+            return await self.rag_service.retrieve_fulltext(
+                query_text=payload.query_text,
+                kb_id=payload.kb_id,
+                top_k=fulltext_top_k,
+            )
+        if rag_plan.retrieval_mode == "hybrid" or rag_plan.use_rerank:
+            hybrid_top_k = (
+                rag_plan.candidate_count if rag_plan.use_rerank else rag_plan.top_k
+            )
             return await self.rag_service.retrieve_hybrid(
                 query_text=payload.query_text,
                 kb_id=payload.kb_id,
-                top_k=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
+                top_k=hybrid_top_k,
             )
         return await self.rag_service.retrieve(
             query_text=payload.query_text,
             kb_id=payload.kb_id,
-            top_k=ai_settings.RAG_TOP_K,
+            top_k=rag_plan.top_k,
         )
 
     async def _rerank_candidates_if_enabled(
         self,
         payload: GenerationPayload,
         candidates: list[dict[str, Any]],
+        rag_plan: RAGExecutionPlan,
     ) -> list[dict[str, Any]]:
         candidates = list(candidates)
         if not candidates:
             return []
 
-        if not ai_settings.RAG_RERANK_ENABLED:
-            return candidates[: ai_settings.RAG_TOP_K]
+        if not rag_plan.use_rerank:
+            return candidates[: rag_plan.top_k]
 
-        limit = max(1, ai_settings.RAG_RERANK_TOP_K)
+        limit = max(1, rag_plan.rerank_top_k)
         try:
             with trace_span(
                 "taskiq.llm_stream.rerank",
@@ -377,6 +442,7 @@ class LLMGenerationWorkerWorkflow:
                     "rag.kb_id": payload.kb_id,
                     "rag.top_k": limit,
                     "rag.candidate_count": len(candidates),
+                    "rag.planner.use_rerank": rag_plan.use_rerank,
                 },
             ) as span:
                 prompt = RAGService._build_rerank_prompt(
