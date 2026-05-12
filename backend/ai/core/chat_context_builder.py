@@ -360,16 +360,29 @@ class ChatContextBuilder:
         )
 
     @staticmethod
-    def _build_search_context(
+    def build_search_context(
         kb_id: uuid.UUID | None,
         query_text: str,
         rag_chunks: list[dict],
     ) -> dict | None:
+        """Build frontend-facing RAG search context from retrieved chunks."""
         return ChatContextBuilder._build_rag_references(
             kb_id=kb_id,
             query_text=query_text,
             rag_chunks=rag_chunks,
         ).search_context
+
+    @staticmethod
+    def _build_search_context(
+        kb_id: uuid.UUID | None,
+        query_text: str,
+        rag_chunks: list[dict],
+    ) -> dict | None:
+        return ChatContextBuilder.build_search_context(
+            kb_id=kb_id,
+            query_text=query_text,
+            rag_chunks=rag_chunks,
+        )
 
     @staticmethod
     def _build_rag_references(

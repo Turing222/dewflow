@@ -316,6 +316,93 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
 
 
 @pytest.mark.asyncio
+async def test_worker_nonstream_refuses_when_rag_has_no_hits(monkeypatch):
+    redis = FakeRedis()
+    slot_calls = install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.redis_client.init",
+        AsyncMock(return_value=redis),
+    )
+
+    uow = DummyUoW()
+    assistant_message_id = uuid.uuid4()
+    uow.chat_repo.update_message_status.return_value = object()
+    llm_service = NonStreamingLLM(LLMResultDTO(content="should not run"))
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        llm_service=llm_service,
+        rag_service=RecordingRAGService([]),
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 3)
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="知识库里有什么？",
+        conversation_history=[],
+        kb_id=uuid.uuid4(),
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=payload,
+        assistant_message_id=assistant_message_id,
+        idempotency_lock_key="idempotency:test",
+    )
+
+    assert result.success is True
+    assert result.content == "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
+    llm_service.generate_response.assert_not_awaited()
+    assert slot_calls == []
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["status"].value == "success"
+    assert update_kwargs["content"] == result.content
+    assert update_kwargs["search_context"]["rag_refusal"] is True
+    assert update_kwargs["search_context"]["reason"] == "RAG 命中数量不足"
+    assert redis.set_calls == [("idempotency:test", str(assistant_message_id), 3600)]
+
+
+@pytest.mark.asyncio
+async def test_worker_stream_refuses_when_rag_has_no_hits(monkeypatch):
+    redis = FakeRedis()
+    slot_calls = install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.redis_client.init",
+        AsyncMock(return_value=redis),
+    )
+
+    uow = DummyUoW()
+    assistant_message_id = uuid.uuid4()
+    uow.chat_repo.update_message_status.return_value = object()
+    llm_service = StreamingLLM(["should not stream"])
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        llm_service=llm_service,
+        rag_service=RecordingRAGService([]),
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 3)
+
+    await workflow.generate_stream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="知识库里有什么？",
+            conversation_history=[],
+            kb_id=uuid.uuid4(),
+        ),
+        channel="stream:test",
+        assistant_message_id=assistant_message_id,
+    )
+
+    refusal = "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
+    assert redis.published == [
+        ("stream:test", encode_chunk_event(refusal)),
+        ("stream:test", encode_done_event()),
+    ]
+    assert llm_service.stream_queries == []
+    assert slot_calls == []
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["content"] == refusal
+    assert update_kwargs["search_context"]["rag_refusal"] is True
+
+
+@pytest.mark.asyncio
 async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
     monkeypatch,
 ):
@@ -369,6 +456,79 @@ async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
     rag_service.retrieve_hybrid.assert_not_awaited()
     query = llm_service.generate_response.call_args.args[0]
     assert "worker-side context" in query.conversation_history[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_worker_generation_refuses_low_vector_score(monkeypatch):
+    redis = FakeRedis()
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.redis_client.init",
+        AsyncMock(return_value=redis),
+    )
+
+    low_hit = make_rag_hit("weak context")
+    low_hit["score"] = 0.1
+    low_hit["distance"] = 0.9
+    llm_service = NonStreamingLLM(LLMResultDTO(content="should not run"))
+    uow = DummyUoW()
+    uow.chat_repo.update_message_status.return_value = object()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        llm_service=llm_service,
+        rag_service=RecordingRAGService([low_hit]),
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 3)
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="弱相关问题",
+            conversation_history=[],
+            kb_id=uuid.uuid4(),
+        ),
+        assistant_message_id=uuid.uuid4(),
+    )
+
+    assert result.success is True
+    llm_service.generate_response.assert_not_awaited()
+    assert result.search_context is not None
+    assert result.search_context["reason"] == "RAG 相关性分数不足"
+    assert result.search_context["best_score"] == 0.1
+
+
+@pytest.mark.asyncio
+async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(monkeypatch):
+    redis = FakeRedis()
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.redis_client.init",
+        AsyncMock(return_value=redis),
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        False,
+    )
+
+    llm_service = NonStreamingLLM(LLMResultDTO(content="fallback answer"))
+    uow = DummyUoW()
+    uow.chat_repo.update_message_status.return_value = object()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        llm_service=llm_service,
+        rag_service=RecordingRAGService([]),
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="知识库里有什么？",
+            conversation_history=[],
+            kb_id=uuid.uuid4(),
+        ),
+        assistant_message_id=uuid.uuid4(),
+    )
+
+    assert result.content == "fallback answer"
+    llm_service.generate_response.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -615,6 +775,51 @@ async def test_worker_generation_reranks_candidates_when_enabled(
             "chat.stream": True,
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_worker_generation_refuses_low_rerank_score(monkeypatch):
+    redis = FakeRedis()
+    slot_calls = install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.redis_client.init",
+        AsyncMock(return_value=redis),
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_RERANK_ENABLED",
+        True,
+    )
+
+    uow = DummyUoW()
+    uow.chat_repo.update_message_status.return_value = object()
+    llm_service = StreamingLLM(
+        ["should not stream"],
+        rerank_content='{"rankings": [{"index": 1, "score": 2}]}',
+    )
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        llm_service=llm_service,
+        rag_service=RecordingRAGService([make_rag_hit("weak rerank context")]),
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 3)
+
+    await workflow.generate_stream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            conversation_history=[],
+            kb_id=uuid.uuid4(),
+        ),
+        channel="stream:test",
+        assistant_message_id=uuid.uuid4(),
+    )
+
+    assert llm_service.generate_response.await_count == 1
+    assert llm_service.stream_queries == []
+    assert "chat.stream" not in slot_calls[-1]
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["search_context"]["reason"] == "RAG rerank 相关性不足"
+    assert update_kwargs["search_context"]["best_rerank_score"] == 2.0
 
 
 @pytest.mark.asyncio

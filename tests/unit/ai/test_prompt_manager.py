@@ -103,6 +103,17 @@ class TestTemplateRendering:
         assert "[R2.1]" in result
         assert "必须在对应句子后标注 chunk 级引用" in result
 
+    def test_rag_template_requires_knowledge_evidence(self):
+        """RAG 模板不允许资料不足时用通用知识兜底"""
+        result = render_system_prompt(
+            template=RAG_SYSTEM_TEMPLATE,
+            context_chunks=[],
+        )
+
+        assert "只能根据参考资料回答" in result
+        assert "无法基于知识库资料回答" in result
+        assert "基于你的通用知识回答" not in result
+
 
 # ============================================================
 # 基础组装测试

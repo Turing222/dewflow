@@ -61,3 +61,20 @@ def test_database_url_overrides_postgres_parts(monkeypatch):
     assert "rdc.example.com" in settings.database_url
     assert "localhost" not in settings.database_url
     assert "db-pass" not in settings.database_url_safe
+
+
+def test_rag_refusal_settings_can_load_from_env(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("RAG_REFUSAL_ENABLED", "false")
+    monkeypatch.setenv("RAG_MIN_HIT_COUNT", "2")
+    monkeypatch.setenv("RAG_MIN_RELEVANCE_SCORE", "0.35")
+    monkeypatch.setenv("RAG_MIN_RERANK_SCORE", "6.5")
+    monkeypatch.setenv("RAG_REFUSAL_MESSAGE", "资料不足，无法回答。")
+
+    settings = Settings()
+
+    assert settings.RAG_REFUSAL_ENABLED is False
+    assert settings.RAG_MIN_HIT_COUNT == 2
+    assert settings.RAG_MIN_RELEVANCE_SCORE == 0.35
+    assert settings.RAG_MIN_RERANK_SCORE == 6.5
+    assert settings.RAG_REFUSAL_MESSAGE == "资料不足，无法回答。"

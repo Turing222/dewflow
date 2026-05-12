@@ -8,6 +8,7 @@
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
@@ -31,6 +32,7 @@ from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import ChatMessageUpdater
+from backend.services.rag_evidence_policy import RAGEvidenceDecision, RAGEvidencePolicy
 from backend.services.rag_planning_service import (
     RAG_PLANNER_FALLBACK_REASON,
     RAGExecutionPlan,
@@ -39,6 +41,15 @@ from backend.services.rag_planning_service import (
 from backend.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PreparedGenerationContext:
+    """Worker 生成前准备好的 Prompt 或拒答决策。"""
+
+    assembled_prompt: Any | None
+    search_context: dict | None
+    refusal_decision: RAGEvidenceDecision | None = None
 
 
 class LLMGenerationWorkerWorkflow:
@@ -52,12 +63,14 @@ class LLMGenerationWorkerWorkflow:
         rag_service: AbstractRAGService | None = None,
         rag_planning_service: RAGPlanningService | None = None,
         chat_context_builder: ChatContextBuilder | None = None,
+        rag_evidence_policy: RAGEvidencePolicy | None = None,
     ) -> None:
         self.uow = uow
         self.llm_service = llm_service
         self.rag_service = rag_service
         self.rag_planning_service = rag_planning_service
         self.chat_context_builder = chat_context_builder or ChatContextBuilder()
+        self.rag_evidence_policy = rag_evidence_policy or RAGEvidencePolicy()
 
     # ── Streaming ──────────────────────────────────────────────────
 
@@ -77,7 +90,20 @@ class LLMGenerationWorkerWorkflow:
 
         try:
             prepared_context = await self._prepare_context(payload)
+            if prepared_context.refusal_decision is not None:
+                await self._handle_stream_refusal(
+                    channel=channel,
+                    redis_connection=redis_connection,
+                    assistant_message_id=assistant_message_id,
+                    user_id=user_id,
+                    search_context=prepared_context.search_context,
+                    start_time=start_time,
+                    idempotency_lock_key=idempotency_lock_key,
+                )
+                return
             assembled = prepared_context.assembled_prompt
+            if assembled is None:
+                raise RuntimeError("生成上下文缺少 Prompt")
             search_context = prepared_context.search_context
             tokens_input = assembled.total_tokens
             llm_query = LLMQueryDTO(
@@ -186,7 +212,18 @@ class LLMGenerationWorkerWorkflow:
 
         try:
             prepared_context = await self._prepare_context(payload)
+            if prepared_context.refusal_decision is not None:
+                return await self._handle_nonstream_refusal(
+                    redis_connection=redis_connection,
+                    assistant_message_id=assistant_message_id,
+                    user_id=user_id,
+                    search_context=prepared_context.search_context,
+                    start_time=start_time,
+                    idempotency_lock_key=idempotency_lock_key,
+                )
             assembled = prepared_context.assembled_prompt
+            if assembled is None:
+                raise RuntimeError("生成上下文缺少 Prompt")
             search_context = prepared_context.search_context
             tokens_input = assembled.total_tokens
             llm_query = LLMQueryDTO(
@@ -300,6 +337,22 @@ class LLMGenerationWorkerWorkflow:
             candidates,
             rag_plan,
         )
+        refusal_decision = self.rag_evidence_policy.evaluate(
+            kb_id=payload.kb_id,
+            rag_plan=rag_plan,
+            chunks=reranked_chunks,
+        )
+        if refusal_decision.should_refuse:
+            search_context = self._build_refusal_search_context(
+                payload=payload,
+                chunks=reranked_chunks,
+                decision=refusal_decision,
+            )
+            return PreparedGenerationContext(
+                assembled_prompt=None,
+                search_context=search_context,
+                refusal_decision=refusal_decision,
+            )
         with trace_span(
             "taskiq.llm_stream.prepare_context",
             {
@@ -335,7 +388,75 @@ class LLMGenerationWorkerWorkflow:
                     "chat.prompt.uses_rag": prepared_context.search_context is not None,
                 },
             )
-            return prepared_context
+            return PreparedGenerationContext(
+                assembled_prompt=prepared_context.assembled_prompt,
+                search_context=prepared_context.search_context,
+            )
+
+    async def _handle_stream_refusal(
+        self,
+        *,
+        channel: str,
+        redis_connection: Any,
+        assistant_message_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        search_context: dict | None,
+        start_time: float,
+        idempotency_lock_key: str | None,
+    ) -> None:
+        refusal_content = ai_settings.RAG_REFUSAL_MESSAGE
+        tokens_output = self._count_output_tokens(refusal_content)
+        await redis_connection.publish(channel, encode_chunk_event(refusal_content))
+        await self._persist_success(
+            assistant_message_id=assistant_message_id,
+            user_id=user_id,
+            content=refusal_content,
+            tokens_input=0,
+            tokens_output=tokens_output,
+            search_context=search_context,
+            start_time=start_time,
+        )
+        if idempotency_lock_key is not None and assistant_message_id is not None:
+            await redis_connection.set(
+                idempotency_lock_key,
+                str(assistant_message_id),
+                ex=3600,
+            )
+
+    async def _handle_nonstream_refusal(
+        self,
+        *,
+        redis_connection: Any,
+        assistant_message_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        search_context: dict | None,
+        start_time: float,
+        idempotency_lock_key: str | None,
+    ) -> GenerationResult:
+        refusal_content = ai_settings.RAG_REFUSAL_MESSAGE
+        tokens_output = self._count_output_tokens(refusal_content)
+        await self._persist_success(
+            assistant_message_id=assistant_message_id,
+            user_id=user_id,
+            content=refusal_content,
+            tokens_input=0,
+            tokens_output=tokens_output,
+            search_context=search_context,
+            start_time=start_time,
+        )
+        if idempotency_lock_key is not None and assistant_message_id is not None:
+            await redis_connection.set(
+                idempotency_lock_key,
+                str(assistant_message_id),
+                ex=3600,
+            )
+        return GenerationResult(
+            success=True,
+            content=refusal_content,
+            tokens_input=0,
+            tokens_output=tokens_output,
+            search_context=search_context,
+        )
 
     async def _build_rag_plan(
         self,
@@ -482,6 +603,33 @@ class LLMGenerationWorkerWorkflow:
         except Exception as exc:
             logger.warning("Worker RAG rerank 失败，降级为候选原始排序: %s", exc)
             return candidates[:limit]
+
+    def _build_refusal_search_context(
+        self,
+        *,
+        payload: GenerationPayload,
+        chunks: list[dict[str, Any]],
+        decision: RAGEvidenceDecision,
+    ) -> dict:
+        search_context = self.chat_context_builder.build_search_context(
+            kb_id=payload.kb_id,
+            query_text=payload.query_text,
+            rag_chunks=chunks,
+        ) or {
+            "version": 1,
+            "kb_id": str(payload.kb_id) if payload.kb_id else None,
+            "query": payload.query_text,
+            "retrieval": {
+                "hit_count": len(chunks),
+                "source_count": 0,
+                "max_score": decision.best_score or 0.0,
+                "avg_score": decision.best_score or 0.0,
+            },
+            "refs": [],
+            "chunks": [],
+        }
+        search_context.update(decision.to_metadata())
+        return search_context
 
     def _count_output_tokens(self, content: str) -> int:
         model_name = getattr(
