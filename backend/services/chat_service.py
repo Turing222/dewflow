@@ -269,6 +269,7 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
         tokens_input: int | None = None,
         tokens_output: int | None = None,
         search_context: dict | None = None,
+        message_metadata: dict | None = None,
     ) -> ChatMessage:
         """把助手消息标记为成功，并保存 token/search_context。"""
         latency_ms = None
@@ -283,6 +284,7 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
             tokens_input=tokens_input,
             tokens_output=tokens_output,
             search_context=search_context,
+            message_metadata=message_metadata,
         )
         if not message:
             logger.error("更新消息失败，消息不存在: message_id=%s", message_id)
@@ -302,12 +304,14 @@ class ChatMessageUpdater(BaseService[AbstractUnitOfWork]):
         self,
         message_id: uuid.UUID,
         error_content: str = "抱歉，处理您的请求时出现错误。",
+        message_metadata: dict | None = None,
     ) -> ChatMessage | None:
         """把助手消息标记为失败；消息缺失时只记录日志。"""
         message = await self.uow.chat_repo.update_message_status(
             message_id=message_id,
             status=MessageStatus.FAILED,
             content=error_content,
+            message_metadata=message_metadata,
         )
         if message:
             logger.warning("消息更新为失败状态: message_id=%s", message_id)

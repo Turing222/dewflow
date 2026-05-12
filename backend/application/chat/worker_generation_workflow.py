@@ -31,6 +31,16 @@ from backend.infra.redis import redis_client
 from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
 from backend.observability.trace_utils import set_span_attributes, trace_span
+from backend.services.chat_safety_metadata import (
+    SAFETY_REFUSAL_MESSAGE,
+    BadcaseReason,
+    BadcaseSeverity,
+    GuardrailDecision,
+    ResponseOutcome,
+    build_safety_metadata,
+    evaluate_input_guardrail,
+    evaluate_output_guardrail,
+)
 from backend.services.chat_service import ChatMessageUpdater
 from backend.services.rag_evidence_policy import RAGEvidenceDecision, RAGEvidencePolicy
 from backend.services.rag_planning_service import (
@@ -89,6 +99,18 @@ class LLMGenerationWorkerWorkflow:
         start_time = time.time()
 
         try:
+            input_decision = evaluate_input_guardrail(payload.query_text)
+            if input_decision.triggered:
+                await self._handle_stream_input_block(
+                    channel=channel,
+                    redis_connection=redis_connection,
+                    assistant_message_id=assistant_message_id,
+                    user_id=user_id,
+                    input_decision=input_decision,
+                    start_time=start_time,
+                    idempotency_lock_key=idempotency_lock_key,
+                )
+                return
             prepared_context = await self._prepare_context(payload)
             if prepared_context.refusal_decision is not None:
                 await self._handle_stream_refusal(
@@ -137,6 +159,18 @@ class LLMGenerationWorkerWorkflow:
                     }
                 ):
                     async for chunk in self.llm_service.stream_response(llm_query):
+                        candidate_content = "".join([*accumulated_content, chunk])
+                        output_decision = evaluate_output_guardrail(candidate_content)
+                        if output_decision.triggered:
+                            # Provider streaming lacks a cancel token here, so we stop
+                            # consuming before unsafe content is published and rely on
+                            # future provider-level cancellation to reduce token waste.
+                            accumulated_content.append(chunk)
+                            await redis_connection.publish(
+                                channel,
+                                encode_chunk_event(SAFETY_REFUSAL_MESSAGE),
+                            )
+                            break
                         accumulated_content.append(chunk)
                         await redis_connection.publish(
                             channel,
@@ -144,15 +178,25 @@ class LLMGenerationWorkerWorkflow:
                         )
 
                 full_content = "".join(accumulated_content)
-                tokens_output = self._count_output_tokens(full_content)
+                output_decision = evaluate_output_guardrail(full_content)
+                content_to_persist = (
+                    SAFETY_REFUSAL_MESSAGE
+                    if output_decision.triggered
+                    else full_content
+                )
+                tokens_output = self._count_output_tokens(content_to_persist)
                 await self._persist_success(
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
-                    content=full_content,
+                    content=content_to_persist,
                     tokens_input=tokens_input,
                     tokens_output=tokens_output,
                     search_context=search_context,
                     start_time=start_time,
+                    message_metadata=self._build_success_metadata(
+                        output_decision=output_decision,
+                        original_content=full_content,
+                    ),
                 )
                 if (
                     idempotency_lock_key is not None
@@ -211,6 +255,16 @@ class LLMGenerationWorkerWorkflow:
         start_time = time.time()
 
         try:
+            input_decision = evaluate_input_guardrail(payload.query_text)
+            if input_decision.triggered:
+                return await self._handle_nonstream_input_block(
+                    redis_connection=redis_connection,
+                    assistant_message_id=assistant_message_id,
+                    user_id=user_id,
+                    input_decision=input_decision,
+                    start_time=start_time,
+                    idempotency_lock_key=idempotency_lock_key,
+                )
             prepared_context = await self._prepare_context(payload)
             if prepared_context.refusal_decision is not None:
                 return await self._handle_nonstream_refusal(
@@ -275,9 +329,17 @@ class LLMGenerationWorkerWorkflow:
                 )
                 return GenerationResult(success=False, error=error_msg)
 
-            full_content = result.content
-            tokens_output = result.completion_tokens or self._count_output_tokens(
-                full_content
+            original_content = result.content
+            output_decision = evaluate_output_guardrail(original_content)
+            full_content = (
+                SAFETY_REFUSAL_MESSAGE
+                if output_decision.triggered
+                else original_content
+            )
+            tokens_output = (
+                self._count_output_tokens(full_content)
+                if output_decision.triggered
+                else result.completion_tokens or self._count_output_tokens(full_content)
             )
 
             await self._persist_success(
@@ -288,6 +350,10 @@ class LLMGenerationWorkerWorkflow:
                 tokens_output=tokens_output,
                 search_context=search_context,
                 start_time=start_time,
+                message_metadata=self._build_success_metadata(
+                    output_decision=output_decision,
+                    original_content=original_content,
+                ),
             )
             if idempotency_lock_key is not None and assistant_message_id is not None:
                 await redis_connection.set(
@@ -393,6 +459,42 @@ class LLMGenerationWorkerWorkflow:
                 search_context=prepared_context.search_context,
             )
 
+    async def _handle_stream_input_block(
+        self,
+        *,
+        channel: str,
+        redis_connection: Any,
+        assistant_message_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        input_decision: GuardrailDecision,
+        start_time: float,
+        idempotency_lock_key: str | None,
+    ) -> None:
+        tokens_output = self._count_output_tokens(SAFETY_REFUSAL_MESSAGE)
+        await redis_connection.publish(
+            channel,
+            encode_chunk_event(SAFETY_REFUSAL_MESSAGE),
+        )
+        await self._persist_success(
+            assistant_message_id=assistant_message_id,
+            user_id=user_id,
+            content=SAFETY_REFUSAL_MESSAGE,
+            tokens_input=0,
+            tokens_output=tokens_output,
+            search_context=None,
+            start_time=start_time,
+            message_metadata=build_safety_metadata(
+                response_outcome=ResponseOutcome.BLOCKED,
+                input_decision=input_decision,
+            ),
+        )
+        if idempotency_lock_key is not None and assistant_message_id is not None:
+            await redis_connection.set(
+                idempotency_lock_key,
+                str(assistant_message_id),
+                ex=3600,
+            )
+
     async def _handle_stream_refusal(
         self,
         *,
@@ -415,6 +517,7 @@ class LLMGenerationWorkerWorkflow:
             tokens_output=tokens_output,
             search_context=search_context,
             start_time=start_time,
+            message_metadata=self._build_rag_refusal_metadata(),
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
             await redis_connection.set(
@@ -422,6 +525,43 @@ class LLMGenerationWorkerWorkflow:
                 str(assistant_message_id),
                 ex=3600,
             )
+
+    async def _handle_nonstream_input_block(
+        self,
+        *,
+        redis_connection: Any,
+        assistant_message_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        input_decision: GuardrailDecision,
+        start_time: float,
+        idempotency_lock_key: str | None,
+    ) -> GenerationResult:
+        tokens_output = self._count_output_tokens(SAFETY_REFUSAL_MESSAGE)
+        await self._persist_success(
+            assistant_message_id=assistant_message_id,
+            user_id=user_id,
+            content=SAFETY_REFUSAL_MESSAGE,
+            tokens_input=0,
+            tokens_output=tokens_output,
+            search_context=None,
+            start_time=start_time,
+            message_metadata=build_safety_metadata(
+                response_outcome=ResponseOutcome.BLOCKED,
+                input_decision=input_decision,
+            ),
+        )
+        if idempotency_lock_key is not None and assistant_message_id is not None:
+            await redis_connection.set(
+                idempotency_lock_key,
+                str(assistant_message_id),
+                ex=3600,
+            )
+        return GenerationResult(
+            success=True,
+            content=SAFETY_REFUSAL_MESSAGE,
+            tokens_input=0,
+            tokens_output=tokens_output,
+        )
 
     async def _handle_nonstream_refusal(
         self,
@@ -443,6 +583,7 @@ class LLMGenerationWorkerWorkflow:
             tokens_output=tokens_output,
             search_context=search_context,
             start_time=start_time,
+            message_metadata=self._build_rag_refusal_metadata(),
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
             await redis_connection.set(
@@ -639,6 +780,30 @@ class LLMGenerationWorkerWorkflow:
         )
         return count_tokens(content, model_name)
 
+    @staticmethod
+    def _build_rag_refusal_metadata() -> dict[str, object]:
+        return build_safety_metadata(
+            response_outcome=ResponseOutcome.REFUSED,
+            badcase_severity=BadcaseSeverity.P1,
+            badcase_reason=BadcaseReason.EMPTY_RETRIEVAL_REFUSAL,
+        )
+
+    @staticmethod
+    def _build_success_metadata(
+        *,
+        output_decision: GuardrailDecision,
+        original_content: str,
+    ) -> dict[str, object]:
+        if not output_decision.triggered:
+            return build_safety_metadata(response_outcome=ResponseOutcome.ANSWERED)
+        return build_safety_metadata(
+            response_outcome=ResponseOutcome.REFUSED,
+            output_decision=output_decision,
+            original_unsafe_output=original_content,
+            badcase_severity=BadcaseSeverity.P0,
+            badcase_reason=BadcaseReason.SHOULD_REFUSE_BUT_ANSWERED,
+        )
+
     async def _persist_success(
         self,
         *,
@@ -649,6 +814,7 @@ class LLMGenerationWorkerWorkflow:
         tokens_output: int,
         search_context: dict | None,
         start_time: float,
+        message_metadata: dict | None = None,
     ) -> None:
         if assistant_message_id is None:
             return
@@ -662,6 +828,7 @@ class LLMGenerationWorkerWorkflow:
                 tokens_input=tokens_input,
                 tokens_output=tokens_output,
                 search_context=search_context,
+                message_metadata=message_metadata,
             )
             if user_id is None or tokens_input is None:
                 return
@@ -705,6 +872,9 @@ class LLMGenerationWorkerWorkflow:
                 await updater.update_as_failed(
                     message_id=assistant_message_id,
                     error_content=error_content,
+                    message_metadata=build_safety_metadata(
+                        response_outcome=ResponseOutcome.FAILED,
+                    ),
                 )
         except Exception:
             logger.exception(

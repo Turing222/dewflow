@@ -326,6 +326,7 @@ class TestChatMessageUpdater:
             message_id=message_id,
             status=MessageStatus.FAILED,
             content="抱歉，处理您的请求时出现错误。",
+            message_metadata=None,
         )
 
     @pytest.mark.asyncio
@@ -349,6 +350,7 @@ class TestChatMessageUpdater:
             message_id=message_id,
             status=MessageStatus.FAILED,
             content=error_msg,
+            message_metadata=None,
         )
 
     @pytest.mark.asyncio
