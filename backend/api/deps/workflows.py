@@ -2,6 +2,7 @@ import redis.asyncio as redis
 from fastapi import Depends
 
 from backend.api.deps.infra import get_redis
+from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.services import get_knowledge_service, get_task_service
 from backend.api.deps.uow import get_uow
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
@@ -13,6 +14,7 @@ from backend.contracts.interfaces import (
 )
 from backend.infra.task_dispatcher import TaskDispatcher
 from backend.services.knowledge_service import KnowledgeService
+from backend.services.permission_service import PermissionService
 from backend.services.task_service import TaskService
 
 
@@ -24,16 +26,18 @@ def get_chat_workflow(
     uow: AbstractUnitOfWork = Depends(get_uow),
     dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
     redis_client: redis.Redis = Depends(get_redis),
+    permission_service: PermissionService = Depends(get_permission_service),
 ) -> ChatWorkflow:
-    return ChatWorkflow(uow, dispatcher, redis_client)
+    return ChatWorkflow(uow, dispatcher, redis_client, permission_service)
 
 
 def get_chat_nonstream_workflow(
     uow: AbstractUnitOfWork = Depends(get_uow),
     dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
     redis_client: redis.Redis = Depends(get_redis),
+    permission_service: PermissionService = Depends(get_permission_service),
 ) -> ChatNonStreamWorkflow:
-    return ChatNonStreamWorkflow(uow, dispatcher, redis_client)
+    return ChatNonStreamWorkflow(uow, dispatcher, redis_client, permission_service)
 
 
 def get_knowledge_upload_workflow(

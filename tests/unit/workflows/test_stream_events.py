@@ -1,3 +1,4 @@
+from backend.api.v1.sse_events import encode_sse_event
 from backend.application.chat.stream_events import (
     decode_stream_event,
     encode_chunk_event,
@@ -28,3 +29,22 @@ def test_stream_events_accept_legacy_payloads():
         "message": "failed",
     }
     assert decode_stream_event("[DONE]") == {"type": "done"}
+
+
+def test_http_sse_events_keep_existing_wire_format():
+    assert (
+        encode_sse_event(
+            {
+                "type": "meta",
+                "session_id": "session-1",
+                "session_title": "demo",
+                "message_id": "message-1",
+            }
+        )
+        == 'data: {"type": "meta", "session_id": "session-1", '
+        '"session_title": "demo", "message_id": "message-1"}\n\n'
+    )
+    assert encode_sse_event({"type": "chunk", "content": "hello"}) == (
+        'data: {"type": "chunk", "content": "hello"}\n\n'
+    )
+    assert encode_sse_event({"type": "done"}) == "data: [DONE]\n\n"

@@ -103,7 +103,7 @@ class UserRepository:
     async def increment_used_tokens(self, user_id: uuid.UUID, amount: int) -> None:
         """无上限检查的原子 Token 累加，适用于后台统计等非关键路径。
 
-        关键对话路径请使用 increment_used_tokens_guarded。
+        关键对话路径请使用 try_increment_used_tokens_with_limit。
         """
         stmt = (
             update(User)
@@ -121,7 +121,7 @@ class UserRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def increment_used_tokens_guarded(
+    async def try_increment_used_tokens_with_limit(
         self,
         user_id: uuid.UUID,
         amount: int,

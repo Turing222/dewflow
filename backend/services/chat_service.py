@@ -21,8 +21,9 @@ logger = logging.getLogger(__name__)
 class SessionManager(BaseService[AbstractUnitOfWork]):
     """负责会话确认、权限校验和消息创建。"""
 
-    def __init__(self, uow: AbstractUnitOfWork) -> None:
+    def __init__(self, uow: AbstractUnitOfWork, permission_service: PermissionService) -> None:
         super().__init__(uow)
+        self.permission_service = permission_service
 
     async def ensure_session(
         self,
@@ -160,7 +161,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
     ) -> bool:
         if not isinstance(workspace_id, uuid.UUID):
             return False
-        return await PermissionService(self.uow).has_permission_for_user_id(
+        return await self.permission_service.has_permission_for_user_id(
             user_id=user_id,
             workspace_id=workspace_id,
             permission=permission,

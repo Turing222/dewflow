@@ -2,7 +2,6 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Select, func, select
 
 from backend.api.dependencies import (
     get_current_active_user,
@@ -10,13 +9,15 @@ from backend.api.dependencies import (
     get_uow,
 )
 from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.core.constants import DEFAULT_PAGE_LIMIT, MAX_AUDIT_PAGE_LIMIT
 from backend.core.exceptions import app_forbidden
-from backend.models.orm.access import AuditEvent, AuditOutcome
+from backend.models.orm.access import AuditOutcome
 from backend.models.orm.user import User
 from backend.models.schemas.audit_schema import (
     AuditEventListResponse,
     AuditEventResponse,
 )
+from backend.repositories.audit_repo import AuditEventFilters
 from backend.services.permission_service import Permission, PermissionService
 
 router = APIRouter()
@@ -24,28 +25,6 @@ router = APIRouter()
 CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 UOWDep = Annotated[AbstractUnitOfWork, Depends(get_uow)]
 PermissionServiceDep = Annotated[PermissionService, Depends(get_permission_service)]
-
-
-def _apply_audit_filters(
-    stmt: Select,
-    *,
-    action: str | None,
-    outcome: AuditOutcome | None,
-    request_id: str | None,
-    actor_user_id: uuid.UUID | None,
-    workspace_id: uuid.UUID | None,
-) -> Select:
-    if action:
-        stmt = stmt.where(AuditEvent.action == action)
-    if outcome:
-        stmt = stmt.where(AuditEvent.outcome == outcome)
-    if request_id:
-        stmt = stmt.where(AuditEvent.request_id == request_id)
-    if actor_user_id:
-        stmt = stmt.where(AuditEvent.actor_user_id == actor_user_id)
-    if workspace_id:
-        stmt = stmt.where(AuditEvent.workspace_id == workspace_id)
-    return stmt
 
 
 async def _ensure_audit_access(
@@ -75,45 +54,36 @@ async def list_audit_events(
     uow: UOWDep,
     permission_service: PermissionServiceDep,
     skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=200)] = 20,
+    limit: Annotated[int, Query(ge=1, le=MAX_AUDIT_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
     action: str | None = Query(None, max_length=80),
     outcome: AuditOutcome | None = None,
     request_id: str | None = Query(None, max_length=64),
     actor_user_id: uuid.UUID | None = None,
     workspace_id: uuid.UUID | None = None,
 ) -> AuditEventListResponse:
+    filters = AuditEventFilters(
+        action=action,
+        outcome=outcome,
+        request_id=request_id,
+        actor_user_id=actor_user_id,
+        workspace_id=workspace_id,
+    )
     async with uow:
         await _ensure_audit_access(
             current_user=current_user,
             workspace_id=workspace_id,
             permission_service=permission_service,
         )
-
-        count_stmt = _apply_audit_filters(
-            select(func.count()).select_from(AuditEvent),
-            action=action,
-            outcome=outcome,
-            request_id=request_id,
-            actor_user_id=actor_user_id,
-            workspace_id=workspace_id,
+        total = await uow.audit_repo.count_events(filters)
+        events = await uow.audit_repo.list_events(
+            filters=filters,
+            skip=skip,
+            limit=limit,
         )
-        total = await uow.session.scalar(count_stmt)
-
-        stmt = _apply_audit_filters(
-            select(AuditEvent),
-            action=action,
-            outcome=outcome,
-            request_id=request_id,
-            actor_user_id=actor_user_id,
-            workspace_id=workspace_id,
-        )
-        stmt = stmt.order_by(AuditEvent.created_at.desc()).offset(skip).limit(limit)
-        result = await uow.session.execute(stmt)
-        events = result.scalars().all()
 
     return AuditEventListResponse(
         items=[AuditEventResponse.model_validate(event) for event in events],
-        total=total or 0,
+        total=total,
         skip=skip,
         limit=limit,
     )

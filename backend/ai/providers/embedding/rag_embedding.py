@@ -5,6 +5,7 @@
 失败处理：空输入、空响应和维度不匹配都会转换为统一业务错误。
 """
 
+import asyncio
 import logging
 
 import openai
@@ -44,7 +45,16 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
             )
         return self._client
 
-    def encode_query(self, text: str) -> list[float]:
+    async def encode_query(self, text: str) -> list[float]:
+        return await asyncio.to_thread(self._encode_query_sync, text)
+
+    async def encode_document(self, text: str) -> list[float]:
+        return await self.encode_query(text)
+
+    async def encode_documents(self, texts: list[str]) -> list[list[float]]:
+        return await asyncio.to_thread(self._encode_documents_sync, texts)
+
+    def _encode_query_sync(self, text: str) -> list[float]:
         payload = text.strip()
         if not payload:
             raise app_service_error(
@@ -53,7 +63,7 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
 
         return self._create_embeddings([payload])[0]
 
-    def encode_documents(self, texts: list[str]) -> list[list[float]]:
+    def _encode_documents_sync(self, texts: list[str]) -> list[list[float]]:
         payloads = [text.strip() for text in texts]
         if not payloads or any(not payload for payload in payloads):
             raise app_service_error(
@@ -163,13 +173,20 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    def encode_query(self, text: str) -> list[float]:
-        return self._embed(text, task_type="RETRIEVAL_QUERY")
+    async def encode_query(self, text: str) -> list[float]:
+        return await asyncio.to_thread(
+            self._embed_sync, text, task_type="RETRIEVAL_QUERY"
+        )
 
-    def encode_document(self, text: str) -> list[float]:
-        return self._embed(text, task_type="RETRIEVAL_DOCUMENT")
+    async def encode_document(self, text: str) -> list[float]:
+        return await asyncio.to_thread(
+            self._embed_sync, text, task_type="RETRIEVAL_DOCUMENT"
+        )
 
-    def _embed(self, text: str, *, task_type: str) -> list[float]:
+    async def encode_documents(self, texts: list[str]) -> list[list[float]]:
+        return await asyncio.to_thread(self._embed_documents_sync, texts)
+
+    def _embed_sync(self, text: str, *, task_type: str) -> list[float]:
         payload = text.strip()
         if not payload:
             raise app_service_error(
@@ -235,6 +252,86 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
                 },
             ) from exc
 
+    def _embed_documents_sync(self, texts: list[str]) -> list[list[float]]:
+        payloads = [text.strip() for text in texts]
+        if not payloads or any(not payload for payload in payloads):
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
+
+        config_kwargs: dict = {"task_type": "RETRIEVAL_DOCUMENT"}
+        if self.dimensions is not None:
+            config_kwargs["output_dimensionality"] = self.dimensions
+
+        try:
+            with trace_span(
+                "embedding.google_genai.encode_batch",
+                {
+                    "gen_ai.system": "google-genai",
+                    "gen_ai.operation.name": "embeddings",
+                    "gen_ai.request.model": self.model_name,
+                    "embedding.task_type": "RETRIEVAL_DOCUMENT",
+                    "embedding.input.count": len(payloads),
+                    "embedding.input.char_count": sum(
+                        len(payload) for payload in payloads
+                    ),
+                    "embedding.expected_dim": self.dimensions,
+                },
+            ) as span:
+                response = self._get_client().models.embed_content(
+                    model=self.model_name,
+                    contents=payloads,
+                    config=types.EmbedContentConfig(**config_kwargs),
+                )
+                if not response.embeddings or len(response.embeddings) != len(payloads):
+                    raise app_service_error(
+                        "Google embedding 服务未返回向量数据",
+                        code="GOOGLE_EMBEDDING_EMPTY_RESPONSE",
+                    )
+
+                embeddings: list[list[float]] = []
+                for item in response.embeddings:
+                    embedding = item.values
+                    if not embedding:
+                        raise app_service_error(
+                            "Google embedding 服务未返回向量数据",
+                            code="GOOGLE_EMBEDDING_EMPTY_RESPONSE",
+                        )
+                    if self.dimensions is not None and len(embedding) != self.dimensions:
+                        raise app_service_error(
+                            "Google embedding 维度不匹配",
+                            code="GOOGLE_EMBEDDING_DIMENSION_MISMATCH",
+                            details={
+                                "expected_dim": self.dimensions,
+                                "actual_dim": len(embedding),
+                                "model": self.model_name,
+                            },
+                        )
+                    embeddings.append([float(value) for value in embedding])
+                set_span_attributes(
+                    span,
+                    {
+                        "embedding.output.count": len(embeddings),
+                        "embedding.output_dim": len(embeddings[0])
+                        if embeddings
+                        else None,
+                    },
+                )
+            return embeddings
+        except AppException:
+            raise
+        except Exception as exc:
+            logger.error("Google embedding API 调用失败: %s", exc, exc_info=True)
+            raise app_service_error(
+                "Google embedding API 调用失败",
+                code="GOOGLE_EMBEDDING_API_ERROR",
+                details={
+                    "model": self.model_name,
+                    "task_type": "RETRIEVAL_DOCUMENT",
+                    "error": str(exc),
+                },
+            ) from exc
+
 
 class MockRAGEmbedder(AbstractRAGEmbedder):
     """Deterministic local embedder for smoke tests and offline development."""
@@ -242,7 +339,7 @@ class MockRAGEmbedder(AbstractRAGEmbedder):
     def __init__(self, *, dimensions: int = 768) -> None:
         self.dimensions = max(1, dimensions)
 
-    def encode_query(self, text: str) -> list[float]:
+    async def encode_query(self, text: str) -> list[float]:
         payload = text.strip()
         if not payload:
             raise app_service_error(
@@ -250,7 +347,7 @@ class MockRAGEmbedder(AbstractRAGEmbedder):
             )
         return self._vector()
 
-    def encode_document(self, text: str) -> list[float]:
+    async def encode_document(self, text: str) -> list[float]:
         payload = text.strip()
         if not payload:
             raise app_service_error(
@@ -258,7 +355,7 @@ class MockRAGEmbedder(AbstractRAGEmbedder):
             )
         return self._vector()
 
-    def encode_documents(self, texts: list[str]) -> list[list[float]]:
+    async def encode_documents(self, texts: list[str]) -> list[list[float]]:
         payloads = [text.strip() for text in texts]
         if not payloads or any(not payload for payload in payloads):
             raise app_service_error(

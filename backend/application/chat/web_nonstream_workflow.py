@@ -6,24 +6,19 @@
 """
 
 import logging
-import uuid
 
 import redis.asyncio as redis
 from langfuse import get_client, observe
 
-from backend.application.chat.history_projection import history_to_conversation_messages
-from backend.config.settings import settings
+from backend.application.chat.session_orchestrator import ChatSessionOrchestrator
 from backend.contracts.interfaces import (
     AbstractTaskDispatcher,
     AbstractUnitOfWork,
 )
-from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import (
     AppException,
     app_service_error,
-    app_validation_error,
 )
-from backend.infra.redis import safe_release_lock
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat.api import (
     ChatQueryResponse,
@@ -31,14 +26,11 @@ from backend.models.schemas.chat.api import (
     MessageStatusEnum,
 )
 from backend.models.schemas.chat.commands import ChatQueryCommand
-from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import (
     inject_trace_context,
-    set_span_attributes,
     trace_span,
 )
-from backend.services.chat_service import SessionManager
-from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
+from backend.services.permission_service import PermissionService
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +43,12 @@ class ChatNonStreamWorkflow:
         uow: AbstractUnitOfWork,
         dispatcher: AbstractTaskDispatcher,
         redis_client: redis.Redis,
+        permission_service: PermissionService,
     ) -> None:
         self.uow = uow
         self.dispatcher = dispatcher
         self.redis = redis_client
+        self.permission_service = permission_service
 
     # ── Main handler ──────────────────────────────────────────────
 
@@ -68,7 +62,6 @@ class ChatNonStreamWorkflow:
         session_id = command.session_id
         kb_id = command.kb_id
         client_request_id = command.client_request_id
-        extra_body = command.extra_body
         get_client().update_current_trace(
             user_id=str(user_id),
             session_id=str(session_id) if session_id else None,
@@ -81,8 +74,6 @@ class ChatNonStreamWorkflow:
             len(query_text),
         )
 
-        lock_key: str | None = None
-        lock_token: str | None = None
         trace_attrs = {
             "chat.user_id": user_id,
             "chat.session_id": session_id,
@@ -94,159 +85,86 @@ class ChatNonStreamWorkflow:
 
         # ── 幂等检查 ──────────────────────────────────────────────
 
-        with trace_span("chat.nonstream.idempotency_check", trace_attrs) as span:
-            if client_request_id:
-                lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
-                lock_token = f"processing:{uuid.uuid4()}"
-                is_new = await self.redis.set(lock_key, lock_token, nx=True, ex=300)
-                set_span_attributes(span, {"chat.idempotency.is_new": bool(is_new)})
-                if not is_new:
-                    val = await self.redis.get(lock_key)
-                    set_span_attributes(span, {"chat.idempotency.value": val})
-                    if val is not None and val.startswith("processing:"):
+        orchestrator = ChatSessionOrchestrator(
+            self.uow,
+            self.redis,
+            self.permission_service,
+        )
+        idempotency = await orchestrator.check_idempotency(
+            command=command,
+            trace_attrs=trace_attrs,
+            span_name="chat.nonstream.idempotency_check",
+        )
+        if not idempotency.is_new:
+            if client_request_id is None:
+                raise app_service_error(
+                    "请求幂等状态异常",
+                    code="CHAT_IDEMPOTENCY_STATE_INVALID",
+                )
+            if idempotency.is_processing_duplicate:
+                raise app_service_error(
+                    "正在加速计算中...",
+                    code="CHAT_REQUEST_PROCESSING",
+                    details={"client_request_id": client_request_id},
+                )
+            async with self.uow:
+                msg = await self.uow.chat_repo.get_message_by_client_request_id(
+                    client_request_id,
+                    user_id,
+                )
+                if msg and msg.status == MessageStatus.SUCCESS:
+                    session = await self.uow.chat_repo.get_session(msg.session_id)
+                    if session is None:
                         raise app_service_error(
-                            "正在加速计算中...",
-                            code="CHAT_REQUEST_PROCESSING",
-                            details={"client_request_id": client_request_id},
+                            "会话不存在",
+                            code="CHAT_SESSION_NOT_FOUND",
                         )
-                    async with self.uow:
-                        msg = await self.uow.chat_repo.get_message_by_client_request_id(
-                            client_request_id,
-                            user_id,
-                        )
-                        if msg and msg.status == MessageStatus.SUCCESS:
-                            session = await self.uow.chat_repo.get_session(
-                                msg.session_id
-                            )
-                            if session is None:
-                                raise app_service_error(
-                                    "会话不存在",
-                                    code="CHAT_SESSION_NOT_FOUND",
-                                )
-                            set_span_attributes(
-                                span,
-                                {"chat.idempotency.cached_message": True},
-                            )
-                            return ChatQueryResponse(
-                                session_id=session.id,
-                                session_title=session.title,
-                                answer=MessageResponse.model_validate(msg),
-                            )
+                    return ChatQueryResponse(
+                        session_id=session.id,
+                        session_title=session.title,
+                        answer=MessageResponse.model_validate(msg),
+                    )
+                status_value = msg.status.value if msg and msg.status else "NOT_FOUND"
+            raise app_service_error(
+                "该请求正在处理或已结束，请刷新页面后重试",
+                code="CHAT_REQUEST_PROCESSING",
+                details={
+                    "client_request_id": client_request_id,
+                    "message_status": status_value,
+                },
+            )
 
         # ── 会话与消息创建 ────────────────────────────────────────
 
-        with trace_span(
-            "chat.nonstream.create_session_and_messages", trace_attrs
-        ) as span:
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    user = await self.uow.user_repo.get_with_lock(user_id)
-                    if user and user.used_tokens >= user.max_tokens:
-                        if lock_key is not None and lock_token is not None:
-                            await safe_release_lock(self.redis, lock_key, lock_token)
-                        raise app_validation_error(
-                            "Token 余额不足",
-                            code="TOKEN_QUOTA_EXCEEDED",
-                            details={"used": user.used_tokens, "max": user.max_tokens},
-                        )
-
-                    session_manager = SessionManager(self.uow)
-                    resolved_kb_id = kb_id
-                    if session_id is None and resolved_kb_id is None:
-                        default_kb = (
-                            await self.uow.knowledge_repo.get_kb_by_name_for_user(
-                                name=DEFAULT_KNOWLEDGE_BASE_NAME,
-                                user_id=user_id,
-                            )
-                        )
-                        if default_kb is not None:
-                            resolved_kb_id = default_kb.id
-
-                    session = await session_manager.ensure_session(
-                        user_id=user_id,
-                        query_text=query_text,
-                        session_id=session_id,
-                        kb_id=resolved_kb_id,
-                    )
-                    effective_kb_id = kb_id or session.kb_id
-                    await session_manager.create_user_message(
-                        session_id=session.id,
-                        content=query_text,
-                        user_id=user_id,
-                    )
-                    assistant_msg = await session_manager.create_assistant_message(
-                        session_id=session.id,
-                        client_request_id=client_request_id,
-                        user_id=user_id,
-                    )
-            set_span_attributes(
-                span,
-                {
-                    "chat.session_id": session.id,
-                    "chat.assistant_message_id": assistant_msg.id,
-                },
-            )
-            trace_attrs["chat.session_id"] = session.id
-            trace_attrs["chat.assistant_message_id"] = assistant_msg.id
-
-        # ── 获取历史消息 ──────────────────────────────────────────
-
-        with trace_span("chat.nonstream.fetch_history", trace_attrs) as span:
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    session_manager = SessionManager(self.uow)
-                    history_messages = await session_manager.get_session_messages(
-                        session_id=session.id,
-                        limit=settings.CHAT_MEMORY_FETCH_LIMIT,
-                    )
-            set_span_attributes(
-                span, {"chat.history.message_count": len(history_messages)}
-            )
-
-        # ── Worker payload 准备 ───────────────────────────────────
-
-        with trace_span("chat.nonstream.prepare_worker_payload", trace_attrs) as span:
-            conversation_history = history_to_conversation_messages(history_messages)
-            set_span_attributes(
-                span,
-                {
-                    "chat.history.message_count": len(conversation_history),
-                    "rag.deferred_to_worker": effective_kb_id is not None,
-                },
-            )
-
-        # ── 投递到 Worker ─────────────────────────────────────────
-
-        generation_payload = GenerationPayload(
-            session_id=session.id,
-            query_text=query_text,
-            conversation_history=conversation_history,
-            kb_id=effective_kb_id,
-            extra_body=extra_body,
+        prepared = await orchestrator.prepare_request(
+            command=command,
+            idempotency=idempotency,
+            trace_attrs=trace_attrs,
+            span_prefix="chat.nonstream",
         )
+        session = prepared.session
+        assistant_msg = prepared.assistant_message
 
         try:
             with trace_span(
                 "chat.nonstream.dispatch_task",
                 {
-                    **trace_attrs,
+                    **prepared.trace_attrs,
                     "chat.assistant_message_id": assistant_msg.id,
                 },
             ):
                 result = await self.dispatcher.enqueue_nonstream(
-                    generation_payload.model_dump(mode="json"),
+                    prepared.generation_payload.model_dump(mode="json"),
                     inject_trace_context(),
                     str(assistant_msg.id),
                     str(user_id),
-                    lock_key,
+                    prepared.lock_key,
                 )
         except AppException:
-            if lock_key is not None and lock_token is not None:
-                await safe_release_lock(self.redis, lock_key, lock_token)
+            await orchestrator.release_idempotency(idempotency)
             raise
         except Exception as exc:
-            if lock_key is not None and lock_token is not None:
-                await safe_release_lock(self.redis, lock_key, lock_token)
+            await orchestrator.release_idempotency(idempotency)
             raise app_service_error(
                 "LLM 服务调用失败，请稍后重试",
                 code="LLM_SERVICE_ERROR",

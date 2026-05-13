@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from starlette.responses import PlainTextResponse
 
+from fastapi.middleware.cors import CORSMiddleware
+
 import backend.core.secret_env  # noqa: F401
 from backend.api.v1.api import api_router
 from backend.config.llm import validate_llm_configs
@@ -14,6 +16,7 @@ from backend.config.settings import settings
 from backend.core.exception_handlers import setup_exception_handlers
 from backend.infra.database import init_db
 from backend.infra.redis import redis_client
+from backend.middleware.payload_limit import PayloadLimitMiddleware
 from backend.middleware.tracing import setup_tracing
 from backend.observability.logger import setup_logging
 from backend.observability.telemetry import setup_telemetry, shutdown_telemetry
@@ -56,6 +59,17 @@ app = FastAPI(
 
 # 全局异常处理
 setup_exception_handlers(app)
+
+# Security Middlewares
+if settings.BACKEND_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+app.add_middleware(PayloadLimitMiddleware)
 
 # 中间件策略
 setup_tracing(app)

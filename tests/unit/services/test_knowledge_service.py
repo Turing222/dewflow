@@ -20,12 +20,21 @@ def knowledge_service(tmp_path: Path):
     repo = SimpleNamespace(
         get_kb_by_name_for_user=AsyncMock(),
         get_kb_for_user=AsyncMock(),
-        get_ready_file_by_hash=AsyncMock(return_value=None),
+        get_kb=AsyncMock(return_value=None),
+        get_file_by_hash_and_status=AsyncMock(return_value=None),
         create_kb=AsyncMock(),
         create_file=AsyncMock(),
     )
     uow = SimpleNamespace(knowledge_repo=repo)
-    service = KnowledgeService(uow=uow, storage_root=tmp_path, max_upload_size_mb=1)
+    permission_service = SimpleNamespace(
+        has_permission_for_user_id=AsyncMock(return_value=True)
+    )
+    service = KnowledgeService(
+        uow=uow,
+        storage_root=tmp_path,
+        max_upload_size_mb=1,
+        permission_service=permission_service,
+    )
     return service, repo, tmp_path
 
 
@@ -79,9 +88,10 @@ class TestKnowledgeServiceStreamingUpload:
         assert result.owner_id == user_id
         assert result.workspace_id == workspace_id
         repo.get_kb_for_user.assert_awaited_once_with(kb_id=kb_id, user_id=user_id)
-        repo.get_ready_file_by_hash.assert_awaited_once_with(
+        repo.get_file_by_hash_and_status.assert_awaited_once_with(
             kb_id=kb_id,
             content_sha256=hashlib.sha256(content).hexdigest(),
+            status=FileStatus.READY,
         )
         repo.create_file.assert_awaited_once()
 
@@ -103,8 +113,12 @@ class TestKnowledgeServiceStreamingUpload:
             content_sha256=hashlib.sha256(content).hexdigest(),
             status=FileStatus.READY,
         )
-        repo.get_kb_for_user.return_value = SimpleNamespace(id=kb_id)
-        repo.get_ready_file_by_hash.return_value = duplicate
+        repo.get_kb_for_user.return_value = SimpleNamespace(
+            id=kb_id,
+            workspace_id=None,
+            user_id=user_id,
+        )
+        repo.get_file_by_hash_and_status.return_value = duplicate
 
         result = await service.save_upload_file(
             kb_id=kb_id,
@@ -145,7 +159,11 @@ class TestKnowledgeServiceStreamingUpload:
         kb_id = uuid.uuid4()
         user_id = uuid.uuid4()
 
-        repo.get_kb_for_user.return_value = SimpleNamespace(id=kb_id)
+        repo.get_kb_for_user.return_value = SimpleNamespace(
+            id=kb_id,
+            workspace_id=None,
+            user_id=user_id,
+        )
         oversize_content = b"a" * (service.max_upload_size_bytes + 128)
         upload_file = make_upload_file("too-large.txt", oversize_content)
 

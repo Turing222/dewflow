@@ -14,14 +14,15 @@ from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden
 from backend.models.orm.access import WorkspaceRole
 from backend.models.orm.user import User
+from backend.services.base import BaseService
 from backend.services.permission_types import Permission
 
 
-class PermissionService:
+class PermissionService(BaseService[AbstractUnitOfWork]):
     """配置文件驱动的工作区权限判断入口。"""
 
     def __init__(self, uow: AbstractUnitOfWork) -> None:
-        self.uow = uow
+        super().__init__(uow)
         self.policy = get_permission_policy()
 
     async def get_workspace_role(

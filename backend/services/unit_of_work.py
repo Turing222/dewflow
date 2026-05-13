@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.repositories.access_repo import AccessRepository
+from backend.repositories.audit_repo import AuditRepository
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.knowledge_repo import KnowledgeRepository
 from backend.repositories.task_repo import TaskRepository
@@ -39,6 +40,7 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
 
         # 同一个 UoW 周期内所有 repository 共享 session，确保事务一致。
         self.access_repo = AccessRepository(self._session)
+        self.audit_repo = AuditRepository(self._session)
         self.user_repo = UserRepository(self._session)
         self.chat_repo = ChatRepository(self._session)
         self.knowledge_repo = KnowledgeRepository(self._session)

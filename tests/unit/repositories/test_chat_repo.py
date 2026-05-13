@@ -94,7 +94,7 @@ async def test_get_user_sessions_builds_query_and_executes(mock_session):
     assert len(result) == 2
     mock_session.execute.assert_awaited_once()
     stmt = mock_session.execute.call_args.args[0]
-    sql = str(stmt)
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "FROM chat_sessions" in sql
     assert "ORDER BY chat_sessions.updated_at DESC" in sql
 

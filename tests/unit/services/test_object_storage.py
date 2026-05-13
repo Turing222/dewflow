@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from fastapi import UploadFile
 
-from backend.services.object_storage import LocalObjectStorage, S3ObjectStorage
+from backend.services.object_storage import (
+    LocalObjectStorage,
+    S3ObjectStorage,
+    UploadSizeLimitExceeded,
+)
 
 
 def make_upload_file(filename: str, content: bytes) -> UploadFile:
@@ -39,6 +43,17 @@ class FakeS3Client:
         self.objects.pop((Bucket, Key), None)
 
 
+class FailingUploadS3Client(FakeS3Client):
+    def upload_fileobj(
+        self,
+        file_obj,
+        bucket: str,
+        key: str,
+        ExtraArgs: dict | None = None,
+    ) -> None:
+        raise RuntimeError("upload failed")
+
+
 @pytest.mark.asyncio
 async def test_local_object_storage_saves_downloads_and_deletes(tmp_path: Path):
     storage = LocalObjectStorage(tmp_path)
@@ -61,6 +76,22 @@ async def test_local_object_storage_saves_downloads_and_deletes(tmp_path: Path):
 
     await storage.delete(stored)
     assert not Path(stored.uri).exists()
+
+
+@pytest.mark.asyncio
+async def test_local_object_storage_cleans_temp_file_on_size_limit(tmp_path: Path):
+    storage = LocalObjectStorage(tmp_path)
+    upload = make_upload_file("large.txt", b"too large")
+
+    with pytest.raises(UploadSizeLimitExceeded):
+        await storage.save_upload_stream(
+            kb_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            filename="large.txt",
+            upload_file=upload,
+            max_size_bytes=3,
+        )
+
+    assert list(tmp_path.rglob("*.part")) == []
 
 
 @pytest.mark.asyncio
@@ -102,3 +133,20 @@ async def test_s3_object_storage_saves_downloads_and_cleans_temp_file():
 
     await storage.delete(stored)
     assert ("bucket-a", stored.key) in client.deleted
+
+
+@pytest.mark.asyncio
+async def test_s3_object_storage_deletes_object_on_upload_failure():
+    client = FailingUploadS3Client()
+    storage = S3ObjectStorage(bucket="bucket-a", client=client)
+    upload = make_upload_file("demo.txt", b"hello s3")
+
+    with pytest.raises(RuntimeError, match="upload failed"):
+        await storage.save_upload_stream(
+            kb_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            filename="demo.txt",
+            upload_file=upload,
+            max_size_bytes=1024,
+        )
+
+    assert len(client.deleted) == 1

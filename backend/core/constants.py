@@ -1,0 +1,10 @@
+"""Pagination and global constants."""
+
+# Pagination
+DEFAULT_PAGE_LIMIT = 20
+MAX_PAGE_LIMIT = 100
+MAX_AUDIT_PAGE_LIMIT = 200
+MAX_CHAT_MESSAGE_LIMIT = 500
+
+# Security
+MAX_PAYLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB

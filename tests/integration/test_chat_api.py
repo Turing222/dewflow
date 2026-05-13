@@ -93,7 +93,7 @@ class FakeUserRepo:
         return None
 
     async def get_with_lock(self, user_id: uuid.UUID):
-        """SELECT FOR UPDATE 仳制：返回同一用户对象。"""
+        """SELECT FOR UPDATE 模拟：返回同一用户对象。"""
         return await self.get(user_id)
 
     async def increment_used_tokens(self, user_id: uuid.UUID, amount: int):
@@ -101,10 +101,10 @@ class FakeUserRepo:
         self.user.used_tokens += amount
         self.increment_calls.append(amount)
 
-    async def increment_used_tokens_guarded(
+    async def try_increment_used_tokens_with_limit(
         self, user_id: uuid.UUID, amount: int
     ) -> bool:
-        """条件原子累加仳制：检查上限并返回 bool。"""
+        """条件原子累加模拟：检查上限并返回 bool。"""
         if self.user is None or user_id != self.user.id:
             return False
         if self.user.used_tokens + amount > self.user.max_tokens:
@@ -201,7 +201,7 @@ class FakeChatRepo:
 
 
 class FakeKnowledgeRepo:
-    """knowledge_repo 仳制，防止 Workflow 内 getattr 失败。"""
+    """知识库仓储模拟，防止 Workflow 内 getattr 失败。"""
 
     async def get_kb_by_name_for_user(self, *, name: str, user_id: uuid.UUID):
         return None
@@ -292,7 +292,14 @@ def api_context():
             latency_ms=200,
         )
     )
-    workflow = ChatNonStreamWorkflow(uow=uow, dispatcher=mock_dispatcher)
+    workflow = ChatNonStreamWorkflow(
+        uow=uow,
+        dispatcher=mock_dispatcher,
+        redis_client=AsyncMock(),
+        permission_service=SimpleNamespace(
+            has_permission_for_user_id=AsyncMock(return_value=True),
+        ),
+    )
 
     # --- 依赖覆盖 ---
     # 1. 核心业务依赖

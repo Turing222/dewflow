@@ -30,7 +30,10 @@ def mock_uow():
 
 @pytest.fixture
 def session_manager(mock_uow):
-    return SessionManager(mock_uow)
+    from unittest.mock import MagicMock
+    from backend.services.permission_service import PermissionService
+    permission_service = MagicMock(spec=PermissionService)
+    return SessionManager(mock_uow, permission_service)
 
 
 @pytest.fixture

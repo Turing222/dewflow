@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
+from types import TracebackType
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import AppException
 from backend.models.orm.access import AuditEvent, AuditOutcome
+from backend.services.base import BaseService
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ class AuditCapture:
         )
 
 
-class AuditService:
+class AuditService(BaseService[AbstractUnitOfWork]):
     """写入业务审计事件。"""
 
     def __init__(
@@ -86,7 +88,7 @@ class AuditService:
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         request_context: AuditRequestContext | None = None,
     ) -> None:
-        self.uow = uow
+        super().__init__(uow)
         self.session_factory = session_factory
         self.request_context = request_context or AuditRequestContext()
 
@@ -188,7 +190,12 @@ class _AuditCaptureContext(AbstractAsyncContextManager[AuditCapture]):
     async def __aenter__(self) -> AuditCapture:
         return self.capture_state
 
-    async def __aexit__(self, exc_type, exc, tb) -> bool | None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
         outcome = AuditOutcome.SUCCESS
         metadata = self.capture_state.metadata.copy()
 

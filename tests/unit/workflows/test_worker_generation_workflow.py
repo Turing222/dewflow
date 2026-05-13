@@ -17,6 +17,7 @@ from backend.application.chat.worker_generation_workflow import (
 from backend.core.exceptions import app_service_error
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationPayload
+from backend.services.chat_safety_metadata import GuardrailDecision
 from backend.services.rag_planning_service import RAGExecutionPlan
 
 
@@ -168,7 +169,7 @@ async def test_worker_generation_persists_success_and_publishes_done(monkeypatch
     user_id = uuid.uuid4()
     updated_message = object()
     uow.chat_repo.update_message_status.return_value = updated_message
-    uow.user_repo.increment_used_tokens_guarded.return_value = True
+    uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
 
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -205,7 +206,7 @@ async def test_worker_generation_persists_success_and_publishes_done(monkeypatch
     assert message_metadata["schema_version"] == 1
     assert message_metadata["response_outcome"] == "answered"
     total_tokens = update_kwargs["tokens_input"] + 7
-    uow.user_repo.increment_used_tokens_guarded.assert_awaited_once_with(
+    uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
         user_id,
         total_tokens,
     )
@@ -223,9 +224,10 @@ async def test_worker_generation_persists_success_and_publishes_done(monkeypatch
 async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch):
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
+    init_mock = AsyncMock(return_value=redis)
     monkeypatch.setattr(
         "backend.application.chat.worker_generation_workflow.redis_client.init",
-        AsyncMock(return_value=redis),
+        init_mock,
     )
 
     uow = DummyUoW()
@@ -256,6 +258,7 @@ async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch):
         ("stream:test", encode_done_event()),
     ]
     assert redis.deleted == ["idempotency:test"]
+    init_mock.assert_awaited_once()
     uow.chat_repo.update_message_status.assert_awaited_once()
     update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
     assert update_kwargs["message_id"] == assistant_message_id
@@ -278,7 +281,7 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     assistant_message_id = uuid.uuid4()
     user_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
-    uow.user_repo.increment_used_tokens_guarded.return_value = True
+    uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
     llm_service = NonStreamingLLM(
         LLMResultDTO(content="full answer", completion_tokens=5, latency_ms=12)
     )
@@ -307,7 +310,7 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     assert update_kwargs["message_metadata"]["schema_version"] == 1
     assert update_kwargs["message_metadata"]["response_outcome"] == "answered"
     total_tokens = update_kwargs["tokens_input"] + 5
-    uow.user_repo.increment_used_tokens_guarded.assert_awaited_once_with(
+    uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
         user_id,
         total_tokens,
     )
@@ -436,6 +439,53 @@ async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(monkey
     assert update_kwargs["content"] == refusal
     metadata = update_kwargs["message_metadata"]
     assert metadata["guardrail"]["output"]["original_unsafe_output"] == unsafe_output
+
+
+@pytest.mark.asyncio
+async def test_worker_stream_persists_stream_guardrail_decision(monkeypatch):
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.redis_client.init",
+        AsyncMock(return_value=redis),
+    )
+
+    decisions = [
+        GuardrailDecision(True, "unsafe_output"),
+        GuardrailDecision(False),
+    ]
+
+    def fake_output_guardrail(content: str) -> GuardrailDecision:
+        return decisions.pop(0)
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.evaluate_output_guardrail",
+        fake_output_guardrail,
+    )
+
+    uow = DummyUoW()
+    uow.chat_repo.update_message_status.return_value = object()
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        llm_service=StreamingLLM(["unsafe partial"]),
+    )
+
+    await workflow.generate_stream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="正常问题",
+            conversation_history=[],
+        ),
+        channel="stream:test",
+        assistant_message_id=uuid.uuid4(),
+    )
+
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["content"] == "抱歉，这个请求涉及安全或权限风险，暂时无法回答。"
+    metadata = update_kwargs["message_metadata"]
+    assert metadata["guardrail"]["output"]["triggered"] is True
+    assert metadata["guardrail"]["output"]["original_unsafe_output"] == "unsafe partial"
+    assert decisions == [GuardrailDecision(False)]
 
 
 @pytest.mark.asyncio

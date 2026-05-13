@@ -29,7 +29,7 @@ async def test_get_by_email_returns_first_match(repo_ctx):
 
     assert result is expected
     stmt = session.execute.call_args.args[0]
-    sql = str(stmt)
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "users.email" in sql
 
 
@@ -47,7 +47,7 @@ async def test_get_by_username_returns_first_match(repo_ctx):
 
     assert result is expected
     stmt = session.execute.call_args.args[0]
-    sql = str(stmt)
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "users.username" in sql
 
 
@@ -153,7 +153,7 @@ async def test_bulk_upsert_executes_insert_statement(repo_ctx):
 
     session.execute.assert_awaited_once()
     stmt = session.execute.call_args.args[0]
-    sql = str(stmt)
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "INSERT INTO users" in sql
     assert "ON CONFLICT (email) DO UPDATE" in sql
 
@@ -167,30 +167,30 @@ async def test_increment_used_tokens_executes_atomic_update(repo_ctx):
 
     session.execute.assert_awaited_once()
     stmt = session.execute.call_args.args[0]
-    sql = str(stmt)
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "UPDATE users SET used_tokens=" in sql
     assert "users.used_tokens +" in sql
 
 
 @pytest.mark.asyncio
-async def test_increment_used_tokens_guarded_returns_true_when_row_updated(repo_ctx):
+async def test_try_increment_used_tokens_with_limit_returns_true_when_row_updated(repo_ctx):
     repo, session = repo_ctx
     user_id = uuid.uuid4()
     result_proxy = MagicMock()
     result_proxy.scalar_one_or_none.return_value = user_id
     session.execute.return_value = result_proxy
 
-    result = await repo.increment_used_tokens_guarded(user_id=user_id, amount=5)
+    result = await repo.try_increment_used_tokens_with_limit(user_id=user_id, amount=5)
 
     assert result is True
     stmt = session.execute.call_args.args[0]
-    sql = str(stmt)
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "UPDATE users SET used_tokens=" in sql
     assert "RETURNING users.id" in sql
 
 
 @pytest.mark.asyncio
-async def test_increment_used_tokens_guarded_returns_false_when_no_row_updated(
+async def test_try_increment_used_tokens_with_limit_returns_false_when_no_row_updated(
     repo_ctx,
 ):
     repo, session = repo_ctx
@@ -198,7 +198,7 @@ async def test_increment_used_tokens_guarded_returns_false_when_no_row_updated(
     result_proxy.scalar_one_or_none.return_value = None
     session.execute.return_value = result_proxy
 
-    result = await repo.increment_used_tokens_guarded(
+    result = await repo.try_increment_used_tokens_with_limit(
         user_id=uuid.uuid4(),
         amount=5,
     )

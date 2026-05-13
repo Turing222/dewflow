@@ -153,7 +153,7 @@ Conventional commits, subject line in English:
 ```
 type[(scope)]: English summary, ≤ 50 chars
 
-Body (only for non-trivial changes):
+Body (default for code/config/deploy changes; omit only for truly trivial docs/tests):
 - Why this approach
 - Alternatives considered / risks
 ```
@@ -173,6 +173,11 @@ Pre-commit checklist:
 - **Stage by name**: always `git add <specific files>`, not `git add -A`
 
 Examples:
-- `refactor(chat): offload non-stream generation to worker`
-- `fix(knowledge): handle duplicate upload idempotency`
-- `feat(rag): add contextual chunking with rerank`
+
+```
+refactor(chat): offload non-stream generation
+
+Move non-stream LLM generation into the worker path so web requests share the same persistence and timeout behavior as streaming.
+
+Keep the web workflow responsible for session setup and task dispatch to preserve the web/worker import boundary.
+```

@@ -105,18 +105,19 @@ class KnowledgeRepository:
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         return await self.session.get(File, file_id)
 
-    async def get_ready_file_by_hash(
+    async def get_file_by_hash_and_status(
         self,
         *,
         kb_id: uuid.UUID,
         content_sha256: str,
+        status: FileStatus,
     ) -> File | None:
-        """按内容哈希查重，仅匹配状态为 READY 的文件，避免重复入库。"""
+        """按内容哈希和文件状态查询最早的匹配文件。"""
         stmt = (
             select(File)
             .where(File.kb_id == kb_id)
             .where(File.content_sha256 == content_sha256)
-            .where(File.status == FileStatus.READY)
+            .where(File.status == status)
             .order_by(File.created_at.asc())
             .limit(1)
         )
@@ -188,10 +189,7 @@ class KnowledgeRepository:
         kb_id: uuid.UUID,
         limit: int = 5,
     ) -> list[tuple[DocumentChunk, float]]:
-        """在指定知识库内做 PostgreSQL 全文检索，返回 (chunk, distance)。
-
-        distance 由 ts_rank_cd 排名经过 _rank_to_distance 转换，与向量检索保持同方向（值越小越相关）。
-        """
+        """在指定知识库内做 PostgreSQL 全文检索，返回 (chunk, rank)。"""
         if not normalized_query.strip() or limit <= 0:
             return []
 
@@ -207,15 +205,7 @@ class KnowledgeRepository:
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        rows = result.all()
         return [
-            (
-                row[0],
-                self._rank_to_distance(float(row[1]) if row[1] is not None else 0.0),
-            )
-            for row in rows
+            (row[0], float(row[1]) if row[1] is not None else 0.0)
+            for row in result.all()
         ]
-
-    @staticmethod
-    def _rank_to_distance(rank: float) -> float:
-        return 1.0 / (1.0 + max(0.0, rank))

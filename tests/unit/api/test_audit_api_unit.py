@@ -14,9 +14,9 @@ from backend.services.permission_service import Permission
 
 class DummyUoW:
     def __init__(self):
-        self.session = SimpleNamespace(
-            scalar=AsyncMock(return_value=0),
-            execute=AsyncMock(return_value=DummyResult()),
+        self.audit_repo = SimpleNamespace(
+            count_events=AsyncMock(return_value=0),
+            list_events=AsyncMock(return_value=[]),
         )
 
     async def __aenter__(self):
@@ -24,14 +24,6 @@ class DummyUoW:
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
-
-
-class DummyResult:
-    def scalars(self):
-        return self
-
-    def all(self):
-        return []
 
 
 def make_user(**overrides):

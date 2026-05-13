@@ -75,10 +75,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                     for chunk in chunks[start : start + self.embed_batch_size]
                 ]
                 embedding_inputs = [chunk["embedding_content"] for chunk in batch]
-                embeddings = await asyncio.to_thread(
-                    self.embedder.encode_documents,
-                    embedding_inputs,
-                )
+                embeddings = await self.embedder.encode_documents(embedding_inputs)
                 if len(embeddings) != len(batch):
                     raise ValueError("RAG embedding 批量返回数量与输入切片数量不一致")
                 search_texts = await asyncio.to_thread(
@@ -167,9 +164,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 "rag.query.char_count": len(query_text),
             },
         ) as span:
-            query_vector = await asyncio.to_thread(
-                self.embedder.encode_query, query_text
-            )
+            query_vector = await self.embedder.encode_query(query_text)
             hits = await self.uow.knowledge_repo.search_chunks_for_kb(
                 query_vector=query_vector,
                 kb_id=kb_id,
@@ -212,7 +207,10 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 limit=limit,
             )
             set_span_attributes(span, {"rag.hit_count": len(hits)})
-            return hits
+            return [
+                (chunk, self._rank_to_distance(rank))
+                for chunk, rank in hits
+            ]
 
     async def search_chunks_for_kb_hybrid(
         self,
@@ -238,10 +236,10 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             },
         ) as span:
             query_vector, normalized_query = await asyncio.gather(
-                asyncio.to_thread(self.embedder.encode_query, query_text),
+                self.embedder.encode_query(query_text),
                 asyncio.to_thread(normalize_query, query_text),
             )
-            candidate_limit = max(limit, limit * max(1, candidate_multiplier))
+            candidate_limit = limit * max(1, candidate_multiplier)
 
             vector_hits = await self.uow.knowledge_repo.search_chunks_for_kb(
                 query_vector=query_vector,
@@ -323,3 +321,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             )
             for item in ranked
         ]
+
+    @staticmethod
+    def _rank_to_distance(rank: float) -> float:
+        return 1.0 / (1.0 + max(0.0, rank))

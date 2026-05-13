@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationResult
 from backend.repositories.access_repo import AccessRepository
+from backend.repositories.audit_repo import AuditRepository
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.knowledge_repo import KnowledgeRepository
 from backend.repositories.task_repo import TaskRepository
@@ -17,6 +18,7 @@ from backend.repositories.user_repo import UserRepository
 
 class AbstractUnitOfWork(ABC):
     access_repo: AccessRepository
+    audit_repo: AuditRepository
     user_repo: UserRepository
     chat_repo: ChatRepository
     knowledge_repo: KnowledgeRepository
@@ -117,17 +119,17 @@ class AbstractRAGEmbedder(ABC):
     """RAG 向量化器抽象接口"""
 
     @abstractmethod
-    def encode_query(self, text: str) -> list[float]:
+    async def encode_query(self, text: str) -> list[float]:
         """将查询文本编码为向量"""
         ...
 
-    def encode_document(self, text: str) -> list[float]:
+    async def encode_document(self, text: str) -> list[float]:
         """将文档片段编码为向量；默认复用查询编码。"""
-        return self.encode_query(text)
+        return await self.encode_query(text)
 
-    def encode_documents(self, texts: list[str]) -> list[list[float]]:
+    async def encode_documents(self, texts: list[str]) -> list[list[float]]:
         """将文档片段批量编码为向量；默认逐条编码。"""
-        return [self.encode_document(text) for text in texts]
+        return [await self.encode_document(text) for text in texts]
 
 
 class AbstractTaskDispatcher(ABC):

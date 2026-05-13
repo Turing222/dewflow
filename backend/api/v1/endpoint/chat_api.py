@@ -21,9 +21,15 @@ from backend.api.dependencies import (
     get_current_active_user,
     get_session_query_service,
 )
+from backend.api.v1.sse_events import encode_sse_event
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.config.settings import settings
+from backend.core.constants import (
+    DEFAULT_PAGE_LIMIT,
+    MAX_CHAT_MESSAGE_LIMIT,
+    MAX_PAGE_LIMIT,
+)
 from backend.middleware.rate_limit import RateLimiter
 from backend.models.orm.user import User
 from backend.models.schemas.chat.api import (
@@ -114,8 +120,6 @@ async def query_stream(
     （或中途异常）后才收口审计记录，避免在 StreamingResponse 返回
     时提前标记 success。meta 事件解析后同步更新 resource_id。
     """
-    import json as _json
-
     async def _audited_stream() -> AsyncIterator[str]:
         async with capture_audit(
             audit_service,
@@ -140,33 +144,22 @@ async def query_stream(
                 client_request_id=request.client_request_id,
                 extra_body=extra_body,
             )
-            async for chunk in workflow.handle_query_stream(command):
+            async for event in workflow.handle_query_stream(command):
                 # 仅在首个 meta 事件时更新 audit resource_id（session_id / message_id）
-                if (
-                    not meta_captured
-                    and isinstance(chunk, str)
-                    and chunk.startswith("data:")
-                ):
-                    payload_str = chunk.removeprefix("data:").strip()
-                    if payload_str and payload_str != "[DONE]":
-                        try:
-                            payload = _json.loads(payload_str)
-                            if payload.get("type") == "meta":
-                                meta_captured = True
-                                _sid = payload.get("session_id")
-                                _mid = payload.get("message_id")
-                                try:
-                                    audit.set_resource(
-                                        resource_id=uuid.UUID(_mid)
-                                        if _mid
-                                        else (uuid.UUID(_sid) if _sid else None)
-                                    )
-                                    audit.add_metadata(session_id=_sid)
-                                except (ValueError, AttributeError):
-                                    pass
-                        except _json.JSONDecodeError:
-                            pass
-                yield chunk
+                if not meta_captured and event["type"] == "meta":
+                    meta_captured = True
+                    session_id = event.get("session_id")
+                    message_id = event.get("message_id")
+                    try:
+                        audit.set_resource(
+                            resource_id=uuid.UUID(message_id)
+                            if message_id
+                            else (uuid.UUID(session_id) if session_id else None)
+                        )
+                        audit.add_metadata(session_id=session_id)
+                    except (ValueError, AttributeError):
+                        pass
+                yield encode_sse_event(event)
             # generator 正常结束 → capture_audit context 退出 → 标记 success
 
     return StreamingResponse(
@@ -185,7 +178,7 @@ async def get_sessions(
     current_user: CurrentUserDep,
     session_query_service: SessionQueryServiceDep,
     skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
 ) -> SessionListResponse:
     """获取当前用户的会话列表（侧边栏）"""
     async with session_query_service.uow:
@@ -202,7 +195,7 @@ async def get_session_detail(
     current_user: CurrentUserDep,
     session_query_service: SessionQueryServiceDep,
     skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    limit: Annotated[int, Query(ge=1, le=MAX_CHAT_MESSAGE_LIMIT)] = MAX_PAGE_LIMIT,
 ) -> SessionDetailResponse:
     """获取会话详情及历史消息"""
     async with session_query_service.uow:

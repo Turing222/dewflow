@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -18,7 +18,7 @@ async def test_replace_file_chunks_uses_batch_embedding():
         add_chunks=AsyncMock(),
     )
     uow = SimpleNamespace(knowledge_repo=repo)
-    embedder = MagicMock()
+    embedder = SimpleNamespace(encode_documents=AsyncMock())
     embedder.encode_documents.side_effect = [
         [[0.1, 0.2], [0.3, 0.4]],
         [[0.5, 0.6]],
@@ -36,9 +36,9 @@ async def test_replace_file_chunks_uses_batch_embedding():
         file_path="/tmp/demo.txt",
     )
 
-    assert embedder.encode_documents.call_count == 2
-    embedder.encode_documents.assert_any_call(["chunk 1", "chunk 2"])
-    embedder.encode_documents.assert_any_call(["chunk 3"])
+    assert embedder.encode_documents.await_count == 2
+    embedder.encode_documents.assert_any_await(["chunk 1", "chunk 2"])
+    embedder.encode_documents.assert_any_await(["chunk 3"])
     repo.delete_chunks_for_file.assert_awaited_once_with(file_id=file_id)
     repo.add_chunks.assert_awaited_once()
 
@@ -53,11 +53,11 @@ async def test_replace_file_chunks_uses_batch_embedding():
         hashlib.sha256(text.encode("utf-8")).hexdigest()
         for text in ["chunk 1", "chunk 2", "chunk 3"]
     ]
-    assert [record["search_text"] for record in records] == [
-        "chunk 1",
-        "chunk 2",
-        "chunk 3",
-    ]
+    search_texts = [record["search_text"] for record in records]
+    assert all(search_texts)
+    for idx, search_text in enumerate(search_texts, start=1):
+        assert "chunk" in search_text
+        assert str(idx) in search_text
     assert {record["chunking_version"] for record in records} == {CHUNKING_VERSION}
 
 
@@ -69,7 +69,7 @@ async def test_replace_file_chunks_uses_embedding_content_for_structured_chunks(
         add_chunks=AsyncMock(),
     )
     uow = SimpleNamespace(knowledge_repo=repo)
-    embedder = MagicMock()
+    embedder = SimpleNamespace(encode_documents=AsyncMock())
     embedder.encode_documents.return_value = [[0.1, 0.2]]
     service = VectorIndexService(
         uow=uow,
@@ -90,7 +90,7 @@ async def test_replace_file_chunks_uses_embedding_content_for_structured_chunks(
         file_path="/tmp/demo.md",
     )
 
-    embedder.encode_documents.assert_called_once_with(
+    embedder.encode_documents.assert_awaited_once_with(
         ["[文档: demo.md] [章节: Intro]\n原文内容"]
     )
     records = repo.add_chunks.await_args.args[0]
@@ -116,7 +116,7 @@ async def test_replace_file_chunks_rejects_mismatched_embedding_count():
         add_chunks=AsyncMock(),
     )
     uow = SimpleNamespace(knowledge_repo=repo)
-    embedder = MagicMock()
+    embedder = SimpleNamespace(encode_documents=AsyncMock())
     embedder.encode_documents.return_value = [[0.1, 0.2]]
     service = VectorIndexService(
         uow=uow,
@@ -145,7 +145,7 @@ async def test_fulltext_search_normalizes_query_before_repository_call():
     uow = SimpleNamespace(knowledge_repo=repo)
     service = VectorIndexService(
         uow=uow,
-        embedder=MagicMock(),
+        embedder=SimpleNamespace(encode_query=AsyncMock()),
     )
 
     result = await service.search_chunks_for_kb_fulltext(

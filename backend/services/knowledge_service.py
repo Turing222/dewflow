@@ -20,6 +20,7 @@ from backend.core.exceptions import (
     app_validation_error,
 )
 from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
+from backend.services.base import BaseService
 from backend.services.object_storage import (
     LocalObjectStorage,
     ObjectStorage,
@@ -41,7 +42,7 @@ class SavedKnowledgeFile:
     deduplicated: bool
 
 
-class KnowledgeService:
+class KnowledgeService(BaseService[AbstractUnitOfWork]):
     """知识库文件保存和访问校验服务。"""
 
     def __init__(
@@ -52,7 +53,7 @@ class KnowledgeService:
         max_upload_size_mb: int = 20,
         permission_service: PermissionService | None = None,
     ) -> None:
-        self.uow = uow
+        super().__init__(uow)
         if storage is None:
             if storage_root is None:
                 raise ValueError("storage or storage_root is required")
@@ -102,9 +103,10 @@ class KnowledgeService:
             if stored_object.size <= 0:
                 raise app_validation_error("上传文件为空", code="UPLOAD_FILE_EMPTY")
 
-            duplicate = await self.uow.knowledge_repo.get_ready_file_by_hash(
+            duplicate = await self.uow.knowledge_repo.get_file_by_hash_and_status(
                 kb_id=kb_id,
                 content_sha256=stored_object.sha256,
+                status=FileStatus.READY,
             )
             if duplicate is not None:
                 await self.storage.delete(stored_object)
@@ -225,15 +227,7 @@ class KnowledgeService:
             user_id=user_id,
         )
 
-        get_kb = getattr(self.uow.knowledge_repo, "get_kb", None)
-        if get_kb is None:
-            if kb:
-                return kb
-            raise app_not_found(
-                "知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND"
-            )
-
-        full_kb = kb or await get_kb(kb_id)
+        full_kb = kb or await self.uow.knowledge_repo.get_kb(kb_id)
         if not full_kb:
             raise app_not_found(
                 "知识库不存在或无访问权限", code="KNOWLEDGE_BASE_NOT_FOUND"

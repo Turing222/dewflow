@@ -179,14 +179,14 @@ class S3ObjectStorage:
             suffix=Path(filename).suffix,
         )
         try:
-            with temp_path.open("rb") as file_obj:
-                await asyncio.to_thread(
-                    self.client.upload_fileobj,
-                    file_obj,
-                    self.bucket,
-                    key,
-                    ExtraArgs={"Metadata": {"sha256": stats.sha256}},
-                )
+            await asyncio.to_thread(
+                _upload_fileobj_from_path,
+                self.client,
+                temp_path,
+                self.bucket,
+                key,
+                {"Metadata": {"sha256": stats.sha256}},
+            )
         except Exception:
             await asyncio.to_thread(
                 self.client.delete_object,
@@ -224,13 +224,13 @@ class S3ObjectStorage:
         suffix = Path(getattr(file_obj, "filename", "")).suffix
         temp_path = _new_temp_path(suffix=suffix)
         try:
-            with temp_path.open("wb") as target:
-                await asyncio.to_thread(
-                    self.client.download_fileobj,
-                    getattr(file_obj, "storage_bucket", None) or self.bucket,
-                    key,
-                    target,
-                )
+            await asyncio.to_thread(
+                _download_fileobj_to_path,
+                self.client,
+                getattr(file_obj, "storage_bucket", None) or self.bucket,
+                key,
+                temp_path,
+            )
             yield temp_path
         finally:
             temp_path.unlink(missing_ok=True)
@@ -288,6 +288,18 @@ async def _stream_upload_to_path(
     total_size = 0
     hasher = hashlib.sha256()
     chunk_size = 1024 * 1024
+    flush_size = 4 * 1024 * 1024
+    pending_chunks: list[bytes] = []
+    pending_size = 0
+
+    async def _flush_pending_chunks(target) -> None:
+        nonlocal pending_chunks, pending_size
+        if not pending_chunks:
+            return
+        await asyncio.to_thread(target.writelines, pending_chunks)
+        pending_chunks = []
+        pending_size = 0
+
     with path.open("wb") as target:
         while True:
             chunk = await upload_file.read(chunk_size)
@@ -297,8 +309,33 @@ async def _stream_upload_to_path(
             if total_size > max_size_bytes:
                 raise UploadSizeLimitExceeded("upload exceeds max_size_bytes")
             hasher.update(chunk)
-            target.write(chunk)
+            pending_chunks.append(chunk)
+            pending_size += len(chunk)
+            if pending_size >= flush_size:
+                await _flush_pending_chunks(target)
+        await _flush_pending_chunks(target)
     return UploadStreamStats(size=total_size, sha256=hasher.hexdigest())
+
+
+def _upload_fileobj_from_path(
+    client: Any,
+    path: Path,
+    bucket: str,
+    key: str,
+    extra_args: dict[str, Any],
+) -> None:
+    with path.open("rb") as file_obj:
+        client.upload_fileobj(file_obj, bucket, key, ExtraArgs=extra_args)
+
+
+def _download_fileobj_to_path(
+    client: Any,
+    bucket: str,
+    key: str,
+    path: Path,
+) -> None:
+    with path.open("wb") as target:
+        client.download_fileobj(bucket, key, target)
 
 
 async def _copy_upload_to_temp(

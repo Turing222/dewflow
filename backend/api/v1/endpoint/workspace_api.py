@@ -8,6 +8,7 @@ from backend.api.dependencies import (
     get_current_active_user,
     get_workspace_service,
 )
+from backend.core.constants import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from backend.models.orm.access import Workspace, WorkspaceRole
 from backend.models.orm.user import User
 from backend.models.schemas.workspace_schema import (
@@ -94,7 +95,7 @@ async def list_workspaces(
     current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
     skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
 ) -> WorkspaceListResponse:
     async with service.uow:
         items, total = await service.list_user_workspaces(
@@ -179,7 +180,7 @@ async def list_workspace_members(
     current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
     skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
 ) -> WorkspaceMemberListResponse:
     async with service.uow:
         items, total = await service.list_workspace_members(

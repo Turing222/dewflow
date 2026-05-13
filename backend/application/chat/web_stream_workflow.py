@@ -6,7 +6,6 @@
 """
 
 import asyncio
-import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
@@ -14,7 +13,8 @@ from collections.abc import AsyncGenerator
 import redis.asyncio as redis
 from langfuse import get_client, observe
 
-from backend.application.chat.history_projection import history_to_conversation_messages
+from backend.api.v1.sse_events import SSEEvent
+from backend.application.chat.session_orchestrator import ChatSessionOrchestrator
 from backend.application.chat.stream_events import decode_stream_event
 from backend.config.settings import settings
 from backend.contracts.interfaces import (
@@ -23,16 +23,14 @@ from backend.contracts.interfaces import (
 )
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_service_error
-from backend.infra.redis import safe_release_lock
 from backend.models.schemas.chat.commands import ChatQueryCommand
-from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import (
     inject_trace_context,
     set_span_attributes,
     trace_span,
 )
-from backend.services.chat_service import ChatMessageUpdater, SessionManager
-from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
+from backend.services.chat_service import ChatMessageUpdater
+from backend.services.permission_service import PermissionService
 
 logger = logging.getLogger(__name__)
 
@@ -45,23 +43,24 @@ class ChatWorkflow:
         uow: AbstractUnitOfWork,
         dispatcher: AbstractTaskDispatcher,
         redis_client: redis.Redis,
+        permission_service: PermissionService,
     ) -> None:
         self.uow = uow
         self.dispatcher = dispatcher
         self.redis = redis_client
+        self.permission_service = permission_service
 
     @observe()
     async def handle_query_stream(
         self,
         command: ChatQueryCommand,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[SSEEvent, None]:
+        """处理 SSE 流式查询请求。"""
         user_id = command.user_id
         query_text = command.query_text
         session_id = command.session_id
         kb_id = command.kb_id
         client_request_id = command.client_request_id
-        extra_body = command.extra_body
-        """处理 SSE 流式查询请求。"""
         # Langfuse trace 需要在业务入口绑定用户和会话信息。
         get_client().update_current_trace(
             user_id=str(user_id),
@@ -75,8 +74,6 @@ class ChatWorkflow:
             len(query_text),
         )
 
-        lock_key: str | None = None
-        lock_token: str | None = None
         trace_attrs = {
             "chat.user_id": user_id,
             "chat.session_id": session_id,
@@ -87,114 +84,45 @@ class ChatWorkflow:
         }
 
         # 幂等锁避免同一 client_request_id 并发生成多条助手消息。
-        with trace_span("chat.stream.idempotency_check", trace_attrs) as span:
-            if client_request_id:
-                lock_key = f"idempotency:chat:{user_id}:{client_request_id}"
-                lock_token = f"processing:{uuid.uuid4()}"
-                is_new = await self.redis.set(lock_key, lock_token, nx=True, ex=300)
-                set_span_attributes(span, {"chat.idempotency.is_new": bool(is_new)})
-                if not is_new:
-                    val = await self.redis.get(lock_key)
-                    set_span_attributes(span, {"chat.idempotency.value": val})
-                    if val is not None and val.startswith("processing:"):
-                        yield f"data: {json.dumps({'type': 'error', 'message': '正在加速计算中...'})}\n\n"
-                        return
-                    else:
-                        yield f"data: {json.dumps({'type': 'error', 'message': '该请求已完成，请刷新页面'})}\n\n"
-                        return
+        orchestrator = ChatSessionOrchestrator(
+            self.uow,
+            self.redis,
+            self.permission_service,
+        )
+        idempotency = await orchestrator.check_idempotency(
+            command=command,
+            trace_attrs=trace_attrs,
+            span_name="chat.stream.idempotency_check",
+        )
+        if not idempotency.is_new:
+            if idempotency.is_processing_duplicate:
+                yield {"type": "error", "message": "正在加速计算中..."}
+                return
+            yield {"type": "error", "message": "该请求已完成，请刷新页面"}
+            return
 
         # 会话和消息创建放在 DB 槽位内，避免高并发下耗尽连接池。
-        with trace_span("chat.stream.create_session_and_messages", trace_attrs) as span:
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    # 悲观锁保护 token 余额检查，避免并发请求同时通过额度判断。
-                    user = await self.uow.user_repo.get_with_lock(user_id)
-                    if user and user.used_tokens >= user.max_tokens:
-                        if lock_key is not None and lock_token is not None:
-                            await safe_release_lock(self.redis, lock_key, lock_token)
-                        yield f"data: {json.dumps({'type': 'error', 'message': 'Token 余额不足'})}\n\n"
-                        return
-
-                    session_manager = SessionManager(self.uow)
-                    resolved_kb_id = kb_id
-                    if session_id is None and resolved_kb_id is None:
-                        default_kb = (
-                            await self.uow.knowledge_repo.get_kb_by_name_for_user(
-                                name=DEFAULT_KNOWLEDGE_BASE_NAME,
-                                user_id=user_id,
-                            )
-                        )
-                        if default_kb is not None:
-                            resolved_kb_id = default_kb.id
-
-                    session = await session_manager.ensure_session(
-                        user_id=user_id,
-                        query_text=query_text,
-                        session_id=session_id,
-                        kb_id=resolved_kb_id,
-                    )
-                    effective_kb_id = kb_id or session.kb_id
-                    await session_manager.create_user_message(
-                        session_id=session.id,
-                        content=query_text,
-                        user_id=user_id,
-                    )
-                    assistant_msg = await session_manager.create_assistant_message(
-                        session_id=session.id,
-                        client_request_id=client_request_id,
-                        user_id=user_id,
-                    )
-            set_span_attributes(
-                span,
-                {
-                    "chat.session_id": session.id,
-                    "chat.assistant_message_id": assistant_msg.id,
-                },
-            )
-            trace_attrs["chat.session_id"] = session.id
-            trace_attrs["chat.assistant_message_id"] = assistant_msg.id
-
-        # 历史消息和 Prompt 准备拆分，便于分别观察 DB 与 RAG/模板耗时。
-        with trace_span("chat.stream.fetch_history", trace_attrs) as span:
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    session_manager = SessionManager(self.uow)
-                    history_messages = await session_manager.get_session_messages(
-                        session_id=session.id,
-                        limit=settings.CHAT_MEMORY_FETCH_LIMIT,
-                    )
-            set_span_attributes(
-                span, {"chat.history.message_count": len(history_messages)}
-            )
-
-        with trace_span("chat.stream.prepare_worker_payload", trace_attrs) as span:
-            conversation_history = history_to_conversation_messages(history_messages)
-            set_span_attributes(
-                span,
-                {
-                    "chat.history.message_count": len(conversation_history),
-                    "rag.deferred_to_worker": effective_kb_id is not None,
-                },
-            )
+        try:
+            prepared = await orchestrator.prepare_request(
+                command=command,
+                idempotency=idempotency,
+                trace_attrs=trace_attrs,
+                span_prefix="chat.stream",
+        )
+        except AppException as exc:
+            yield {"type": "error", "message": str(exc)}
+            yield {"type": "done"}
+            return
+        session = prepared.session
+        assistant_msg = prepared.assistant_message
 
         # 先发送 meta，让前端尽早拿到会话和消息 id。
-        meta_event = json.dumps(
-            {
-                "type": "meta",
-                "session_id": str(session.id),
-                "session_title": session.title,
-                "message_id": str(assistant_msg.id),
-            }
-        )
-        yield f"data: {meta_event}\n\n"
-
-        generation_payload = GenerationPayload(
-            session_id=session.id,
-            query_text=query_text,
-            conversation_history=conversation_history,
-            kb_id=effective_kb_id,
-            extra_body=extra_body,
-        )
+        yield {
+            "type": "meta",
+            "session_id": str(session.id),
+            "session_title": session.title,
+            "message_id": str(assistant_msg.id),
+        }
 
         task_id = str(uuid.uuid4())
         channel = f"stream:{task_id}"
@@ -203,40 +131,38 @@ class ChatWorkflow:
         try:
             with trace_span(
                 "chat.stream.dispatch_task",
-                {**trace_attrs, "task.id": task_id, "redis.channel": channel},
+                {**prepared.trace_attrs, "task.id": task_id, "redis.channel": channel},
             ):
                 # 必须先订阅后投递，避免 worker 首包发布过快导致丢消息。
                 pubsub = self.redis.pubsub()
                 await pubsub.subscribe(channel)
                 await self.dispatcher.enqueue_stream(
-                    generation_payload.model_dump(mode="json"),
+                    prepared.generation_payload.model_dump(mode="json"),
                     channel,
                     inject_trace_context(),
                     str(assistant_msg.id),
                     str(user_id),
-                    lock_key,
+                    prepared.lock_key,
                 )
         except AppException as exc:
-            if lock_key is not None and lock_token is not None:
-                await safe_release_lock(self.redis, lock_key, lock_token)
+            await orchestrator.release_idempotency(idempotency)
             logger.warning("流式任务初始化失败: %s", exc)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
-            async with db_concurrency_slot(trace_attrs):
+            yield {"type": "error", "message": str(exc)}
+            async with db_concurrency_slot(prepared.trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
-            yield "data: [DONE]\n\n"
+            yield {"type": "done"}
             return
         except Exception as exc:
-            if lock_key is not None and lock_token is not None:
-                await safe_release_lock(self.redis, lock_key, lock_token)
+            await orchestrator.release_idempotency(idempotency)
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
-            async with db_concurrency_slot(trace_attrs):
+            yield {"type": "error", "message": "服务暂时不可用，请稍后重试"}
+            async with db_concurrency_slot(prepared.trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
-            yield "data: [DONE]\n\n"
+            yield {"type": "done"}
             return
 
         accumulated_content = []
@@ -256,7 +182,7 @@ class ChatWorkflow:
         try:
             with trace_span(
                 "chat.stream.consume_worker_stream",
-                {**trace_attrs, "task.id": task_id, "redis.channel": channel},
+                {**prepared.trace_attrs, "task.id": task_id, "redis.channel": channel},
             ) as span:
                 loop = asyncio.get_running_loop()
                 deadline = (
@@ -298,8 +224,7 @@ class ChatWorkflow:
                     else:
                         content = event.get("content", "")
                         accumulated_content.append(content)
-                        first_chunk = json.dumps({"type": "chunk", "content": content})
-                        yield f"data: {first_chunk}\n\n"
+                        yield {"type": "chunk", "content": content}
                     break
 
                 if not done_received:
@@ -331,8 +256,7 @@ class ChatWorkflow:
                             )
                         content = event.get("content", "")
                         accumulated_content.append(content)
-                        chunk_event = json.dumps({"type": "chunk", "content": content})
-                        yield f"data: {chunk_event}\n\n"
+                        yield {"type": "chunk", "content": content}
 
                 if not done_received:
                     raise app_service_error(
@@ -351,13 +275,13 @@ class ChatWorkflow:
                 )
         except AppException as exc:
             logger.warning("流式 LLM 调用业务异常: %s", exc)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
-            yield "data: [DONE]\n\n"
+            yield {"type": "error", "message": str(exc)}
+            yield {"type": "done"}
             return
         except Exception as exc:
             logger.error("流式 LLM 调用异常: %s", str(exc), exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'message': '服务暂时不可用，请稍后重试'})}\n\n"
-            yield "data: [DONE]\n\n"
+            yield {"type": "error", "message": "服务暂时不可用，请稍后重试"}
+            yield {"type": "done"}
             return
         finally:
             if pubsub is not None:
@@ -378,4 +302,4 @@ class ChatWorkflow:
                         if asyncio.iscoroutine(maybe_awaitable):
                             await maybe_awaitable
 
-        yield "data: [DONE]\n\n"
+        yield {"type": "done"}

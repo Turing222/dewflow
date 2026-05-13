@@ -96,6 +96,8 @@ class LLMGenerationWorkerWorkflow:
         """Generate a streaming answer, publish chunks, and persist final state."""
         redis_connection = await redis_client.init()
         accumulated_content: list[str] = []
+        output_decision: GuardrailDecision | None = None
+        output_blocked = False
         start_time = time.time()
 
         try:
@@ -166,6 +168,7 @@ class LLMGenerationWorkerWorkflow:
                             # consuming before unsafe content is published and rely on
                             # future provider-level cancellation to reduce token waste.
                             accumulated_content.append(chunk)
+                            output_blocked = True
                             await redis_connection.publish(
                                 channel,
                                 encode_chunk_event(SAFETY_REFUSAL_MESSAGE),
@@ -178,12 +181,13 @@ class LLMGenerationWorkerWorkflow:
                         )
 
                 full_content = "".join(accumulated_content)
-                output_decision = evaluate_output_guardrail(full_content)
-                content_to_persist = (
-                    SAFETY_REFUSAL_MESSAGE
-                    if output_decision.triggered
-                    else full_content
-                )
+                if output_blocked:
+                    if output_decision is None:
+                        output_decision = evaluate_output_guardrail(full_content)
+                    content_to_persist = SAFETY_REFUSAL_MESSAGE
+                else:
+                    output_decision = evaluate_output_guardrail(full_content)
+                    content_to_persist = full_content
                 tokens_output = self._count_output_tokens(content_to_persist)
                 await self._persist_success(
                     assistant_message_id=assistant_message_id,
@@ -221,6 +225,7 @@ class LLMGenerationWorkerWorkflow:
         except AppException as exc:
             logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
             await self._persist_failure(
+                redis_connection=redis_connection,
                 assistant_message_id=assistant_message_id,
                 error_content=str(exc),
                 idempotency_lock_key=idempotency_lock_key,
@@ -229,6 +234,7 @@ class LLMGenerationWorkerWorkflow:
         except Exception:
             logger.exception("TaskIQ 调用 LLM 系统异常")
             await self._persist_failure(
+                redis_connection=redis_connection,
                 assistant_message_id=assistant_message_id,
                 error_content="服务暂时不可用，请稍后重试",
                 idempotency_lock_key=idempotency_lock_key,
@@ -323,6 +329,7 @@ class LLMGenerationWorkerWorkflow:
             if not result.success:
                 error_msg = result.error_message or "LLM 服务返回失败"
                 await self._persist_failure(
+                    redis_connection=redis_connection,
                     assistant_message_id=assistant_message_id,
                     error_content=error_msg,
                     idempotency_lock_key=idempotency_lock_key,
@@ -379,6 +386,7 @@ class LLMGenerationWorkerWorkflow:
         except AppException as exc:
             logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
             await self._persist_failure(
+                redis_connection=redis_connection,
                 assistant_message_id=assistant_message_id,
                 error_content=str(exc),
                 idempotency_lock_key=idempotency_lock_key,
@@ -387,6 +395,7 @@ class LLMGenerationWorkerWorkflow:
         except Exception:
             logger.exception("TaskIQ 调用 LLM 系统异常")
             await self._persist_failure(
+                redis_connection=redis_connection,
                 assistant_message_id=assistant_message_id,
                 error_content="服务暂时不可用，请稍后重试",
                 idempotency_lock_key=idempotency_lock_key,
@@ -395,7 +404,10 @@ class LLMGenerationWorkerWorkflow:
 
     # ── Shared Helpers ─────────────────────────────────────────────
 
-    async def _prepare_context(self, payload: GenerationPayload):
+    async def _prepare_context(
+        self,
+        payload: GenerationPayload,
+    ) -> PreparedGenerationContext:
         rag_plan, planner_used = await self._build_rag_plan(payload)
         candidates = await self._retrieve_rag_candidates(payload, rag_plan)
         reranked_chunks = await self._rerank_candidates_if_enabled(
@@ -643,7 +655,7 @@ class LLMGenerationWorkerWorkflow:
 
         try:
             uow = getattr(self.rag_service, "uow", None)
-            if uow is None or getattr(uow, "_session", None) is not None:
+            if uow is None or self._is_uow_active(uow):
                 return await self._retrieve_from_rag_service(payload, rag_plan)
             async with uow:
                 return await self._retrieve_from_rag_service(payload, rag_plan)
@@ -834,7 +846,7 @@ class LLMGenerationWorkerWorkflow:
                 return
 
             total_tokens = tokens_input + tokens_output
-            ok = await self.uow.user_repo.increment_used_tokens_guarded(
+            ok = await self.uow.user_repo.try_increment_used_tokens_with_limit(
                 user_id,
                 total_tokens,
             )
@@ -848,13 +860,13 @@ class LLMGenerationWorkerWorkflow:
     async def _persist_failure(
         self,
         *,
+        redis_connection: Any,
         assistant_message_id: uuid.UUID | None,
         error_content: str,
         idempotency_lock_key: str | None,
     ) -> None:
         if idempotency_lock_key is not None:
             try:
-                redis_connection = await redis_client.init()
                 await redis_connection.delete(idempotency_lock_key)
             except Exception:
                 logger.debug(
@@ -881,3 +893,11 @@ class LLMGenerationWorkerWorkflow:
                 "Worker 回写助手消息失败状态异常: message_id=%s",
                 assistant_message_id,
             )
+
+    @staticmethod
+    def _is_uow_active(uow: AbstractUnitOfWork) -> bool:
+        try:
+            _ = uow.session
+        except (AttributeError, RuntimeError):
+            return False
+        return True

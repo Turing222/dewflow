@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any, cast
 
 from backend.application.chat.history_projection import history_to_conversation_messages
 from backend.application.chat.web_stream_workflow import ChatWorkflow
@@ -6,9 +7,10 @@ from backend.application.chat.web_stream_workflow import ChatWorkflow
 
 def test_stream_workflow_constructs_without_ai_dependencies():
     workflow = ChatWorkflow(
-        uow=SimpleNamespace(),
-        dispatcher=SimpleNamespace(),
-        redis_client=SimpleNamespace(),
+        uow=cast(Any, SimpleNamespace()),
+        dispatcher=cast(Any, SimpleNamespace()),
+        redis_client=cast(Any, SimpleNamespace()),
+        permission_service=cast(Any, SimpleNamespace()),
     )
 
     assert workflow is not None
