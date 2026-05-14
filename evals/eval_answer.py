@@ -138,7 +138,6 @@ async def run(args: argparse.Namespace) -> None:
 
         llm_service = LLMProviderFactory.create()
         rag_service = RAGService(
-            uow=uow,
             embedder=embedder,
             vector_index_service=vector_index_service,
             top_k=args.top_k,

@@ -13,6 +13,7 @@ from langfuse import observe
 from backend.application.chat.worker_generation_workflow import (
     LLMGenerationWorkerWorkflow,
 )
+from backend.infra.redis import redis_client
 from backend.infra.task_broker import broker
 from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
 from backend.observability.trace_utils import trace_span, use_trace_context
@@ -68,9 +69,11 @@ async def _generate_llm_stream_task(
             "chat.assistant_message_id": assistant_message_id,
         },
     ):
+        redis_connection = await redis_client.init()
         llm_service = get_worker_llm_service()
         workflow = LLMGenerationWorkerWorkflow(
             uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
+            redis_connection=redis_connection,
             llm_service=llm_service,
             rag_service=get_worker_rag_service(llm_service=llm_service),
             rag_planning_service=get_worker_rag_planning_service(),
@@ -128,9 +131,11 @@ async def _generate_llm_nonstream_task(
         "taskiq.llm_nonstream.setup",
         {"chat.assistant_message_id": assistant_message_id},
     ):
+        redis_connection = await redis_client.init()
         llm_service = get_worker_llm_service()
         workflow = LLMGenerationWorkerWorkflow(
             uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
+            redis_connection=redis_connection,
             llm_service=llm_service,
             rag_service=get_worker_rag_service(llm_service=llm_service),
             rag_planning_service=get_worker_rag_planning_service(),

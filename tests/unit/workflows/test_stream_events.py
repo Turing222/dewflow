@@ -1,10 +1,25 @@
-from backend.api.v1.sse_events import encode_sse_event
+from backend.api.v1.sse_events import (
+    chunk_event,
+    done_event,
+    encode_sse_event,
+    error_event,
+    meta_event,
+)
 from backend.application.chat.stream_events import (
     decode_stream_event,
     encode_chunk_event,
     encode_done_event,
     encode_error_event,
+    stream_chunk_event,
+    stream_done_event,
+    stream_error_event,
 )
+
+
+def test_stream_event_helpers_build_typed_payloads():
+    assert stream_chunk_event("hello") == {"type": "chunk", "content": "hello"}
+    assert stream_error_event("failed") == {"type": "error", "message": "failed"}
+    assert stream_done_event() == {"type": "done"}
 
 
 def test_stream_events_round_trip_structured_payloads():
@@ -31,20 +46,35 @@ def test_stream_events_accept_legacy_payloads():
     assert decode_stream_event("[DONE]") == {"type": "done"}
 
 
+def test_http_sse_event_helpers_build_typed_payloads():
+    assert meta_event(
+        session_id="session-1",
+        session_title="demo",
+        message_id="message-1",
+    ) == {
+        "type": "meta",
+        "session_id": "session-1",
+        "session_title": "demo",
+        "message_id": "message-1",
+    }
+    assert chunk_event("hello") == {"type": "chunk", "content": "hello"}
+    assert error_event("failed") == {"type": "error", "message": "failed"}
+    assert done_event() == {"type": "done"}
+
+
 def test_http_sse_events_keep_existing_wire_format():
     assert (
         encode_sse_event(
-            {
-                "type": "meta",
-                "session_id": "session-1",
-                "session_title": "demo",
-                "message_id": "message-1",
-            }
+            meta_event(
+                session_id="session-1",
+                session_title="demo",
+                message_id="message-1",
+            )
         )
         == 'data: {"type": "meta", "session_id": "session-1", '
         '"session_title": "demo", "message_id": "message-1"}\n\n'
     )
-    assert encode_sse_event({"type": "chunk", "content": "hello"}) == (
+    assert encode_sse_event(chunk_event("hello")) == (
         'data: {"type": "chunk", "content": "hello"}\n\n'
     )
-    assert encode_sse_event({"type": "done"}) == "data: [DONE]\n\n"
+    assert encode_sse_event(done_event()) == "data: [DONE]\n\n"

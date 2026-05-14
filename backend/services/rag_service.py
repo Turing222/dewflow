@@ -13,7 +13,6 @@ from backend.contracts.interfaces import (
     AbstractLLMService,
     AbstractRAGEmbedder,
     AbstractRAGService,
-    AbstractUnitOfWork,
 )
 from backend.core.exceptions import AppException
 from backend.models.orm.chunk import DocumentChunk
@@ -29,7 +28,6 @@ class RAGService(AbstractRAGService):
 
     def __init__(
         self,
-        uow: AbstractUnitOfWork,
         embedder: AbstractRAGEmbedder,
         vector_index_service: VectorIndexService,
         top_k: int = 4,
@@ -37,7 +35,6 @@ class RAGService(AbstractRAGService):
         rerank_candidate_count: int = 20,
         rerank_top_k: int = 4,
     ) -> None:
-        self.uow = uow
         self.embedder = embedder
         self.vector_index_service = vector_index_service
         self.top_k = top_k
@@ -80,6 +77,39 @@ class RAGService(AbstractRAGService):
             return []
 
         return self._format_hits(hits)
+
+    async def rerank(
+        self,
+        query_text: str,
+        candidates: list[dict],
+        top_k: int | None = None,
+    ) -> list[dict]:
+        limit = top_k or self.rerank_top_k
+        if not candidates or limit <= 0:
+            return list(candidates)[:limit] if limit > 0 else []
+
+        if self.llm_service is None:
+            return list(candidates)[:limit]
+
+        prompt = self.build_rerank_prompt(
+            query_text=query_text,
+            candidates=candidates,
+        )
+        result = await self.llm_service.generate_response(
+            LLMQueryDTO(
+                session_id=uuid.uuid4(),
+                query_text=prompt,
+                conversation_history=[],
+            )
+        )
+        if not result.success:
+            raise ValueError(result.error_message or "LLM rerank failed")
+        rankings = self.parse_rerank_response(result.content)
+        return self.apply_rankings(
+            candidates=candidates,
+            rankings=rankings,
+            limit=limit,
+        )
 
     async def retrieve_with_rerank(
         self,
@@ -133,29 +163,14 @@ class RAGService(AbstractRAGService):
                     "rag.candidate_count": len(candidates),
                 },
             ) as span:
-                prompt = self._build_rerank_prompt(
+                reranked = await self.rerank(
                     query_text=query_text,
                     candidates=candidates,
-                )
-                result = await self.llm_service.generate_response(
-                    LLMQueryDTO(
-                        session_id=uuid.uuid4(),
-                        query_text=prompt,
-                        conversation_history=[],
-                    )
-                )
-                if not result.success:
-                    raise ValueError(result.error_message or "LLM rerank failed")
-                rankings = self._parse_rerank_response(result.content)
-                reranked = self._apply_rankings(
-                    candidates=candidates,
-                    rankings=rankings,
-                    limit=limit,
+                    top_k=limit,
                 )
                 set_span_attributes(
                     span,
                     {
-                        "rag.rerank.ranking_count": len(rankings),
                         "rag.hit_count": len(reranked),
                     },
                 )
@@ -260,7 +275,7 @@ class RAGService(AbstractRAGService):
         return chunks
 
     @staticmethod
-    def _build_rerank_prompt(
+    def build_rerank_prompt(
         *,
         query_text: str,
         candidates: list[dict],
@@ -278,7 +293,7 @@ class RAGService(AbstractRAGService):
         return "\n".join(lines)
 
     @staticmethod
-    def _parse_rerank_response(content: str) -> list[tuple[int, float]]:
+    def parse_rerank_response(content: str) -> list[tuple[int, float]]:
         text = content.strip()
         if text.startswith("```"):
             lines = text.splitlines()
@@ -311,7 +326,7 @@ class RAGService(AbstractRAGService):
         return parsed
 
     @staticmethod
-    def _apply_rankings(
+    def apply_rankings(
         *,
         candidates: list[dict],
         rankings: list[tuple[int, float]],

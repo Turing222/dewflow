@@ -72,15 +72,16 @@ def get_worker_rag_service(
     global _rag_service
     if _rag_service is None:
         _llm = llm_service or get_worker_llm_service()
-        uow = SQLAlchemyUnitOfWork(get_worker_session_factory())
+        session_factory = get_worker_session_factory()
+        uow = SQLAlchemyUnitOfWork(session_factory)
         embedder = get_worker_embedder()
         vector_index_service = VectorIndexService(
             uow=uow,
             embedder=embedder,
             embed_batch_size=ai_settings.RAG_EMBED_BATCH_SIZE,
+            read_session_factory=session_factory,
         )
         _rag_service = RAGService(
-            uow=uow,
             embedder=embedder,
             vector_index_service=vector_index_service,
             top_k=ai_settings.RAG_TOP_K,

@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -82,6 +82,7 @@ class RAGPlanningService:
 
     def __init__(self, *, provider: str | None = None) -> None:
         self.provider = provider
+        self._agent: Any = None
 
     async def plan(
         self,
@@ -124,24 +125,29 @@ class RAGPlanningService:
                 reason=RAG_PLANNER_FALLBACK_REASON,
             )
 
+    def _ensure_agent(self) -> Any:
+        if self._agent is None:
+            try:
+                from pydantic_ai import Agent
+            except ImportError as exc:
+                raise RuntimeError("pydantic-ai 未安装") from exc
+
+            self._agent = Agent(
+                self._create_model(),
+                output_type=RAGExecutionPlan,
+                instructions=_PLANNER_INSTRUCTIONS,
+                instrument=True,
+                name="rag_planner",
+            )
+        return self._agent
+
     async def _run_agent(
         self,
         *,
         query_text: str,
         conversation_history: list[ConversationMessage],
     ) -> RAGExecutionPlan:
-        try:
-            from pydantic_ai import Agent
-        except ImportError as exc:
-            raise RuntimeError("pydantic-ai 未安装") from exc
-
-        agent = Agent(
-            self._create_model(),
-            output_type=RAGExecutionPlan,
-            instructions=_PLANNER_INSTRUCTIONS,
-            instrument=True,
-            name="rag_planner",
-        )
+        agent = self._ensure_agent()
         result = await agent.run(
             _build_planner_prompt(
                 query_text=query_text,

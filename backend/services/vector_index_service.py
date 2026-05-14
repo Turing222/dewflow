@@ -8,8 +8,11 @@
 import asyncio
 import hashlib
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from typing import TypedDict
+
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.contracts.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
@@ -42,10 +45,22 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         uow: AbstractUnitOfWork,
         embedder: AbstractRAGEmbedder,
         embed_batch_size: int = 32,
+        read_session_factory: async_sessionmaker | None = None,
     ) -> None:
         super().__init__(uow)
         self.embedder = embedder
         self.embed_batch_size = max(1, embed_batch_size)
+        self._read_session_factory = read_session_factory
+
+    @asynccontextmanager
+    async def _read_repo(self) -> AsyncIterator:
+        if self._read_session_factory is not None:
+            from backend.repositories.knowledge_repo import KnowledgeRepository
+
+            async with self._read_session_factory() as session:
+                yield KnowledgeRepository(session)
+        else:
+            yield self.uow.knowledge_repo
 
     async def replace_file_chunks(
         self,
@@ -165,11 +180,12 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             },
         ) as span:
             query_vector = await self.embedder.encode_query(query_text)
-            hits = await self.uow.knowledge_repo.search_chunks_for_kb(
-                query_vector=query_vector,
-                kb_id=kb_id,
-                limit=limit,
-            )
+            async with self._read_repo() as repo:
+                hits = await repo.search_chunks_for_kb(
+                    query_vector=query_vector,
+                    kb_id=kb_id,
+                    limit=limit,
+                )
             set_span_attributes(
                 span,
                 {
@@ -201,11 +217,12 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             if not normalized_query:
                 set_span_attributes(span, {"rag.hit_count": 0})
                 return []
-            hits = await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
-                normalized_query=normalized_query,
-                kb_id=kb_id,
-                limit=limit,
-            )
+            async with self._read_repo() as repo:
+                hits = await repo.search_chunks_for_kb_fulltext(
+                    normalized_query=normalized_query,
+                    kb_id=kb_id,
+                    limit=limit,
+                )
             set_span_attributes(span, {"rag.hit_count": len(hits)})
             return [
                 (chunk, self._rank_to_distance(rank))
@@ -241,21 +258,20 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
             )
             candidate_limit = limit * max(1, candidate_multiplier)
 
-            vector_hits = await self.uow.knowledge_repo.search_chunks_for_kb(
-                query_vector=query_vector,
-                kb_id=kb_id,
-                limit=candidate_limit,
-            )
-            if normalized_query:
-                fulltext_hits = (
-                    await self.uow.knowledge_repo.search_chunks_for_kb_fulltext(
+            async with self._read_repo() as repo:
+                vector_hits = await repo.search_chunks_for_kb(
+                    query_vector=query_vector,
+                    kb_id=kb_id,
+                    limit=candidate_limit,
+                )
+                if normalized_query:
+                    fulltext_hits = await repo.search_chunks_for_kb_fulltext(
                         normalized_query=normalized_query,
                         kb_id=kb_id,
                         limit=candidate_limit,
                     )
-                )
-            else:
-                fulltext_hits = []
+                else:
+                    fulltext_hits = []
 
             hits = self._fuse_hybrid_hits(
                 vector_hits=vector_hits,

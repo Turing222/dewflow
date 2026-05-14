@@ -3,12 +3,12 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import PlainTextResponse
 
-from fastapi.middleware.cors import CORSMiddleware
-
 import backend.core.secret_env  # noqa: F401
+from backend.api.deps.auth import get_current_superuser
 from backend.api.v1.api import api_router
 from backend.config.llm import validate_llm_configs
 from backend.config.permissions import get_permission_policy
@@ -18,6 +18,7 @@ from backend.infra.database import init_db
 from backend.infra.redis import redis_client
 from backend.middleware.payload_limit import PayloadLimitMiddleware
 from backend.middleware.tracing import setup_tracing
+from backend.models.orm.user import User
 from backend.observability.logger import setup_logging
 from backend.observability.telemetry import setup_telemetry, shutdown_telemetry
 
@@ -93,29 +94,29 @@ def metrics_endpoint() -> PlainTextResponse:
     return PlainTextResponse("")
 
 
-@app.get("/debug-request")
-async def debug_request(request: Request) -> dict[str, object]:
-    # 1. 提取所有 Header
-    headers = dict(request.headers)
+if settings.DEBUG:
 
-    # 2. 提取客户端信息（此时应该是 Nginx 的内网 IP，除非配了 proxy_headers）
-    client_host = request.client.host if request.client else "unknown"
-    client_port = request.client.port if request.client else 0
+    @app.get("/debug-request")
+    async def debug_request(
+        request: Request,
+        _current_user: User = Depends(get_current_superuser),
+    ) -> dict[str, object]:
+        headers = dict(request.headers)
+        client_host = request.client.host if request.client else "unknown"
+        client_port = request.client.port if request.client else 0
 
-    # 3. 提取请求的基础信息
-    debug_info = {
-        "method": request.method,
-        "url": str(request.url),
-        "path": request.url.path,
-        "query_params": dict(request.query_params),
-        "client": f"{client_host}:{client_port}",
-        "headers": headers,
-    }
+        debug_info = {
+            "method": request.method,
+            "url": str(request.url),
+            "path": request.url.path,
+            "query_params": dict(request.query_params),
+            "client": f"{client_host}:{client_port}",
+            "headers": headers,
+        }
 
-    # 4. 在控制台打印出来（重点看 X-Real-IP 和 X-Request-ID）
-    print("\n" + "=" * 50)
-    print("DEBUG: RECEIVED HTTP REQUEST")
-    print(json.dumps(debug_info, indent=4))
-    print("=" * 50 + "\n")
+        print("\n" + "=" * 50)
+        print("DEBUG: RECEIVED HTTP REQUEST")
+        print(json.dumps(debug_info, indent=4))
+        print("=" * 50 + "\n")
 
-    return debug_info
+        return debug_info

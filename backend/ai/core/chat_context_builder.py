@@ -307,18 +307,10 @@ class ChatContextBuilder:
                     "rag.query.char_count": len(query_text),
                 },
             ) as span:
-                uow = getattr(self.rag_service, "uow", None)
-                if uow is None or getattr(uow, "_session", None) is not None:
-                    chunks = await self._retrieve_from_service(
-                        query_text=query_text,
-                        kb_id=kb_id,
-                    )
-                else:
-                    async with uow:
-                        chunks = await self._retrieve_from_service(
-                            query_text=query_text,
-                            kb_id=kb_id,
-                        )
+                chunks = await self._retrieve_from_service(
+                    query_text=query_text,
+                    kb_id=kb_id,
+                )
                 set_span_attributes(
                     span,
                     {

@@ -114,6 +114,16 @@ class AbstractRAGService(ABC):
         """返回经过可选 LLM 重排序的上下文片段"""
         ...
 
+    @abstractmethod
+    async def rerank(
+        self,
+        query_text: str,
+        candidates: list[dict],
+        top_k: int | None = None,
+    ) -> list[dict]:
+        """对已检索候选片段进行 LLM 重排序"""
+        ...
+
 
 class AbstractRAGEmbedder(ABC):
     """RAG 向量化器抽象接口"""

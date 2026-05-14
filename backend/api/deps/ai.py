@@ -54,7 +54,6 @@ def get_rag_service(
 ) -> AbstractRAGService:
     llm_service = get_llm_service() if settings.RAG_RERANK_ENABLED else None
     return RAGService(
-        uow=uow,
         embedder=embedder,
         vector_index_service=vector_index_service,
         top_k=settings.RAG_TOP_K,

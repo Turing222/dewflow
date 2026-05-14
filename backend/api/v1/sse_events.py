@@ -40,6 +40,32 @@ class DoneEvent(TypedDict):
 SSEEvent = MetaEvent | ChunkEvent | ErrorEvent | DoneEvent
 
 
+def meta_event(
+    *,
+    session_id: str,
+    session_title: str | None,
+    message_id: str,
+) -> MetaEvent:
+    return {
+        "type": "meta",
+        "session_id": session_id,
+        "session_title": session_title,
+        "message_id": message_id,
+    }
+
+
+def chunk_event(content: str) -> ChunkEvent:
+    return {"type": "chunk", "content": content}
+
+
+def error_event(message: str) -> ErrorEvent:
+    return {"type": "error", "message": message}
+
+
+def done_event() -> DoneEvent:
+    return {"type": "done"}
+
+
 def encode_sse_event(event: SSEEvent) -> str:
     """Serialize typed events to the existing SSE wire format."""
     if event["type"] == "done":

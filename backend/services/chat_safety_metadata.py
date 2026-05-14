@@ -2,8 +2,15 @@
 
 职责：统一生成对话安全护栏、回答结果和 badcase 飞轮候选元数据。
 边界：本模块只做轻量规则判断和 JSON 结构构造，不查询数据库、不调用外部安全模型。
+
+WARNING: This module implements a PLACEHOLDER-LEVEL rule-based content filter.
+It is NOT a substitute for a real content safety model. It is trivially
+bypassable via synonyms, paraphrasing, or character substitution. This
+implementation exists for early-stage safety data collection and MUST be
+replaced with an ML-based classifier before production deployment.
 """
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -96,19 +103,58 @@ def build_safety_metadata(
 
 
 def evaluate_input_guardrail(query_text: str) -> GuardrailDecision:
+    """Evaluate input guardrail (PLACEHOLDER — see module docstring)."""
     lowered = query_text.lower()
-    risky_intents = ("泄露", "窃取", "绕过权限", "导出隐私", "dump")
-    risky_targets = ("密码", "token", "api key", "密钥", "身份证", "手机号")
-    if any(intent in lowered for intent in risky_intents) and any(
-        target in lowered for target in risky_targets
-    ):
+
+    # English: word-boundary regex to avoid matching substrings of unrelated words
+    _intent_en = re.compile(
+        r"\b(?:leak|exfiltrat|bypass|circulvent|dump|hack|crack"
+        r"|steal|sniff|scrape|extract)\b"
+    )
+    _target_en = re.compile(
+        r"\b(?:password|token|api[-\s]?key|secret|credential"
+        r"|id[-\s]?number|phone|idcard|ssn|social[-\s]security"
+        r"|credit[-\s]?card|cvv|pin[-\s]?code)\b"
+    )
+
+    risky_intent_cn = (
+        "泄露", "窃取", "绕过权限", "导出隐私",
+        "入侵", "盗取", "非法获取", "私自导出",
+        "越权", "脱库",
+    )
+    risky_target_cn = (
+        "密码", "token", "api key", "密钥",
+        "身份证", "手机号", "银行卡", "验证码",
+        "支付密码", "登录密码",
+    )
+
+    has_intent = bool(_intent_en.search(lowered)) or any(
+        kw in lowered for kw in risky_intent_cn
+    )
+    has_target = bool(_target_en.search(lowered)) or any(
+        kw in lowered for kw in risky_target_cn
+    )
+
+    if has_intent and has_target:
         return GuardrailDecision(True, GuardrailReason.PERMISSION_OR_PRIVACY_RISK.value)
     return GuardrailDecision(False)
 
 
 def evaluate_output_guardrail(content: str) -> GuardrailDecision:
+    """Evaluate output guardrail (PLACEHOLDER — see module docstring)."""
     lowered = content.lower()
-    risky_markers = ("密码是", "token 是", "api key 是", "密钥是", "身份证号是")
-    if any(marker in lowered for marker in risky_markers):
+
+    _marker_en = re.compile(
+        r"\b(?:password\s+is|token\s+is|api[-\s]?key\s+is"
+        r"|secret\s+is|credential[-\s:]+|ssn[-\s:])\b"
+    )
+    risky_marker_cn = (
+        "密码是", "token 是", "api key 是",
+        "密钥是", "身份证号是", "验证码是",
+    )
+
+    if _marker_en.search(lowered) or any(
+        kw in lowered for kw in risky_marker_cn
+    ):
         return GuardrailDecision(True, GuardrailReason.UNSAFE_OUTPUT.value)
     return GuardrailDecision(False)

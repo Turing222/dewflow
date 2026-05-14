@@ -19,6 +19,7 @@ class WebSettings(BaseSettings):
     # ── App Metadata ──────────────────────────────────────────────
     PROJECT_NAME: str = "Dewflow AI"
     VERSION: str = "0.1.0"
+    DEBUG: bool = False
     API_ROOT_PATH: str = "/api"
     API_V1_STR: str = "/v1"
 

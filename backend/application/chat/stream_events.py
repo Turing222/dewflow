@@ -18,16 +18,28 @@ class StreamEvent(TypedDict, total=False):
     message: str
 
 
+def stream_chunk_event(content: str) -> StreamEvent:
+    return {"type": "chunk", "content": content}
+
+
+def stream_error_event(message: str) -> StreamEvent:
+    return {"type": "error", "message": message}
+
+
+def stream_done_event() -> StreamEvent:
+    return {"type": "done"}
+
+
 def encode_chunk_event(content: str) -> str:
-    return json.dumps({"type": "chunk", "content": content}, ensure_ascii=False)
+    return json.dumps(stream_chunk_event(content), ensure_ascii=False)
 
 
 def encode_error_event(message: str) -> str:
-    return json.dumps({"type": "error", "message": message}, ensure_ascii=False)
+    return json.dumps(stream_error_event(message), ensure_ascii=False)
 
 
 def encode_done_event() -> str:
-    return json.dumps({"type": "done"}, ensure_ascii=False)
+    return json.dumps(stream_done_event(), ensure_ascii=False)
 
 
 def decode_stream_event(payload: str) -> StreamEvent:
@@ -42,17 +54,17 @@ def decode_stream_event(payload: str) -> StreamEvent:
 
     event_type = data.get("type")
     if event_type == "chunk":
-        return {"type": "chunk", "content": str(data.get("content") or "")}
+        return stream_chunk_event(str(data.get("content") or ""))
     if event_type == "error":
-        return {"type": "error", "message": str(data.get("message") or "")}
+        return stream_error_event(str(data.get("message") or ""))
     if event_type == "done":
-        return {"type": "done"}
+        return stream_done_event()
     return _decode_legacy_payload(payload)
 
 
 def _decode_legacy_payload(payload: str) -> StreamEvent:
     if payload == "[DONE]":
-        return {"type": "done"}
+        return stream_done_event()
     if payload.startswith("[ERROR]"):
-        return {"type": "error", "message": payload[7:]}
-    return {"type": "chunk", "content": payload}
+        return stream_error_event(payload[7:])
+    return stream_chunk_event(payload)

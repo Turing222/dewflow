@@ -243,7 +243,6 @@ async def run(args: argparse.Namespace) -> None:
             for mode, rerank in modes:
                 label = f"{mode}_rerank" if rerank else mode
                 rag_service = RAGService(
-                    uow=uow,
                     embedder=embedder,
                     vector_index_service=vector_index_service,
                     top_k=args.top_k,
@@ -271,7 +270,6 @@ async def run(args: argparse.Namespace) -> None:
             }
         else:
             rag_service = RAGService(
-                uow=uow,
                 embedder=embedder,
                 vector_index_service=vector_index_service,
                 top_k=args.top_k,

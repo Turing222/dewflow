@@ -31,6 +31,19 @@ class PayloadLimitMiddleware(BaseHTTPMiddleware):
             except ValueError:
                 pass
 
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return await call_next(request)
+
+        content_type = (request.headers.get("content-type") or "").lower()
+        if "multipart/form-data" in content_type:
+            # 文件上传大小由 Nginx client_max_body_size 限制，不在此缓冲
+            return await call_next(request)
+
+        if "application/json" not in content_type:
+            # 非 JSON 请求体（如 text/plain）只依赖 Content-Length 检查，
+            # 不缓冲 body 以避免内存占用
+            return await call_next(request)
+
         body_parts: list[bytes] = []
         body_size = 0
         async for chunk in request.stream():

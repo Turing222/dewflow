@@ -11,6 +11,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
+import redis.asyncio as redis
+
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
 from backend.application.chat.stream_events import (
@@ -27,7 +29,6 @@ from backend.contracts.interfaces import (
 )
 from backend.core.concurrency import llm_concurrency_slot
 from backend.core.exceptions import AppException
-from backend.infra.redis import redis_client
 from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
 from backend.observability.trace_utils import set_span_attributes, trace_span
@@ -48,7 +49,6 @@ from backend.services.rag_planning_service import (
     RAGExecutionPlan,
     RAGPlanningService,
 )
-from backend.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +69,14 @@ class LLMGenerationWorkerWorkflow:
         self,
         *,
         uow: AbstractUnitOfWork,
+        redis_connection: redis.Redis,
         llm_service: AbstractLLMService,
         rag_service: AbstractRAGService | None = None,
         rag_planning_service: RAGPlanningService | None = None,
         chat_context_builder: ChatContextBuilder | None = None,
         rag_evidence_policy: RAGEvidencePolicy | None = None,
     ) -> None:
+        self._redis = redis_connection
         self.uow = uow
         self.llm_service = llm_service
         self.rag_service = rag_service
@@ -94,8 +96,8 @@ class LLMGenerationWorkerWorkflow:
         idempotency_lock_key: str | None = None,
     ) -> None:
         """Generate a streaming answer, publish chunks, and persist final state."""
-        redis_connection = await redis_client.init()
         accumulated_content: list[str] = []
+        done_published: bool = False
         output_decision: GuardrailDecision | None = None
         output_blocked = False
         start_time = time.time()
@@ -105,7 +107,6 @@ class LLMGenerationWorkerWorkflow:
             if input_decision.triggered:
                 await self._handle_stream_input_block(
                     channel=channel,
-                    redis_connection=redis_connection,
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
                     input_decision=input_decision,
@@ -117,7 +118,6 @@ class LLMGenerationWorkerWorkflow:
             if prepared_context.refusal_decision is not None:
                 await self._handle_stream_refusal(
                     channel=channel,
-                    redis_connection=redis_connection,
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
                     search_context=prepared_context.search_context,
@@ -169,13 +169,13 @@ class LLMGenerationWorkerWorkflow:
                             # future provider-level cancellation to reduce token waste.
                             accumulated_content.append(chunk)
                             output_blocked = True
-                            await redis_connection.publish(
+                            await self._redis.publish(
                                 channel,
                                 encode_chunk_event(SAFETY_REFUSAL_MESSAGE),
                             )
                             break
                         accumulated_content.append(chunk)
-                        await redis_connection.publish(
+                        await self._redis.publish(
                             channel,
                             encode_chunk_event(chunk),
                         )
@@ -206,7 +206,7 @@ class LLMGenerationWorkerWorkflow:
                     idempotency_lock_key is not None
                     and assistant_message_id is not None
                 ):
-                    await redis_connection.set(
+                    await self._redis.set(
                         idempotency_lock_key,
                         str(assistant_message_id),
                         ex=3600,
@@ -225,26 +225,25 @@ class LLMGenerationWorkerWorkflow:
         except AppException as exc:
             logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
             await self._persist_failure(
-                redis_connection=redis_connection,
                 assistant_message_id=assistant_message_id,
                 error_content=str(exc),
                 idempotency_lock_key=idempotency_lock_key,
             )
-            await redis_connection.publish(channel, encode_error_event(str(exc)))
+            await self._redis.publish(channel, encode_error_event(str(exc)))
         except Exception:
             logger.exception("TaskIQ 调用 LLM 系统异常")
             await self._persist_failure(
-                redis_connection=redis_connection,
                 assistant_message_id=assistant_message_id,
                 error_content="服务暂时不可用，请稍后重试",
                 idempotency_lock_key=idempotency_lock_key,
             )
-            await redis_connection.publish(
+            await self._redis.publish(
                 channel,
                 encode_error_event("服务暂时不可用，请稍后重试"),
             )
         finally:
-            await redis_connection.publish(channel, encode_done_event())
+            if not done_published:
+                await self._redis.publish(channel, encode_done_event())
 
     # ── Non-Streaming ──────────────────────────────────────────────
 
@@ -257,14 +256,12 @@ class LLMGenerationWorkerWorkflow:
         idempotency_lock_key: str | None = None,
     ) -> GenerationResult:
         """Generate a non-streaming answer, persist final state, and return result."""
-        redis_connection = await redis_client.init()
         start_time = time.time()
 
         try:
             input_decision = evaluate_input_guardrail(payload.query_text)
             if input_decision.triggered:
                 return await self._handle_nonstream_input_block(
-                    redis_connection=redis_connection,
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
                     input_decision=input_decision,
@@ -274,7 +271,6 @@ class LLMGenerationWorkerWorkflow:
             prepared_context = await self._prepare_context(payload)
             if prepared_context.refusal_decision is not None:
                 return await self._handle_nonstream_refusal(
-                    redis_connection=redis_connection,
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
                     search_context=prepared_context.search_context,
@@ -329,7 +325,6 @@ class LLMGenerationWorkerWorkflow:
             if not result.success:
                 error_msg = result.error_message or "LLM 服务返回失败"
                 await self._persist_failure(
-                    redis_connection=redis_connection,
                     assistant_message_id=assistant_message_id,
                     error_content=error_msg,
                     idempotency_lock_key=idempotency_lock_key,
@@ -363,7 +358,7 @@ class LLMGenerationWorkerWorkflow:
                 ),
             )
             if idempotency_lock_key is not None and assistant_message_id is not None:
-                await redis_connection.set(
+                await self._redis.set(
                     idempotency_lock_key,
                     str(assistant_message_id),
                     ex=3600,
@@ -386,7 +381,6 @@ class LLMGenerationWorkerWorkflow:
         except AppException as exc:
             logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
             await self._persist_failure(
-                redis_connection=redis_connection,
                 assistant_message_id=assistant_message_id,
                 error_content=str(exc),
                 idempotency_lock_key=idempotency_lock_key,
@@ -395,7 +389,6 @@ class LLMGenerationWorkerWorkflow:
         except Exception:
             logger.exception("TaskIQ 调用 LLM 系统异常")
             await self._persist_failure(
-                redis_connection=redis_connection,
                 assistant_message_id=assistant_message_id,
                 error_content="服务暂时不可用，请稍后重试",
                 idempotency_lock_key=idempotency_lock_key,
@@ -408,48 +401,48 @@ class LLMGenerationWorkerWorkflow:
         self,
         payload: GenerationPayload,
     ) -> PreparedGenerationContext:
-        rag_plan, planner_used = await self._build_rag_plan(payload)
-        candidates = await self._retrieve_rag_candidates(payload, rag_plan)
-        reranked_chunks = await self._rerank_candidates_if_enabled(
-            payload,
-            candidates,
-            rag_plan,
-        )
-        refusal_decision = self.rag_evidence_policy.evaluate(
-            kb_id=payload.kb_id,
-            rag_plan=rag_plan,
-            chunks=reranked_chunks,
-        )
-        if refusal_decision.should_refuse:
-            search_context = self._build_refusal_search_context(
-                payload=payload,
-                chunks=reranked_chunks,
-                decision=refusal_decision,
-            )
-            return PreparedGenerationContext(
-                assembled_prompt=None,
-                search_context=search_context,
-                refusal_decision=refusal_decision,
-            )
         with trace_span(
             "taskiq.llm_stream.prepare_context",
             {
                 "chat.session_id": payload.session_id,
                 "rag.kb_id": payload.kb_id,
-                "rag.candidate_count": len(candidates),
-                "rag.rerank.enabled": rag_plan.use_rerank,
-                "rag.rerank.config_enabled": ai_settings.RAG_RERANK_ENABLED,
-                "rag.hit_count": len(reranked_chunks),
-                "rag.planner.enabled": ai_settings.RAG_PLANNER_ENABLED,
-                "rag.planner.used": planner_used,
-                "rag.planner.should_use_rag": rag_plan.should_use_rag,
-                "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
-                "rag.planner.use_rerank": rag_plan.use_rerank,
-                "rag.planner.fallback": (
-                    rag_plan.reason == RAG_PLANNER_FALLBACK_REASON
-                ),
             },
         ) as span:
+            rag_plan, planner_used = await self._build_rag_plan(payload)
+            candidates = await self._retrieve_rag_candidates(payload, rag_plan)
+            reranked_chunks = await self._rerank_candidates_if_enabled(
+                payload,
+                candidates,
+                rag_plan,
+            )
+            refusal_decision = self.rag_evidence_policy.evaluate(
+                kb_id=payload.kb_id,
+                rag_plan=rag_plan,
+                chunks=reranked_chunks,
+            )
+            if refusal_decision.should_refuse:
+                search_context = self._build_refusal_search_context(
+                    payload=payload,
+                    chunks=reranked_chunks,
+                    decision=refusal_decision,
+                )
+                set_span_attributes(
+                    span,
+                    {
+                        "rag.refusal": True,
+                        "rag.refusal_reason": refusal_decision.reason,
+                        "rag.hit_count": len(reranked_chunks),
+                        "rag.planner.used": planner_used,
+                        "rag.planner.should_use_rag": rag_plan.should_use_rag,
+                        "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
+                    },
+                )
+                return PreparedGenerationContext(
+                    assembled_prompt=None,
+                    search_context=search_context,
+                    refusal_decision=refusal_decision,
+                )
+
             prepared_context = self.chat_context_builder.build_from_chunks(
                 history_messages=payload.conversation_history,
                 current_query=payload.query_text,
@@ -459,6 +452,18 @@ class LLMGenerationWorkerWorkflow:
             set_span_attributes(
                 span,
                 {
+                    "rag.candidate_count": len(candidates),
+                    "rag.rerank.enabled": rag_plan.use_rerank,
+                    "rag.rerank.config_enabled": ai_settings.RAG_RERANK_ENABLED,
+                    "rag.hit_count": len(reranked_chunks),
+                    "rag.planner.enabled": ai_settings.RAG_PLANNER_ENABLED,
+                    "rag.planner.used": planner_used,
+                    "rag.planner.should_use_rag": rag_plan.should_use_rag,
+                    "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
+                    "rag.planner.use_rerank": rag_plan.use_rerank,
+                    "rag.planner.fallback": (
+                        rag_plan.reason == RAG_PLANNER_FALLBACK_REASON
+                    ),
                     "chat.prompt.tokens_input": prepared_context.assembled_prompt.total_tokens,
                     "chat.prompt.message_count": len(
                         prepared_context.assembled_prompt.messages
@@ -475,7 +480,6 @@ class LLMGenerationWorkerWorkflow:
         self,
         *,
         channel: str,
-        redis_connection: Any,
         assistant_message_id: uuid.UUID | None,
         user_id: uuid.UUID | None,
         input_decision: GuardrailDecision,
@@ -483,7 +487,7 @@ class LLMGenerationWorkerWorkflow:
         idempotency_lock_key: str | None,
     ) -> None:
         tokens_output = self._count_output_tokens(SAFETY_REFUSAL_MESSAGE)
-        await redis_connection.publish(
+        await self._redis.publish(
             channel,
             encode_chunk_event(SAFETY_REFUSAL_MESSAGE),
         )
@@ -501,7 +505,7 @@ class LLMGenerationWorkerWorkflow:
             ),
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
-            await redis_connection.set(
+            await self._redis.set(
                 idempotency_lock_key,
                 str(assistant_message_id),
                 ex=3600,
@@ -511,7 +515,6 @@ class LLMGenerationWorkerWorkflow:
         self,
         *,
         channel: str,
-        redis_connection: Any,
         assistant_message_id: uuid.UUID | None,
         user_id: uuid.UUID | None,
         search_context: dict | None,
@@ -520,7 +523,7 @@ class LLMGenerationWorkerWorkflow:
     ) -> None:
         refusal_content = ai_settings.RAG_REFUSAL_MESSAGE
         tokens_output = self._count_output_tokens(refusal_content)
-        await redis_connection.publish(channel, encode_chunk_event(refusal_content))
+        await self._redis.publish(channel, encode_chunk_event(refusal_content))
         await self._persist_success(
             assistant_message_id=assistant_message_id,
             user_id=user_id,
@@ -532,7 +535,7 @@ class LLMGenerationWorkerWorkflow:
             message_metadata=self._build_rag_refusal_metadata(),
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
-            await redis_connection.set(
+            await self._redis.set(
                 idempotency_lock_key,
                 str(assistant_message_id),
                 ex=3600,
@@ -541,7 +544,6 @@ class LLMGenerationWorkerWorkflow:
     async def _handle_nonstream_input_block(
         self,
         *,
-        redis_connection: Any,
         assistant_message_id: uuid.UUID | None,
         user_id: uuid.UUID | None,
         input_decision: GuardrailDecision,
@@ -563,7 +565,7 @@ class LLMGenerationWorkerWorkflow:
             ),
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
-            await redis_connection.set(
+            await self._redis.set(
                 idempotency_lock_key,
                 str(assistant_message_id),
                 ex=3600,
@@ -578,7 +580,6 @@ class LLMGenerationWorkerWorkflow:
     async def _handle_nonstream_refusal(
         self,
         *,
-        redis_connection: Any,
         assistant_message_id: uuid.UUID | None,
         user_id: uuid.UUID | None,
         search_context: dict | None,
@@ -598,7 +599,7 @@ class LLMGenerationWorkerWorkflow:
             message_metadata=self._build_rag_refusal_metadata(),
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
-            await redis_connection.set(
+            await self._redis.set(
                 idempotency_lock_key,
                 str(assistant_message_id),
                 ex=3600,
@@ -654,11 +655,7 @@ class LLMGenerationWorkerWorkflow:
             return []
 
         try:
-            uow = getattr(self.rag_service, "uow", None)
-            if uow is None or self._is_uow_active(uow):
-                return await self._retrieve_from_rag_service(payload, rag_plan)
-            async with uow:
-                return await self._retrieve_from_rag_service(payload, rag_plan)
+            return await self._retrieve_from_rag_service(payload, rag_plan)
         except Exception as exc:
             logger.warning("Worker RAG 候选检索失败，降级为普通对话: %s", exc)
             return []
@@ -708,6 +705,8 @@ class LLMGenerationWorkerWorkflow:
             return candidates[: rag_plan.top_k]
 
         limit = max(1, rag_plan.rerank_top_k)
+        if self.rag_service is None:
+            return candidates[:limit]
         try:
             with trace_span(
                 "taskiq.llm_stream.rerank",
@@ -719,10 +718,6 @@ class LLMGenerationWorkerWorkflow:
                     "rag.planner.use_rerank": rag_plan.use_rerank,
                 },
             ) as span:
-                prompt = RAGService._build_rerank_prompt(
-                    query_text=payload.query_text,
-                    candidates=candidates,
-                )
                 async with llm_concurrency_slot(
                     {
                         "chat.session_id": payload.session_id,
@@ -730,25 +725,14 @@ class LLMGenerationWorkerWorkflow:
                         "rag.rerank": True,
                     }
                 ):
-                    result = await self.llm_service.generate_response(
-                        LLMQueryDTO(
-                            session_id=payload.session_id,
-                            query_text=prompt,
-                            conversation_history=[],
-                        )
+                    reranked = await self.rag_service.rerank(
+                        query_text=payload.query_text,
+                        candidates=candidates,
+                        top_k=limit,
                     )
-                if not result.success:
-                    raise ValueError(result.error_message or "LLM rerank failed")
-                rankings = RAGService._parse_rerank_response(result.content)
-                reranked = RAGService._apply_rankings(
-                    candidates=candidates,
-                    rankings=rankings,
-                    limit=limit,
-                )
                 set_span_attributes(
                     span,
                     {
-                        "rag.rerank.ranking_count": len(rankings),
                         "rag.hit_count": len(reranked),
                     },
                 )
@@ -833,6 +817,36 @@ class LLMGenerationWorkerWorkflow:
 
         async with self.uow:
             updater = ChatMessageUpdater(self.uow)
+
+            # Phase 1: Atomic token billing.
+            # Two-phase quota design:
+            #   1. session_orchestrator does a best-effort pre-check via
+            #      SELECT FOR UPDATE (get_with_lock) before generation starts.
+            #   2. Actual enforcement happens here via conditional UPDATE
+            #      (try_increment_used_tokens_with_limit).
+            # This avoids holding a row lock across the entire LLM generation.
+            if user_id is not None and tokens_input is not None:
+                total_tokens = tokens_input + tokens_output
+                ok = await self.uow.user_repo.try_increment_used_tokens_with_limit(
+                    user_id,
+                    total_tokens,
+                )
+                if not ok:
+                    logger.warning(
+                        "Token 累加后超出上限，回写失败状态: user_id=%s, delta=%d",
+                        user_id,
+                        total_tokens,
+                    )
+                    await updater.update_as_failed(
+                        message_id=assistant_message_id,
+                        error_content="Token 余额不足，本次消耗未记录",
+                        message_metadata=build_safety_metadata(
+                            response_outcome=ResponseOutcome.FAILED,
+                        ),
+                    )
+                    return
+
+            # Phase 2: Mark as SUCCESS (billing confirmed or not applicable).
             await updater.update_as_success(
                 message_id=assistant_message_id,
                 content=content,
@@ -842,32 +856,17 @@ class LLMGenerationWorkerWorkflow:
                 search_context=search_context,
                 message_metadata=message_metadata,
             )
-            if user_id is None or tokens_input is None:
-                return
-
-            total_tokens = tokens_input + tokens_output
-            ok = await self.uow.user_repo.try_increment_used_tokens_with_limit(
-                user_id,
-                total_tokens,
-            )
-            if not ok:
-                logger.warning(
-                    "Token 累加后超出上限，本次消耗未记录: user_id=%s, delta=%d",
-                    user_id,
-                    total_tokens,
-                )
 
     async def _persist_failure(
         self,
         *,
-        redis_connection: Any,
         assistant_message_id: uuid.UUID | None,
         error_content: str,
         idempotency_lock_key: str | None,
     ) -> None:
         if idempotency_lock_key is not None:
             try:
-                await redis_connection.delete(idempotency_lock_key)
+                await self._redis.delete(idempotency_lock_key)
             except Exception:
                 logger.debug(
                     "Worker 清理幂等锁失败: key=%s",
@@ -894,10 +893,3 @@ class LLMGenerationWorkerWorkflow:
                 assistant_message_id,
             )
 
-    @staticmethod
-    def _is_uow_active(uow: AbstractUnitOfWork) -> bool:
-        try:
-            _ = uow.session
-        except (AttributeError, RuntimeError):
-            return False
-        return True

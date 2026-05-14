@@ -111,12 +111,12 @@ class ChatSessionOrchestrator:
         trace_attrs: dict[str, object],
         span_prefix: str,
     ) -> ChatPreparedRequest:
-        with trace_span(
-            f"{span_prefix}.create_session_and_messages",
-            trace_attrs,
-        ) as span:
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
+        async with db_concurrency_slot(trace_attrs):
+            async with self.uow:
+                with trace_span(
+                    f"{span_prefix}.create_session_and_messages",
+                    trace_attrs,
+                ) as span:
                     user = await self.uow.user_repo.get_with_lock(command.user_id)
                     if user and user.used_tokens >= user.max_tokens:
                         await self.release_idempotency(idempotency)
@@ -163,30 +163,24 @@ class ChatSessionOrchestrator:
                             user_id=command.user_id,
                         )
                     )
-            set_span_attributes(
-                span,
-                {
-                    "chat.session_id": session.id,
-                    "chat.assistant_message_id": assistant_message.id,
-                },
-            )
-            trace_attrs["chat.session_id"] = session.id
-            trace_attrs["chat.assistant_message_id"] = assistant_message.id
+                set_span_attributes(
+                    span,
+                    {
+                        "chat.session_id": session.id,
+                        "chat.assistant_message_id": assistant_message.id,
+                    },
+                )
+                trace_attrs["chat.session_id"] = session.id
+                trace_attrs["chat.assistant_message_id"] = assistant_message.id
 
-        with trace_span(f"{span_prefix}.fetch_history", trace_attrs) as span:
-            async with db_concurrency_slot(trace_attrs):
-                async with self.uow:
-                    session_manager = SessionManager(
-                        self.uow,
-                        self.permission_service,
-                    )
+                with trace_span(f"{span_prefix}.fetch_history", trace_attrs) as span:
                     history_messages = await session_manager.get_session_messages(
                         session_id=session.id,
                         limit=settings.CHAT_MEMORY_FETCH_LIMIT,
                     )
-            set_span_attributes(
-                span, {"chat.history.message_count": len(history_messages)}
-            )
+                    set_span_attributes(
+                        span, {"chat.history.message_count": len(history_messages)}
+                    )
 
         with trace_span(f"{span_prefix}.prepare_worker_payload", trace_attrs) as span:
             conversation_history = history_to_conversation_messages(history_messages)

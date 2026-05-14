@@ -9,7 +9,6 @@ from backend.services.rag_service import RAGService
 
 def _build_service(llm_service=None) -> RAGService:
     return RAGService(
-        uow=MagicMock(),
         embedder=MagicMock(),
         vector_index_service=MagicMock(),
         top_k=4,

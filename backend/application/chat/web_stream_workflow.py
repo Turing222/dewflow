@@ -13,7 +13,13 @@ from collections.abc import AsyncGenerator
 import redis.asyncio as redis
 from langfuse import get_client, observe
 
-from backend.api.v1.sse_events import SSEEvent
+from backend.api.v1.sse_events import (
+    SSEEvent,
+    chunk_event,
+    done_event,
+    error_event,
+    meta_event,
+)
 from backend.application.chat.session_orchestrator import ChatSessionOrchestrator
 from backend.application.chat.stream_events import decode_stream_event
 from backend.config.settings import settings
@@ -96,9 +102,11 @@ class ChatWorkflow:
         )
         if not idempotency.is_new:
             if idempotency.is_processing_duplicate:
-                yield {"type": "error", "message": "正在加速计算中..."}
+                yield error_event("正在加速计算中...")
+                yield done_event()
                 return
-            yield {"type": "error", "message": "该请求已完成，请刷新页面"}
+            yield error_event("该请求已完成，请刷新页面")
+            yield done_event()
             return
 
         # 会话和消息创建放在 DB 槽位内，避免高并发下耗尽连接池。
@@ -110,19 +118,18 @@ class ChatWorkflow:
                 span_prefix="chat.stream",
         )
         except AppException as exc:
-            yield {"type": "error", "message": str(exc)}
-            yield {"type": "done"}
+            yield error_event(str(exc))
+            yield done_event()
             return
         session = prepared.session
         assistant_msg = prepared.assistant_message
 
         # 先发送 meta，让前端尽早拿到会话和消息 id。
-        yield {
-            "type": "meta",
-            "session_id": str(session.id),
-            "session_title": session.title,
-            "message_id": str(assistant_msg.id),
-        }
+        yield meta_event(
+            session_id=str(session.id),
+            session_title=session.title,
+            message_id=str(assistant_msg.id),
+        )
 
         task_id = str(uuid.uuid4())
         channel = f"stream:{task_id}"
@@ -147,22 +154,22 @@ class ChatWorkflow:
         except AppException as exc:
             await orchestrator.release_idempotency(idempotency)
             logger.warning("流式任务初始化失败: %s", exc)
-            yield {"type": "error", "message": str(exc)}
+            yield error_event(str(exc))
             async with db_concurrency_slot(prepared.trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
-            yield {"type": "done"}
+            yield done_event()
             return
         except Exception as exc:
             await orchestrator.release_idempotency(idempotency)
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
-            yield {"type": "error", "message": "服务暂时不可用，请稍后重试"}
+            yield error_event("服务暂时不可用，请稍后重试")
             async with db_concurrency_slot(prepared.trace_attrs):
                 async with self.uow:
                     updater = ChatMessageUpdater(self.uow)
                     await updater.update_as_failed(assistant_msg.id)
-            yield {"type": "done"}
+            yield done_event()
             return
 
         accumulated_content = []
@@ -224,7 +231,7 @@ class ChatWorkflow:
                     else:
                         content = event.get("content", "")
                         accumulated_content.append(content)
-                        yield {"type": "chunk", "content": content}
+                        yield chunk_event(content)
                     break
 
                 if not done_received:
@@ -256,7 +263,7 @@ class ChatWorkflow:
                             )
                         content = event.get("content", "")
                         accumulated_content.append(content)
-                        yield {"type": "chunk", "content": content}
+                        yield chunk_event(content)
 
                 if not done_received:
                     raise app_service_error(
@@ -275,13 +282,13 @@ class ChatWorkflow:
                 )
         except AppException as exc:
             logger.warning("流式 LLM 调用业务异常: %s", exc)
-            yield {"type": "error", "message": str(exc)}
-            yield {"type": "done"}
+            yield error_event(str(exc))
+            yield done_event()
             return
         except Exception as exc:
             logger.error("流式 LLM 调用异常: %s", str(exc), exc_info=True)
-            yield {"type": "error", "message": "服务暂时不可用，请稍后重试"}
-            yield {"type": "done"}
+            yield error_event("服务暂时不可用，请稍后重试")
+            yield done_event()
             return
         finally:
             if pubsub is not None:
@@ -302,4 +309,4 @@ class ChatWorkflow:
                         if asyncio.iscoroutine(maybe_awaitable):
                             await maybe_awaitable
 
-        yield {"type": "done"}
+        yield done_event()
