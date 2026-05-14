@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ from backend.ai.providers.embedding.rag_embedding import (
     OpenAICompatibleEmbedder,
     RAGEmbedderFactory,
 )
+from backend.contracts.interfaces import AbstractRAGEmbedder
 from backend.core.exceptions import AppException
 
 
@@ -59,6 +61,48 @@ def test_factory_rejects_local_embedding_provider():
             base_url="http://example.com/v1",
             api_key="test-key",
         )
+
+
+@pytest.mark.asyncio
+async def test_default_encode_documents_is_bounded_and_ordered():
+    class SlowEmbedder(AbstractRAGEmbedder):
+        DEFAULT_ENCODE_DOCUMENTS_CONCURRENCY = 2
+
+        def __init__(self) -> None:
+            self.active = 0
+            self.max_active = 0
+
+        async def encode_query(self, text: str) -> list[float]:
+            return [float(text)]
+
+        async def encode_document(self, text: str) -> list[float]:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            return [float(text)]
+
+    embedder = SlowEmbedder()
+
+    vectors = await embedder.encode_documents(["1", "2", "3", "4"])
+
+    assert vectors == [[1.0], [2.0], [3.0], [4.0]]
+    assert embedder.max_active == 2
+
+
+@pytest.mark.asyncio
+async def test_default_encode_documents_propagates_errors():
+    class FailingEmbedder(AbstractRAGEmbedder):
+        async def encode_query(self, text: str) -> list[float]:
+            return [float(text)]
+
+        async def encode_document(self, text: str) -> list[float]:
+            if text == "bad":
+                raise RuntimeError("boom")
+            return [float(text)]
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await FailingEmbedder().encode_documents(["1", "bad", "3"])
 
 
 @pytest.mark.asyncio

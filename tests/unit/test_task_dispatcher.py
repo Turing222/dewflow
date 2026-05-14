@@ -1,5 +1,7 @@
-"""Unit tests for TaskDispatcher — verify parameters pass through to AsyncKicker."""
+"""Unit tests for TaskDispatcher — verify TaskIQ Redis messages."""
 
+import json
+import pickle
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -7,20 +9,17 @@ import pytest
 
 from backend.infra.task_dispatcher import TASK_INGESTION, TASK_NONSTREAM, TASK_STREAM
 
-_kiq_mock = AsyncMock()
+
+class FakeRedis:
+    def __init__(self, result_payload: bytes | None = None) -> None:
+        self.lpush = AsyncMock()
+        self.get = AsyncMock(return_value=result_payload)
+        self.aclose = AsyncMock()
 
 
-def _make_mock_kicker(**kwargs):
-    """Factory that returns a mock kicker whose .kiq() is the shared _kiq_mock."""
-    kicker = AsyncMock()
-    kicker.kiq = _kiq_mock
-    return kicker
-
-
-@pytest.fixture(autouse=True)
-def _reset_kiq_mock():
-    _kiq_mock.reset_mock()
-    _kiq_mock.side_effect = None
+def _decode_lpush_message(redis_client: FakeRedis) -> dict:
+    _, message = redis_client.lpush.await_args.args
+    return json.loads(message.decode())
 
 
 @pytest.mark.asyncio
@@ -35,10 +34,9 @@ async def test_enqueue_stream_passes_params_through():
     user_id = str(uuid.uuid4())
     lock_key = "lock:test"
 
-    with patch(
-        "backend.infra.task_dispatcher.AsyncKicker",
-        side_effect=_make_mock_kicker,
-    ):
+    redis_client = FakeRedis()
+
+    with patch("backend.infra.task_dispatcher.redis.from_url", return_value=redis_client):
         await dispatcher.enqueue_stream(
             generation_payload=payload,
             channel=channel,
@@ -48,9 +46,9 @@ async def test_enqueue_stream_passes_params_through():
             idempotency_lock_key=lock_key,
         )
 
-    _kiq_mock.assert_awaited_once_with(
-        payload, channel, trace_ctx, msg_id, user_id, lock_key
-    )
+    message = _decode_lpush_message(redis_client)
+    assert message["task_name"] == TASK_STREAM
+    assert message["args"] == [payload, channel, trace_ctx, msg_id, user_id, lock_key]
 
 
 @pytest.mark.asyncio
@@ -66,20 +64,22 @@ async def test_enqueue_nonstream_passes_params_and_returns_result():
     lock_key = "lock:test"
     expected_result = {"success": True, "content": "answer"}
 
-    from types import SimpleNamespace
-
-    mock_tq_result = SimpleNamespace(return_value=expected_result)
-    mock_task = AsyncMock()
-    mock_task.wait_result = AsyncMock(return_value=mock_tq_result)
-
-    def _kicker_with_result(*args, **kwargs):
-        kicker = AsyncMock()
-        kicker.kiq = AsyncMock(return_value=mock_task)
-        return kicker
+    raw_result = pickle.dumps(
+        {
+            "is_err": False,
+            "log": None,
+            "return_value": expected_result,
+            "execution_time": 0.1,
+            "labels": {},
+            "error": None,
+        }
+    )
+    send_redis = FakeRedis()
+    result_redis = FakeRedis(result_payload=raw_result)
 
     with patch(
-        "backend.infra.task_dispatcher.AsyncKicker",
-        side_effect=_kicker_with_result,
+        "backend.infra.task_dispatcher.redis.from_url",
+        side_effect=[send_redis, result_redis],
     ):
         result = await dispatcher.enqueue_nonstream(
             generation_payload=payload,
@@ -89,7 +89,10 @@ async def test_enqueue_nonstream_passes_params_and_returns_result():
             idempotency_lock_key=lock_key,
         )
 
-    mock_task.wait_result.assert_awaited_once()
+    message = _decode_lpush_message(send_redis)
+    assert message["task_name"] == TASK_NONSTREAM
+    assert message["args"] == [payload, trace_ctx, msg_id, user_id, lock_key]
+    result_redis.get.assert_awaited_once_with(message["task_id"])
     assert isinstance(result, GenerationResult)
     assert result.success is True
     assert result.content == "answer"
@@ -104,17 +107,18 @@ async def test_enqueue_ingestion_passes_params_through():
     task_id = str(uuid.uuid4())
     trace_ctx = {"traceparent": "00-test"}
 
-    with patch(
-        "backend.infra.task_dispatcher.AsyncKicker",
-        side_effect=_make_mock_kicker,
-    ):
+    redis_client = FakeRedis()
+
+    with patch("backend.infra.task_dispatcher.redis.from_url", return_value=redis_client):
         await dispatcher.enqueue_ingestion(
             file_id=file_id,
             task_id=task_id,
             trace_context=trace_ctx,
         )
 
-    _kiq_mock.assert_awaited_once_with(file_id, task_id, trace_ctx)
+    message = _decode_lpush_message(redis_client)
+    assert message["task_name"] == TASK_INGESTION
+    assert message["args"] == [file_id, task_id, trace_ctx]
 
 
 @pytest.mark.asyncio

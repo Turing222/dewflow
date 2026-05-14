@@ -19,6 +19,9 @@ class DummyUoW:
             list_events=AsyncMock(return_value=[]),
         )
 
+    def read_context(self):
+        return self
+
     async def __aenter__(self):
         return self
 

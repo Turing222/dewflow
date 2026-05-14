@@ -14,6 +14,7 @@ from typing import TypedDict
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from backend.ai.core.token_counter import count_tokens
 from backend.contracts.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.observability.trace_utils import set_span_attributes, trace_span
@@ -113,7 +114,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                             "content_hash": hashlib.sha256(
                                 embedding_content.encode("utf-8")
                             ).hexdigest(),
-                            "token_count": len(content),
+                            "token_count": count_tokens(content),
                             "chunk_index": idx,
                             "chunking_version": CHUNKING_VERSION,
                             "meta_info": chunk["meta_info"],

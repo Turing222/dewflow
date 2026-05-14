@@ -5,6 +5,7 @@
 副作用：导入后会创建 broker 对象，供任务装饰器注册使用。
 """
 
+from taskiq.events import TaskiqEvents
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from backend.config.settings import settings
@@ -15,3 +16,23 @@ REDIS_URL = settings.taskiq_redis_url
 broker = ListQueueBroker(
     url=REDIS_URL,
 ).with_result_backend(RedisAsyncResultBackend(redis_url=REDIS_URL))
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _startup_worker_dependencies(_state) -> None:
+    """Initialize worker process dependencies."""
+    from backend.worker.dependencies import get_worker_container
+
+    get_worker_container()
+
+
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def _shutdown_worker_dependencies(_state) -> None:
+    """Release worker process dependencies."""
+    from backend.infra.redis import redis_client
+    from backend.worker.dependencies import close_worker_container
+
+    try:
+        await close_worker_container()
+    finally:
+        await redis_client.close()

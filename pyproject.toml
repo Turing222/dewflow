@@ -17,12 +17,11 @@ dependencies = [
     "opentelemetry-api~=1.40.0",
     "opentelemetry-sdk~=1.40.0",
     "opentelemetry-exporter-otlp-proto-http~=1.40.0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.50b0",
     "python-json-logger~=3.2.1",
     "python-ulid~=3.1.0",
     "redis~=7.1.0",
     "sqlalchemy[asyncio]~=2.0.45",
-    "taskiq~=0.12.0",
-    "taskiq-redis~=1.2.0",
     "langfuse~=3.14.0",
     "boto3~=1.42.0",
     "jieba~=0.42.1",
@@ -37,8 +36,13 @@ web = [
     "uvicorn~=0.40.0",
     "pyjwt[crypto]~=2.10.0",
     "python-multipart>=0.0.22",
-    "taskiq-fastapi~=0.4.0",
     "opentelemetry-instrumentation-fastapi>=0.50b0",
+]
+
+worker = [
+    # ── TaskIQ Worker 专用 ──
+    "taskiq~=0.12.0",
+    "taskiq-redis~=1.2.0",
 ]
 
 ai = [

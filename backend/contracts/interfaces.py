@@ -1,6 +1,8 @@
+import asyncio
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
+from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import Any
 
@@ -45,6 +47,9 @@ class AbstractUnitOfWork(ABC):
     @abstractmethod
     async def rollback(self) -> None: ...
 
+    @abstractmethod
+    def read_context(self) -> AbstractAsyncContextManager["AbstractUnitOfWork"]: ...
+
 
 class AbstractLLMService(ABC):
     """
@@ -68,6 +73,9 @@ class AbstractLLMService(ABC):
     ) -> LLMResultDTO:
         """完整返回响应"""
         ...
+
+    async def close(self) -> None:  # noqa: B027 — optional hook with default no-op
+        """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
 
 
 class AbstractRAGService(ABC):
@@ -128,6 +136,11 @@ class AbstractRAGService(ABC):
 class AbstractRAGEmbedder(ABC):
     """RAG 向量化器抽象接口"""
 
+    DEFAULT_ENCODE_DOCUMENTS_CONCURRENCY = 8
+
+    def __init__(self) -> None:
+        self._encode_semaphore: asyncio.Semaphore | None = None
+
     @abstractmethod
     async def encode_query(self, text: str) -> list[float]:
         """将查询文本编码为向量"""
@@ -138,8 +151,19 @@ class AbstractRAGEmbedder(ABC):
         return await self.encode_query(text)
 
     async def encode_documents(self, texts: list[str]) -> list[list[float]]:
-        """将文档片段批量编码为向量；默认逐条编码。"""
-        return [await self.encode_document(text) for text in texts]
+        """将文档片段批量编码为向量；默认有界并发编码。"""
+        if self._encode_semaphore is None:
+            self._encode_semaphore = asyncio.Semaphore(self.DEFAULT_ENCODE_DOCUMENTS_CONCURRENCY)
+        semaphore = self._encode_semaphore  # type narrow for async with
+
+        async def encode_with_limit(text: str) -> list[float]:
+            async with semaphore:
+                return await self.encode_document(text)
+
+        return await asyncio.gather(*(encode_with_limit(text) for text in texts))
+
+    async def close(self) -> None:  # noqa: B027 — optional hook with default no-op
+        """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
 
 
 class AbstractTaskDispatcher(ABC):

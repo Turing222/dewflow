@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import UploadFile
+from pydantic import ValidationError
 
 from backend.api.v1.endpoint import user_api
 from backend.core.exceptions import AppException
@@ -19,6 +20,9 @@ from backend.models.schemas.user_schema import (
 
 
 class DummyUoW:
+    def read_context(self):
+        return self
+
     async def __aenter__(self):
         return self
 
@@ -157,6 +161,13 @@ async def test_update_user_returns_404_when_not_found(user_service):
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.message == "用户不存在"
+
+
+def test_update_user_rejects_unknown_fields_before_service(user_service):
+    with pytest.raises(ValidationError):
+        UserUpdate.model_validate({"username": "new_name", "role": "admin"})
+
+    user_service.user_update.assert_not_awaited()
 
 
 @pytest.mark.asyncio

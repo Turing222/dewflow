@@ -97,7 +97,7 @@ async def list_workspaces(
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
 ) -> WorkspaceListResponse:
-    async with service.uow:
+    async with service.uow.read_context():
         items, total = await service.list_user_workspaces(
             current_user=current_user,
             skip=skip,
@@ -117,7 +117,7 @@ async def get_workspace(
     current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
 ) -> WorkspaceResponse:
-    async with service.uow:
+    async with service.uow.read_context():
         workspace, role = await service.get_workspace(
             current_user=current_user,
             workspace_id=workspace_id,
@@ -182,7 +182,7 @@ async def list_workspace_members(
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
 ) -> WorkspaceMemberListResponse:
-    async with service.uow:
+    async with service.uow.read_context():
         items, total = await service.list_workspace_members(
             current_user=current_user,
             workspace_id=workspace_id,

@@ -34,12 +34,15 @@ class RedisClient:
     async def close(self) -> None:
         if self.client:
             await self.client.close()
+            self.client = None
 
 
 redis_client = RedisClient()
 
 
-async def safe_release_lock(redis_client: redis.Redis, lock_key: str, lock_token: str) -> None:
+async def safe_release_lock(
+    redis_client: redis.Redis, lock_key: str, lock_token: str
+) -> None:
     """安全释放 Redis 锁（Lua 脚本）。"""
     script = """
     if redis.call("get",KEYS[1]) == ARGV[1] then

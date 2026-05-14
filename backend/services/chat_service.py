@@ -103,12 +103,7 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         workspace_id: uuid.UUID | None,
     ) -> uuid.UUID | None:
         if kb_id is not None:
-            knowledge_repo = getattr(self.uow, "knowledge_repo", None)
-            get_kb = getattr(knowledge_repo, "get_kb", None)
-            if get_kb is None:
-                return workspace_id
-
-            kb = await get_kb(kb_id)
+            kb = await self.uow.knowledge_repo.get_kb(kb_id)
             if not kb:
                 raise app_not_found(
                     f"知识库不存在: {kb_id}",
@@ -175,22 +170,14 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
         message_metadata: dict | None = None,
     ) -> ChatMessage:
         """创建已完成状态的用户消息。"""
-        if user_id is None and message_metadata is None:
-            message = await self.uow.chat_repo.create_message(
-                session_id=session_id,
-                role="user",
-                content=content.strip(),
-                status=MessageStatus.SUCCESS,
-            )
-        else:
-            message = await self.uow.chat_repo.create_message(
-                session_id=session_id,
-                role="user",
-                content=content.strip(),
-                status=MessageStatus.SUCCESS,
-                user_id=user_id,
-                message_metadata=message_metadata,
-            )
+        message = await self.uow.chat_repo.create_message(
+            session_id=session_id,
+            role="user",
+            content=content.strip(),
+            status=MessageStatus.SUCCESS,
+            user_id=user_id,
+            message_metadata=message_metadata,
+        )
         logger.debug(
             "创建用户消息: message_id=%s, session_id=%s", message.id, session_id
         )

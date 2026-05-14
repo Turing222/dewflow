@@ -22,19 +22,15 @@ from backend.models.orm.user import User
 from backend.observability.logger import setup_logging
 from backend.observability.telemetry import setup_telemetry, shutdown_telemetry
 
-# 1. 初始化
-setup_logging()
-
-# 2. 获取 logger
 logger = logging.getLogger(__name__)
-
-# 3. 产生日志
-logger.info("系统初始化完成")
 
 
 # 1. 定义生命周期（DBA 关心的资源管理）
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    setup_logging()
+    logger.info("系统初始化完成")
+
     # 顺序组合不同的初始化逻辑
     # 启动时：可以在这里打印连接池状态
     get_permission_policy()
@@ -67,8 +63,8 @@ if settings.BACKEND_CORS_ORIGINS:
         CORSMiddleware,
         allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=settings.BACKEND_CORS_METHODS,
+        allow_headers=settings.BACKEND_CORS_HEADERS,
     )
 app.add_middleware(PayloadLimitMiddleware)
 

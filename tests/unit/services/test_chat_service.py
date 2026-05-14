@@ -22,9 +22,10 @@ from backend.services.chat_service import ChatMessageUpdater, SessionManager
 
 @pytest.fixture
 def mock_uow():
-    """构造一个 Mock UoW，其 chat_repo 的所有方法均为 AsyncMock"""
+    """构造一个 Mock UoW，其仓储方法均为 AsyncMock"""
     uow = AsyncMock()
     uow.chat_repo = AsyncMock()
+    uow.knowledge_repo = AsyncMock()
     return uow
 
 
@@ -185,6 +186,8 @@ class TestSessionManagerCreateMessages:
             role="user",
             content=content.strip(),
             status=MessageStatus.SUCCESS,
+            user_id=None,
+            message_metadata=None,
         )
 
     @pytest.mark.asyncio

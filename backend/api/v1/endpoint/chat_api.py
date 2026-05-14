@@ -181,7 +181,7 @@ async def get_sessions(
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
 ) -> SessionListResponse:
     """获取当前用户的会话列表（侧边栏）"""
-    async with session_query_service.uow:
+    async with session_query_service.uow.read_context():
         return await session_query_service.list_user_sessions(
             user_id=current_user.id,
             skip=skip,
@@ -198,7 +198,7 @@ async def get_session_detail(
     limit: Annotated[int, Query(ge=1, le=MAX_CHAT_MESSAGE_LIMIT)] = MAX_PAGE_LIMIT,
 ) -> SessionDetailResponse:
     """获取会话详情及历史消息"""
-    async with session_query_service.uow:
+    async with session_query_service.uow.read_context():
         return await session_query_service.get_user_session_detail(
             user_id=current_user.id,
             session_id=session_id,

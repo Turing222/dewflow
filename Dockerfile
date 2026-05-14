@@ -5,7 +5,7 @@
 #   docker build --target worker -t ai-tutor-backend:ai-v1 .
 #
 #   web    → api + db_migrator (base + web extras)
-#   worker → task_worker         (base + ai extras)
+#   worker → task_worker         (base + ai + worker extras)
 # ==========================================
 
 FROM ghcr.io/astral-sh/uv:0.10.7 AS uv-bin
@@ -44,14 +44,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN uv run --no-dev --extra web python -c "import fastapi; print('✅ FastAPI is ready')"
 
 # ──────────────────────────────────────────
-# Stage 2b: AI builder —— 装 ai extras
+# Stage 2b: Worker builder —— 装 ai + worker extras
 # ──────────────────────────────────────────
-FROM builder-base AS builder-ai
+FROM builder-base AS builder-worker
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra ai
+    uv sync --frozen --no-dev --extra ai --extra worker
 
-RUN uv run --no-dev --extra ai python -c "import pypdfium2; print('✅ pypdfium2 is ready')"
+RUN uv run --no-dev --extra ai --extra worker python -c "import pypdfium2; print('✅ pypdfium2 is ready')"
 
 # ──────────────────────────────────────────
 # Stage 3a: Web Runtime (api + migrator)
@@ -101,9 +101,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
 
-COPY --from=builder-ai --chown=appuser:appgroup /app/.venv /app/.venv
-COPY --from=builder-ai --chown=appuser:appgroup /app/configs ./configs
-COPY --from=builder-ai --chown=appuser:appgroup /app/backend ./backend
+COPY --from=builder-worker --chown=appuser:appgroup /app/.venv /app/.venv
+COPY --from=builder-worker --chown=appuser:appgroup /app/configs ./configs
+COPY --from=builder-worker --chown=appuser:appgroup /app/backend ./backend
 
 USER appuser
 

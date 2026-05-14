@@ -55,7 +55,7 @@ async def get_current_user(
 
     logger.debug("Current value of x: %s, type: %s", user_id, type(user_id))
 
-    async with uow:
+    async with uow.read_context():
         user = await UserService(uow).get_by_id(user_id)
 
     if not user:

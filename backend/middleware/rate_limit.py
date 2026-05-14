@@ -6,8 +6,8 @@
 """
 
 import ipaddress
+import os
 import time
-import uuid
 from collections.abc import Awaitable
 from typing import cast
 
@@ -84,7 +84,7 @@ class RateLimiter:
             redis_connection = await redis_client.init()
 
             now_ms = int(time.time() * 1000)
-            rate_limit_member = str(uuid.uuid4())
+            rate_limit_member = f"{now_ms}:{os.urandom(4).hex()}"
 
             eval_result = await cast(
                 Awaitable[list[int]],

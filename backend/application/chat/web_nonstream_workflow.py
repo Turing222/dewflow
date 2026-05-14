@@ -107,7 +107,7 @@ class ChatNonStreamWorkflow:
                     code="CHAT_REQUEST_PROCESSING",
                     details={"client_request_id": client_request_id},
                 )
-            async with self.uow:
+            async with self.uow.read_context():
                 msg = await self.uow.chat_repo.get_message_by_client_request_id(
                     client_request_id,
                     user_id,

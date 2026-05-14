@@ -3,6 +3,92 @@ from __future__ import annotations
 from pathlib import Path
 
 from backend.config.settings import Settings
+from backend.config.web_settings import DEFAULT_SECRET_KEY, get_web_settings
+from scripts.qa.config_check import run_checks
+
+
+def test_settings_can_load_without_explicit_secret_key(monkeypatch):
+    monkeypatch.setenv("DEBUG", "false")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.delenv("SECRET_KEY_FILE", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.SECRET_KEY == DEFAULT_SECRET_KEY
+
+
+def test_non_local_web_config_rejects_default_secret_key(monkeypatch, capsys):
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("DEBUG", "false")
+    monkeypatch.setenv("SECRET_KEY", DEFAULT_SECRET_KEY)
+    get_web_settings.cache_clear()
+
+    exit_code = run_checks("web")
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "SECRET_KEY must not use the local default outside local" in captured.out
+
+
+def test_cors_defaults_are_wildcard_for_local(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
+    monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_METHODS == ["*"]
+    assert settings.BACKEND_CORS_HEADERS == ["*"]
+
+
+def test_cors_defaults_are_restricted_for_production(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
+    monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_METHODS == ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    assert settings.BACKEND_CORS_HEADERS == [
+        "Authorization",
+        "Content-Type",
+        "X-Request-ID",
+    ]
+
+
+def test_cors_env_overrides_defaults(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("BACKEND_CORS_METHODS", "GET,POST")
+    monkeypatch.setenv("BACKEND_CORS_HEADERS", "Authorization,Content-Type")
+    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_METHODS == ["GET", "POST"]
+    assert settings.BACKEND_CORS_HEADERS == ["Authorization", "Content-Type"]
+
+
+def test_cors_defaults_follow_yaml_app_env(monkeypatch, tmp_path: Path):
+    config_dir = tmp_path / "configs"
+    app_dir = config_dir / "app"
+    app_dir.mkdir(parents=True)
+    (app_dir / "base.yaml").write_text("APP_ENV: production\n", encoding="utf-8")
+
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+
+    settings = Settings()
+
+    assert settings.APP_ENV == "production"
+    assert settings.BACKEND_CORS_METHODS == ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    assert settings.BACKEND_CORS_HEADERS == [
+        "Authorization",
+        "Content-Type",
+        "X-Request-ID",
+    ]
 
 
 def test_app_env_loads_layered_yaml_config(monkeypatch, tmp_path: Path):

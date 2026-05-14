@@ -15,6 +15,9 @@ class DummyUoW:
         self.enter_count = 0
         self.exit_count = 0
 
+    def read_context(self):
+        return self
+
     async def __aenter__(self):
         self.enter_count += 1
         return self

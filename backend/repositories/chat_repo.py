@@ -9,7 +9,6 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel
 from sqlalchemy import func, select
-from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
@@ -186,14 +185,11 @@ class ChatRepository:
         if message_metadata is not None:
             update_data["message_metadata"] = message_metadata
 
-        stmt = (
-            sa_update(ChatMessage)
-            .where(ChatMessage.id == message_id)
-            .values(**update_data)
-            .returning(ChatMessage)
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        message = await self.message_crud.get(message_id)
+        if message is None:
+            return None
+
+        return await self.message_crud.update(db_obj=message, obj_in=update_data)
 
     async def create_thinking_message(
         self,

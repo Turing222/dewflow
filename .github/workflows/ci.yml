@@ -20,6 +20,35 @@ jobs:
     name: QA
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      APP_ENV: test
+      SECRET_KEY: local-dev-secret
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/mentor_ai_test
+      REDIS_URL: redis://localhost:6379/0
+      TASKIQ_REDIS_URL: redis://localhost:6379/1
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mentor_ai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mentor_ai_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -32,6 +61,14 @@ jobs:
 
       - name: Install uv
         run: python -m pip install --upgrade pip uv
+
+      - name: Cache Python virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock') }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
 
       - name: Sync Python dependencies
         run: uv sync --frozen --dev --all-extras
@@ -65,6 +102,14 @@ jobs:
 
       - name: Install uv
         run: python -m pip install --upgrade pip uv
+
+      - name: Cache Python virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock') }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
 
       - name: Sync Python dependencies
         run: uv sync --frozen --dev --all-extras

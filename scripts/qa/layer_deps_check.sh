@@ -13,10 +13,20 @@ NC='\033[0m'
 
 _failures=0
 
+export_for_extras() {
+    local args=()
+    local extra
+    for extra in "$@"; do
+        args+=(--extra "$extra")
+    done
+    uv export --no-dev "${args[@]}" 2>/dev/null
+}
+
 check_has() {
     local layer="$1" extra="$2" pkg="$3"
+    shift 3
     # Use command substitution instead of pipe to avoid SIGPIPE + pipefail issues
-    if [[ -n "$(uv export --no-dev --extra "$extra" 2>/dev/null | grep "^${pkg}==" || true)" ]]; then
+    if [[ -n "$(export_for_extras "$extra" "$@" | grep "^${pkg}==" || true)" ]]; then
         printf "  ${GREEN}[+]${NC} %s has %s\n" "$layer" "$pkg"
     else
         printf "  ${RED}[-]${NC} %s MISSING %s (extra=%s)\n" "$layer" "$pkg" "$extra"
@@ -26,7 +36,8 @@ check_has() {
 
 check_not_has() {
     local layer="$1" extra="$2" pkg="$3"
-    if [[ -n "$(uv export --no-dev --extra "$extra" 2>/dev/null | grep "^${pkg}==" || true)" ]]; then
+    shift 3
+    if [[ -n "$(export_for_extras "$extra" "$@" | grep "^${pkg}==" || true)" ]]; then
         printf "  ${RED}[-]${NC} %s HAS %s (should be in other extra)\n" "$layer" "$pkg"
         _failures=$((_failures + 1))
     else
@@ -35,10 +46,10 @@ check_not_has() {
 }
 
 check_ai_worker_imports() {
-    if SECRET_KEY=layer-deps-check uv run --no-dev --extra ai python -c "import backend.worker.tasks.llm_tasks; import backend.worker.tasks.knowledge_tasks" >/dev/null 2>&1; then
-        printf "  ${GREEN}[+]${NC} ai imports worker task modules without web extras\n"
+    if DEBUG=false uv run --no-dev --extra ai --extra worker python -c "import backend.worker.tasks.llm_tasks; import backend.worker.tasks.knowledge_tasks" >/dev/null 2>&1; then
+        printf "  ${GREEN}[+]${NC} ai+worker imports worker task modules without web extras\n"
     else
-        printf "  ${RED}[-]${NC} ai cannot import worker task modules without web extras\n"
+        printf "  ${RED}[-]${NC} ai+worker cannot import worker task modules without web extras\n"
         _failures=$((_failures + 1))
     fi
 }
@@ -47,12 +58,21 @@ echo "==> Checking web extras (extra=web)"
 check_has     "web" "web" "fastapi"
 check_has     "web" "web" "uvicorn"
 check_not_has "web" "web" "pypdfium2"
+check_not_has "web" "web" "taskiq"
+check_not_has "web" "web" "taskiq-redis"
 echo ""
 
 echo "==> Checking ai extras (extra=ai)"
 check_has     "ai" "ai" "pypdfium2"
 check_has     "ai" "ai" "openai"
 check_not_has "ai" "ai" "fastapi"
+check_not_has "ai" "ai" "taskiq"
+check_not_has "ai" "ai" "taskiq-redis"
+echo ""
+
+echo "==> Checking worker extras (extra=ai+worker)"
+check_has     "ai+worker" "ai" "taskiq" "worker"
+check_has     "ai+worker" "ai" "taskiq-redis" "worker"
 check_ai_worker_imports
 echo ""
 

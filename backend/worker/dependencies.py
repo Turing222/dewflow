@@ -23,88 +23,155 @@ from backend.services.rag_service import RAGService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.vector_index_service import VectorIndexService
 
-_engine: AsyncEngine | None = None
-_session_factory: async_sessionmaker | None = None
-_llm_service: AbstractLLMService | None = None
-_embedder: AbstractRAGEmbedder | None = None
-_rag_service: AbstractRAGService | None = None
-_rag_planning_service: RAGPlanningService | None = None
-_object_storage: ObjectStorage | None = None
+
+class WorkerContainer:
+    """Cache worker dependencies and release process-scoped resources."""
+
+    def __init__(self) -> None:
+        self._engine: AsyncEngine | None = None
+        self._session_factory: async_sessionmaker | None = None
+        self._llm_service: AbstractLLMService | None = None
+        self._embedder: AbstractRAGEmbedder | None = None
+        self._rag_service: AbstractRAGService | None = None
+        self._rag_planning_service: RAGPlanningService | None = None
+        self._object_storage: ObjectStorage | None = None
+
+    def get_session_factory(self) -> async_sessionmaker:
+        """Return the cached worker SQLAlchemy session factory."""
+        if self._session_factory is None:
+            self._engine, self._session_factory = create_db_assets()
+        return self._session_factory
+
+    def get_llm_service(self) -> AbstractLLMService:
+        """Return the cached worker LLM service."""
+        if self._llm_service is None:
+            self._llm_service = LLMProviderFactory.create()
+        return self._llm_service
+
+    def get_embedder(self) -> AbstractRAGEmbedder:
+        """Return the cached worker RAG embedder."""
+        if self._embedder is None:
+            profile = get_llm_model_config().resolve_embedding_profile(
+                ai_settings.RAG_EMBED_PROVIDER
+            )
+            self._embedder = RAGEmbedderFactory.create(
+                provider=profile.provider,
+                model_name=profile.model,
+                base_url=profile.resolve_base_url(),
+                api_key=profile.resolve_api_key(),
+                dimensions=profile.dimensions,
+            )
+        return self._embedder
+
+    def get_rag_service(
+        self,
+        llm_service: AbstractLLMService | None = None,
+    ) -> AbstractRAGService:
+        """Return the cached worker-side RAG service for generation context retrieval."""
+        if self._rag_service is None:
+            resolved_llm = llm_service or self.get_llm_service()
+            session_factory = self.get_session_factory()
+            uow = SQLAlchemyUnitOfWork(session_factory)
+            embedder = self.get_embedder()
+            vector_index_service = VectorIndexService(
+                uow=uow,
+                embedder=embedder,
+                embed_batch_size=ai_settings.RAG_EMBED_BATCH_SIZE,
+                read_session_factory=session_factory,
+            )
+            self._rag_service = RAGService(
+                embedder=embedder,
+                vector_index_service=vector_index_service,
+                top_k=ai_settings.RAG_TOP_K,
+                llm_service=resolved_llm,
+                rerank_candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
+                rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
+            )
+        return self._rag_service
+
+    def get_rag_planning_service(self) -> RAGPlanningService:
+        """Return the cached worker-side RAG planning service."""
+        if self._rag_planning_service is None:
+            self._rag_planning_service = RAGPlanningService(
+                provider=ai_settings.RAG_PLANNER_PROVIDER
+            )
+        return self._rag_planning_service
+
+    def get_object_storage(self) -> ObjectStorage:
+        """Return the cached worker object storage adapter."""
+        if self._object_storage is None:
+            self._object_storage = create_object_storage(settings)
+        return self._object_storage
+
+    async def close(self) -> None:
+        """Release cached resources owned by this worker process."""
+        if self._llm_service is not None:
+            await self._llm_service.close()
+        if self._embedder is not None:
+            await self._embedder.close()
+        if self._engine is not None:
+            await self._engine.dispose()
+        self._engine = None
+        self._session_factory = None
+        self._rag_service = None
+        self._llm_service = None
+        self._embedder = None
+        self._rag_planning_service = None
+        self._object_storage = None
+
+
+_container: WorkerContainer | None = None
+
+
+def get_worker_container() -> WorkerContainer:
+    """Return the process-scoped worker dependency container."""
+    global _container
+    if _container is None:
+        _container = WorkerContainer()
+    return _container
+
+
+def set_worker_container(container: WorkerContainer | None) -> None:
+    """Replace the worker container for tests or lifecycle reset."""
+    global _container
+    _container = container
+
+
+async def close_worker_container() -> None:
+    """Close and clear the process-scoped worker dependency container."""
+    global _container
+    if _container is not None:
+        await _container.close()
+        _container = None
 
 
 def get_worker_session_factory() -> async_sessionmaker:
     """Return the cached worker SQLAlchemy session factory."""
-    global _engine, _session_factory
-    if _session_factory is None:
-        _engine, _session_factory = create_db_assets()
-    return _session_factory
+    return get_worker_container().get_session_factory()
 
 
 def get_worker_llm_service() -> AbstractLLMService:
     """Return the cached worker LLM service."""
-    global _llm_service
-    if _llm_service is None:
-        _llm_service = LLMProviderFactory.create()
-    return _llm_service
+    return get_worker_container().get_llm_service()
 
 
 def get_worker_embedder() -> AbstractRAGEmbedder:
     """Return the cached worker RAG embedder."""
-    global _embedder
-    if _embedder is None:
-        profile = get_llm_model_config().resolve_embedding_profile(
-            ai_settings.RAG_EMBED_PROVIDER
-        )
-        _embedder = RAGEmbedderFactory.create(
-            provider=profile.provider,
-            model_name=profile.model,
-            base_url=profile.resolve_base_url(),
-            api_key=profile.resolve_api_key(),
-            dimensions=profile.dimensions,
-        )
-    return _embedder
+    return get_worker_container().get_embedder()
 
 
 def get_worker_rag_service(
     llm_service: AbstractLLMService | None = None,
 ) -> AbstractRAGService:
     """Return the cached worker-side RAG service for generation context retrieval."""
-    global _rag_service
-    if _rag_service is None:
-        _llm = llm_service or get_worker_llm_service()
-        session_factory = get_worker_session_factory()
-        uow = SQLAlchemyUnitOfWork(session_factory)
-        embedder = get_worker_embedder()
-        vector_index_service = VectorIndexService(
-            uow=uow,
-            embedder=embedder,
-            embed_batch_size=ai_settings.RAG_EMBED_BATCH_SIZE,
-            read_session_factory=session_factory,
-        )
-        _rag_service = RAGService(
-            embedder=embedder,
-            vector_index_service=vector_index_service,
-            top_k=ai_settings.RAG_TOP_K,
-            llm_service=_llm,
-            rerank_candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
-            rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
-        )
-    return _rag_service
+    return get_worker_container().get_rag_service(llm_service=llm_service)
 
 
 def get_worker_rag_planning_service() -> RAGPlanningService:
     """Return the cached worker-side RAG planning service."""
-    global _rag_planning_service
-    if _rag_planning_service is None:
-        _rag_planning_service = RAGPlanningService(
-            provider=ai_settings.RAG_PLANNER_PROVIDER
-        )
-    return _rag_planning_service
+    return get_worker_container().get_rag_planning_service()
 
 
 def get_worker_object_storage() -> ObjectStorage:
     """Return the cached worker object storage adapter."""
-    global _object_storage
-    if _object_storage is None:
-        _object_storage = create_object_storage(settings)
-    return _object_storage
+    return get_worker_container().get_object_storage()

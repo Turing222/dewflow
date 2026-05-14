@@ -68,7 +68,7 @@ async def list_audit_events(
         actor_user_id=actor_user_id,
         workspace_id=workspace_id,
     )
-    async with uow:
+    async with uow.read_context():
         await _ensure_audit_access(
             current_user=current_user,
             workspace_id=workspace_id,

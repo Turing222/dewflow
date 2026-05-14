@@ -70,3 +70,27 @@ async def test_rate_limit_rejects_when_window_is_full(monkeypatch):
         "limit_count": 2,
         "current_count": 2,
     }
+
+
+async def test_rate_limit_uses_compact_unique_members(monkeypatch):
+    fake_redis = FakeRedis([1, 1])
+    random_values = iter([b"abcd", b"efgh"])
+
+    async def init_redis():
+        return fake_redis
+
+    monkeypatch.setattr("backend.middleware.rate_limit.redis_client.init", init_redis)
+    monkeypatch.setattr("backend.middleware.rate_limit.time.time", lambda: 123.456)
+    monkeypatch.setattr(
+        "backend.middleware.rate_limit.os.urandom",
+        lambda size: next(random_values),
+    )
+    client, _ = await _client(fake_redis)
+
+    async with client:
+        assert (await client.get("/limited")).status_code == 200
+        assert (await client.get("/limited")).status_code == 200
+
+    members = [call[6] for call in fake_redis.calls]
+    assert members == ["123456:61626364", "123456:65666768"]
+    assert all(len(member) == 15 for member in members)

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from backend.ai.core.token_counter import count_tokens
 from backend.services.vector_index_service import CHUNKING_VERSION, VectorIndexService
 
 
@@ -52,6 +53,9 @@ async def test_replace_file_chunks_uses_batch_embedding():
     assert [record["content_hash"] for record in records] == [
         hashlib.sha256(text.encode("utf-8")).hexdigest()
         for text in ["chunk 1", "chunk 2", "chunk 3"]
+    ]
+    assert [record["token_count"] for record in records] == [
+        count_tokens(text) for text in ["chunk 1", "chunk 2", "chunk 3"]
     ]
     search_texts = [record["search_text"] for record in records]
     assert all(search_texts)

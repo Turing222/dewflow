@@ -5,6 +5,8 @@
 失败处理：无论提交或回滚是否成功，都必须关闭 session 释放连接。
 """
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -37,14 +39,7 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         self._session = self.session_factory()
-
-        # 同一个 UoW 周期内所有 repository 共享 session，确保事务一致。
-        self.access_repo = AccessRepository(self._session)
-        self.audit_repo = AuditRepository(self._session)
-        self.user_repo = UserRepository(self._session)
-        self.chat_repo = ChatRepository(self._session)
-        self.knowledge_repo = KnowledgeRepository(self._session)
-        self.task_repo = TaskRepository(self._session)
+        self._bind_repositories(self._session)
 
         await super().__aenter__()
         return self
@@ -64,8 +59,34 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
                 await self._session.close()
                 self._session = None
 
+    @asynccontextmanager
+    async def read_context(self) -> AsyncIterator["SQLAlchemyUnitOfWork"]:
+        """创建只读 UoW 上下文；正常退出不提交事务。"""
+        if self._session is not None:
+            raise RuntimeError("Cannot open read_context inside an active UoW")
+        self._session = self.session_factory()
+        self._bind_repositories(self._session)
+        try:
+            yield self
+        except Exception:
+            await self.rollback()
+            raise
+        finally:
+            if self._session:
+                await self._session.close()
+                self._session = None
+
     async def commit(self) -> None:
         await self.session.commit()
 
     async def rollback(self) -> None:
         await self.session.rollback()
+
+    def _bind_repositories(self, session: AsyncSession) -> None:
+        # 同一个 UoW 周期内所有 repository 共享 session，确保事务一致。
+        self.access_repo = AccessRepository(session)
+        self.audit_repo = AuditRepository(session)
+        self.user_repo = UserRepository(session)
+        self.chat_repo = ChatRepository(session)
+        self.knowledge_repo = KnowledgeRepository(session)
+        self.task_repo = TaskRepository(session)

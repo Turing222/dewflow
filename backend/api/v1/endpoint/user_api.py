@@ -51,7 +51,7 @@ async def read_user(
     通过用户名或邮箱查询单个用户。
     DBA 视角：后端会根据参数存在与否，决定走 USERNAME 还是 EMAIL 的唯一索引。
     """
-    async with user_service.uow:
+    async with user_service.uow.read_context():
         if search_params.username:
             user = await user_service.get_by_username(search_params.username)
         elif search_params.email:
