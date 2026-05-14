@@ -57,3 +57,25 @@ async def test_read_context_rolls_back_on_exception() -> None:
     session.commit.assert_not_awaited()
     session.rollback.assert_awaited_once()
     session.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_read_context_inside_active_uow_raises() -> None:
+    session = DummySession()
+    uow = SQLAlchemyUnitOfWork(lambda: session)
+
+    async with uow:
+        with pytest.raises(RuntimeError, match="Cannot open read_context inside an active UoW"):
+            async with uow.read_context():
+                pass
+
+
+@pytest.mark.asyncio
+async def test_read_context_exit_sets_session_to_none() -> None:
+    session = DummySession()
+    uow = SQLAlchemyUnitOfWork(lambda: session)
+
+    async with uow.read_context():
+        assert uow._session is session
+
+    assert uow._session is None

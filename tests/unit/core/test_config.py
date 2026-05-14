@@ -149,6 +149,26 @@ def test_database_url_overrides_postgres_parts(monkeypatch):
     assert "db-pass" not in settings.database_url_safe
 
 
+def test_cors_empty_string_parses_to_empty_list(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("BACKEND_CORS_METHODS", "")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_METHODS == []
+
+
+def test_cors_whitespace_comma_parses_correctly(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("BACKEND_CORS_HEADERS", " Authorization , Content-Type , ")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_HEADERS == ["Authorization", "Content-Type"]
+
+
 def test_rag_refusal_settings_can_load_from_env(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.setenv("RAG_REFUSAL_ENABLED", "false")

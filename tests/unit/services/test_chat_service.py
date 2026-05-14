@@ -161,6 +161,24 @@ class TestSessionManagerEnsureSession:
 
         assert "无权访问" in exc_info.value.message
 
+    @pytest.mark.asyncio
+    async def test_raises_not_found_when_kb_id_not_found(
+        self, session_manager, mock_uow
+    ):
+        user_id = uuid.uuid4()
+        kb_id = uuid.uuid4()
+        mock_uow.knowledge_repo.get_kb.return_value = None
+
+        with pytest.raises(AppException) as exc_info:
+            await session_manager.ensure_session(
+                user_id=user_id,
+                query_text="test with kb",
+                kb_id=kb_id,
+            )
+
+        assert exc_info.value.code == "KNOWLEDGE_BASE_NOT_FOUND"
+        assert str(kb_id) in exc_info.value.message
+
 
 class TestSessionManagerCreateMessages:
     """消息创建相关测试"""

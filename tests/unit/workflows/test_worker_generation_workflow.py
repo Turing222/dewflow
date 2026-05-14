@@ -608,7 +608,7 @@ async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
     redis = FakeRedis()
     pass
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_RERANK_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         False,
     )
 
@@ -728,7 +728,7 @@ async def test_worker_generation_skips_rag_when_planner_declines(monkeypatch):
     redis = FakeRedis()
     pass
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_PLANNER_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
     )
 
@@ -831,7 +831,7 @@ async def test_worker_generation_uses_fulltext_plan(monkeypatch):
     redis = FakeRedis()
     pass
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_PLANNER_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
     )
 
@@ -881,11 +881,11 @@ async def test_worker_generation_reranks_candidates_when_enabled(
     slot_calls = install_llm_slot_recorder(monkeypatch)
     pass
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_RERANK_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         True,
     )
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_RERANK_TOP_K",
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_TOP_K",
         1,
     )
 
@@ -996,7 +996,7 @@ async def test_worker_generation_refuses_low_rerank_score(monkeypatch):
     slot_calls = install_llm_slot_recorder(monkeypatch)
     pass
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_RERANK_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         True,
     )
 
@@ -1067,7 +1067,7 @@ async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch):
     slot_calls = install_llm_slot_recorder(monkeypatch)
     pass
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_PLANNER_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
     )
 
@@ -1150,11 +1150,11 @@ async def test_worker_generation_uses_planner_fallback_plan(monkeypatch):
     redis = FakeRedis()
     pass
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_PLANNER_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
     )
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_RERANK_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         False,
     )
 
@@ -1198,11 +1198,11 @@ async def test_worker_generation_uses_planner_fallback_on_exception(monkeypatch)
     redis = FakeRedis()
     pass
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_PLANNER_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
     )
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.RAG_RERANK_ENABLED",
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         False,
     )
 
