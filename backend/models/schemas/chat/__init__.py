@@ -14,6 +14,7 @@ from backend.models.schemas.chat.api import (
     SessionUpdateRequest,
 )
 from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import (
     ChatMessageRole,
     ConversationMessage,
@@ -30,6 +31,7 @@ __all__ = [
     "ChatQueryCommand",
     "ChatQueryResponse",
     "ConversationMessage",
+    "ContextState",
     "GenerationPayload",
     "GenerationResult",
     "LLMExtraBody",

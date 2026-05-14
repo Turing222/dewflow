@@ -41,6 +41,17 @@ class ChatSession(Base, BaseIdModel, AuditMixin):
     )
 
     llm_config: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'"))
+    context_state: Mapped[dict] = mapped_column(
+        JSONB,
+        server_default=text("'{}'"),
+        nullable=False,
+    )
+    context_state_version: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
 
     user: Mapped[User] = relationship(back_populates="sessions")
     workspace: Mapped[Workspace | None] = relationship(back_populates="chat_sessions")

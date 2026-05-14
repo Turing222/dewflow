@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.models.orm.chat import MessageStatus
+from backend.models.schemas.chat.context_state import ContextState
 from backend.repositories.chat_repo import ChatRepository
 
 
@@ -46,6 +47,66 @@ async def test_create_session_maps_input_into_llm_config(repo):
     assert kwargs["kb_id"] == kb_id
     assert kwargs["workspace_id"] == workspace_id
     assert kwargs["llm_config"] == {"temperature": 0.7}
+
+
+@pytest.mark.asyncio
+async def test_get_context_state_returns_default_when_session_missing(repo):
+    repo.session_crud.get.return_value = None
+
+    result = await repo.get_context_state(uuid.uuid4())
+
+    assert result == ContextState()
+
+
+@pytest.mark.asyncio
+async def test_get_context_state_injects_session_version(repo):
+    session = MagicMock()
+    session.context_state = {
+        "decisions": ["使用混合检索"],
+        "constraints": ["不要编造"],
+        "preferences": ["答案短一点"],
+    }
+    session.context_state_version = 7
+    repo.session_crud.get.return_value = session
+
+    result = await repo.get_context_state(uuid.uuid4())
+
+    assert result.decisions == ["使用混合检索"]
+    assert result.constraints == ["不要编造"]
+    assert result.preferences == ["答案短一点"]
+    assert result.version == 7
+
+
+@pytest.mark.asyncio
+async def test_update_context_state_if_version_matches_returns_true(mock_session):
+    repo = ChatRepository(mock_session)
+    result_proxy = MagicMock(rowcount=1)
+    mock_session.execute.return_value = result_proxy
+
+    updated = await repo.update_context_state_if_version_matches(
+        session_id=uuid.uuid4(),
+        expected_version=2,
+        next_state=ContextState(decisions=["确认使用 FastAPI"], version=99),
+    )
+
+    assert updated is True
+    stmt = mock_session.execute.call_args.args[0]
+    compiled = str(stmt)
+    assert "context_state_version" in compiled
+
+
+@pytest.mark.asyncio
+async def test_update_context_state_if_version_matches_returns_false(mock_session):
+    repo = ChatRepository(mock_session)
+    mock_session.execute.return_value = MagicMock(rowcount=0)
+
+    updated = await repo.update_context_state_if_version_matches(
+        session_id=uuid.uuid4(),
+        expected_version=2,
+        next_state=ContextState(decisions=["新决策"]),
+    )
+
+    assert updated is False
 
 
 @pytest.mark.asyncio

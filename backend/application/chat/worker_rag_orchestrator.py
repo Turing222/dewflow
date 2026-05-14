@@ -100,6 +100,7 @@ class WorkerRAGOrchestrator:
                 current_query=payload.query_text,
                 kb_id=payload.kb_id,
                 rag_chunks=reranked_chunks,
+                context_state=payload.context_state,
             )
             set_span_attributes(
                 span,

@@ -12,6 +12,7 @@ from backend.ai.core.context_budgeter import ContextBudgeter
 from backend.ai.core.live_window_builder import LiveWindowBuilder
 from backend.ai.core.prompt_manager import PromptManager
 from backend.core.exceptions import AppException
+from backend.models.schemas.chat.context_state import ContextState
 
 
 @pytest.mark.asyncio
@@ -231,6 +232,76 @@ def test_build_from_chunks_does_not_call_rag_service():
     rag_service.retrieve.assert_not_awaited()
     assert result.search_context is not None
     assert "worker provided fact" in result.assembled_prompt.messages[0]["content"]
+
+
+def test_build_from_chunks_injects_context_state_into_plain_prompt():
+    builder = ChatContextBuilder()
+
+    result = builder.build_from_chunks(
+        history_messages=[],
+        current_query="继续",
+        kb_id=None,
+        rag_chunks=[],
+        context_state=ContextState(
+            decisions=["数据库使用 PostgreSQL"],
+            constraints=["回答必须使用中文"],
+            preferences=["偏好要点式总结"],
+        ),
+    )
+
+    system_content = result.assembled_prompt.messages[0]["content"]
+    assert "--- 当前对话状态 ---" in system_content
+    assert "已确认决策" in system_content
+    assert "数据库使用 PostgreSQL" in system_content
+    assert "用户要求" in system_content
+    assert "回答必须使用中文" in system_content
+    assert "用户偏好" in system_content
+    assert "偏好要点式总结" in system_content
+
+
+def test_build_from_chunks_omits_empty_context_state_block():
+    builder = ChatContextBuilder()
+
+    result = builder.build_from_chunks(
+        history_messages=[],
+        current_query="继续",
+        kb_id=None,
+        rag_chunks=[],
+        context_state=ContextState(),
+    )
+
+    assert "--- 当前对话状态 ---" not in result.assembled_prompt.messages[0]["content"]
+
+
+def test_build_from_chunks_keeps_context_state_separate_from_rag_chunks():
+    builder = ChatContextBuilder()
+
+    result = builder.build_from_chunks(
+        history_messages=[],
+        current_query="解释方案",
+        kb_id=uuid.uuid4(),
+        context_state=ContextState(decisions=["本轮使用轻量记忆"]),
+        rag_chunks=[
+            {
+                "id": str(uuid.uuid4()),
+                "content": "RAG evidence",
+                "source_type": "file",
+                "file_id": str(uuid.uuid4()),
+                "message_id": None,
+                "filename": "source.md",
+                "chunk_index": 0,
+                "meta_info": {},
+                "distance": 0.1,
+                "score": 0.9,
+            }
+        ],
+    )
+
+    system_content = result.assembled_prompt.messages[0]["content"]
+    assert "--- 当前对话状态 ---" in system_content
+    assert "--- 参考资料 ---" in system_content
+    assert "本轮使用轻量记忆" in system_content
+    assert "RAG evidence" in system_content
 
 
 def test_build_from_chunks_trims_rag_chunks_to_budget():

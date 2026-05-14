@@ -178,6 +178,9 @@ class ChatSessionOrchestrator:
                         session_id=session.id,
                         limit=settings.CHAT_MEMORY_FETCH_LIMIT,
                     )
+                    context_state = await self.uow.chat_repo.get_context_state(
+                        session.id
+                    )
                     set_span_attributes(
                         span, {"chat.history.message_count": len(history_messages)}
                     )
@@ -197,6 +200,7 @@ class ChatSessionOrchestrator:
             query_text=command.query_text,
             conversation_history=conversation_history,
             kb_id=effective_kb_id,
+            context_state=context_state,
             extra_body=command.extra_body,
         )
         return ChatPreparedRequest(

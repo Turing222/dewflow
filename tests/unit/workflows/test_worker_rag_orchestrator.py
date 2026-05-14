@@ -32,6 +32,7 @@ def _make_rag_hit(index: int = 0) -> dict:
 @pytest.mark.asyncio
 async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(monkeypatch):
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.context_state import ContextState
     from backend.models.schemas.chat.payloads import GenerationPayload
 
     monkeypatch.setattr(
@@ -47,6 +48,7 @@ async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(monkeypatch
         session_id=uuid.uuid4(),
         query_text="test query",
         conversation_history=[],
+        context_state=ContextState(decisions=["使用会话记忆"]),
     )
     # kb_id is None by default
 
@@ -70,6 +72,10 @@ async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(monkeypatch
 
     assert result.refusal_decision is None
     assert result.assembled_prompt is not None
+    assert (
+        mock_context_builder.build_from_chunks.call_args.kwargs["context_state"]
+        == payload.context_state
+    )
 
 
 # ── Test 2: build_rag_plan planner throws → default fallback ──────────────────

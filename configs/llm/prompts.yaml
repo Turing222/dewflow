@@ -23,6 +23,7 @@ defaults:
   variables:
     app_name: Dewflow
     user_name: ""
+    context_state: {}
     conversation_summary: ""
 
 templates:
@@ -32,7 +33,33 @@ templates:
       你擅长回答关于知识库内容、文档分析和数据管理的问题。
       请用专业但易懂的中文回答用户的问题。
       如果你不确定答案，请诚实地说明，不要编造信息。
+      对话状态只用于理解上下文和用户偏好，不能作为外部事实依据。
       {% if user_name %}当前用户: {{ user_name }}。{% endif %}
+      {% if context_state %}
+
+      --- 当前对话状态 ---
+      {% if context_state.user_goal %}用户目标：{{ context_state.user_goal }}{% endif %}
+      {% if context_state.current_focus %}当前焦点：{{ context_state.current_focus }}{% endif %}
+      {% if context_state.decisions %}
+      已确认决策：
+      {% for item in context_state.decisions %}
+      - {{ item }}
+      {% endfor %}
+      {% endif %}
+      {% if context_state.constraints %}
+      用户要求：
+      {% for item in context_state.constraints %}
+      - {{ item }}
+      {% endfor %}
+      {% endif %}
+      {% if context_state.preferences %}
+      用户偏好：
+      {% for item in context_state.preferences %}
+      - {{ item }}
+      {% endfor %}
+      {% endif %}
+      --- 状态结束 ---
+      {% endif %}
       {% if conversation_summary %}
 
       --- 历史对话摘要 ---
@@ -47,6 +74,32 @@ templates:
       如果使用了参考资料中的信息，必须在对应句子后标注 chunk 级引用，例如 [R1.1]。
       不要只标注 [R1]，除非是在概括整个来源。
       只能根据参考资料回答；如果参考资料中没有足够相关信息，请说明无法基于知识库资料回答。
+      知识库参考资料优先于对话状态；对话状态只用于理解上下文和用户偏好，不能作为外部事实证据。
+
+      {% if context_state %}
+      --- 当前对话状态 ---
+      {% if context_state.user_goal %}用户目标：{{ context_state.user_goal }}{% endif %}
+      {% if context_state.current_focus %}当前焦点：{{ context_state.current_focus }}{% endif %}
+      {% if context_state.decisions %}
+      已确认决策：
+      {% for item in context_state.decisions %}
+      - {{ item }}
+      {% endfor %}
+      {% endif %}
+      {% if context_state.constraints %}
+      用户要求：
+      {% for item in context_state.constraints %}
+      - {{ item }}
+      {% endfor %}
+      {% endif %}
+      {% if context_state.preferences %}
+      用户偏好：
+      {% for item in context_state.preferences %}
+      - {{ item }}
+      {% endfor %}
+      {% endif %}
+      --- 状态结束 ---
+      {% endif %}
 
       {% if conversation_summary %}
       --- 历史对话摘要 ---

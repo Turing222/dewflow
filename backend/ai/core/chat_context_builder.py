@@ -25,6 +25,7 @@ from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractRAGService
 from backend.core.exceptions import app_payload_too_large
+from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import ChatMessageRole, ConversationMessage
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
@@ -73,6 +74,7 @@ class ChatContextBuilder:
         history_messages,
         current_query: str,
         kb_id: uuid.UUID | None,
+        context_state: ContextState | None = None,
     ) -> PreparedChatContext:
         with trace_span(
             "chat.context.build",
@@ -92,6 +94,7 @@ class ChatContextBuilder:
                 current_query=current_query,
                 kb_id=kb_id,
                 rag_chunks=rag_chunks,
+                context_state=context_state,
             )
             assembled = assembled_context.assembled_prompt
             search_context = assembled_context.search_context
@@ -118,6 +121,7 @@ class ChatContextBuilder:
         current_query: str,
         kb_id: uuid.UUID | None,
         rag_chunks: list[dict],
+        context_state: ContextState | None = None,
     ) -> PreparedChatContext:
         """Build prompt context from already-retrieved RAG chunks."""
         history_dicts = self._history_to_dicts(history_messages)
@@ -126,6 +130,7 @@ class ChatContextBuilder:
             current_query=current_query,
             kb_id=kb_id,
             rag_chunks=rag_chunks,
+            context_state=context_state,
         )
 
     def _assemble_from_memory_and_chunks(
@@ -135,6 +140,7 @@ class ChatContextBuilder:
         current_query: str,
         kb_id: uuid.UUID | None,
         rag_chunks: list[dict],
+        context_state: ContextState | None,
     ) -> PreparedChatContext:
         model = self.context_budgeter.model_name
 
@@ -181,6 +187,7 @@ class ChatContextBuilder:
             current_query=current_query,
             extra_vars={
                 "context_chunks": context_chunks,
+                "context_state": self._context_state_to_prompt_dict(context_state),
                 "conversation_summary": window_result.bridge_summary,
             },
         )
@@ -283,6 +290,14 @@ class ChatContextBuilder:
             break
 
         return selected_chunks
+
+    @staticmethod
+    def _context_state_to_prompt_dict(
+        context_state: ContextState | None,
+    ) -> dict[str, object]:
+        if context_state is None or not context_state.has_memory():
+            return {}
+        return context_state.to_prompt_dict()
 
     # ── history normalization ──────────────────────────────────────
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import ConversationMessage
 
 
@@ -20,6 +21,7 @@ class GenerationPayload(BaseModel):
     conversation_history: list[ConversationMessage] = Field(default_factory=list)
     kb_id: uuid.UUID | None = None
     rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    context_state: ContextState = Field(default_factory=ContextState)
     extra_body: dict[str, object] | None = None
 
 

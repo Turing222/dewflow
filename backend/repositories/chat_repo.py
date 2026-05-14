@@ -8,10 +8,11 @@ import uuid
 from collections.abc import Sequence
 
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
+from backend.models.schemas.chat.context_state import ContextState
 from backend.repositories.base import CRUDBase
 
 
@@ -29,6 +30,35 @@ class ChatRepository:
 
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None:
         return await self.session_crud.get(session_id)
+
+    async def get_context_state(self, session_id: uuid.UUID) -> ContextState:
+        session = await self.get_session(session_id)
+        if session is None:
+            return ContextState()
+        state_data = dict(session.context_state or {})
+        state_data["version"] = session.context_state_version or 0
+        return ContextState.model_validate(state_data)
+
+    async def update_context_state_if_version_matches(
+        self,
+        *,
+        session_id: uuid.UUID,
+        expected_version: int,
+        next_state: ContextState,
+    ) -> bool:
+        stmt = (
+            update(ChatSession)
+            .where(
+                ChatSession.id == session_id,
+                ChatSession.context_state_version == expected_version,
+            )
+            .values(
+                context_state=next_state.to_storage_dict(),
+                context_state_version=expected_version + 1,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return getattr(result, "rowcount", 0) > 0
 
     async def create_session(
         self,
