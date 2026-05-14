@@ -141,6 +141,35 @@ async def test_replace_file_chunks_rejects_mismatched_embedding_count():
 
 
 @pytest.mark.asyncio
+async def test_prepare_chunk_records_does_not_write_repository():
+    file_id = uuid.uuid4()
+    repo = SimpleNamespace(
+        delete_chunks_for_file=AsyncMock(),
+        add_chunks=AsyncMock(),
+    )
+    uow = SimpleNamespace(knowledge_repo=repo)
+    embedder = SimpleNamespace(encode_documents=AsyncMock(return_value=[[0.1, 0.2]]))
+    service = VectorIndexService(
+        uow=uow,
+        embedder=embedder,
+        embed_batch_size=2,
+    )
+
+    records = await service.prepare_chunk_records(
+        file_id=file_id,
+        chunks=["chunk 1"],
+        filename="demo.txt",
+        file_path="/tmp/demo.txt",
+    )
+
+    assert len(records) == 1
+    assert records[0]["file_id"] == file_id
+    assert records[0]["chunk_index"] == 0
+    repo.delete_chunks_for_file.assert_not_awaited()
+    repo.add_chunks.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_fulltext_search_normalizes_query_before_repository_call():
     kb_id = uuid.uuid4()
     repo = SimpleNamespace(

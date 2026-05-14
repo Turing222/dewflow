@@ -23,6 +23,9 @@ from backend.observability.trace_utils import (
     use_trace_context,
 )
 from backend.services.chunking_service import ChunkingService
+from backend.services.knowledge_ingestion_recovery_service import (
+    KnowledgeIngestionRecoveryService,
+)
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.task_service import TaskService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
@@ -61,6 +64,27 @@ async def ingest_knowledge_file_task(
     """TaskIQ 入口：恢复 trace context 后执行知识文件入库。"""
     with use_trace_context(trace_context):
         await _ingest_knowledge_file_task(file_id=file_id, task_id=task_id)
+
+
+@broker.task(task_name="recover_stale_knowledge_ingestions")
+async def recover_stale_knowledge_ingestions_task() -> dict[str, int]:
+    """TaskIQ 入口：标记长期卡住的知识文件入库任务为失败。"""
+    uow = SQLAlchemyUnitOfWork(get_worker_session_factory())
+    service = KnowledgeIngestionRecoveryService(uow)
+    with trace_span("taskiq.knowledge.recover_stale_ingestions", {}) as span:
+        async with uow:
+            result = await service.recover_stale_ingestions()
+            set_span_attributes(
+                span,
+                {
+                    "knowledge.recovery.failed_file_count": result.failed_file_count,
+                    "knowledge.recovery.failed_task_count": result.failed_task_count,
+                },
+            )
+    return {
+        "failed_file_count": result.failed_file_count,
+        "failed_task_count": result.failed_task_count,
+    }
 
 
 async def _ingest_knowledge_file_task(

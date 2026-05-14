@@ -6,9 +6,10 @@
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.task import TaskJob, TaskStatus
@@ -124,3 +125,23 @@ class TaskRepository:
             status=TaskStatus.PROCESSING,
             progress=progress,
         )
+
+    async def mark_stale_kb_ingestion_tasks_failed(
+        self,
+        *,
+        older_than: datetime,
+        error_log: str,
+    ) -> int:
+        stmt = (
+            update(TaskJob)
+            .where(TaskJob.action_type == "KB_INGESTION")
+            .where(TaskJob.status == TaskStatus.PROCESSING)
+            .where(TaskJob.updated_at < older_than)
+            .values(
+                status=TaskStatus.FAILED,
+                progress=0,
+                error_log=error_log[:5000],
+            )
+        )
+        result = await self.session.execute(stmt)
+        return int(getattr(result, "rowcount", 0) or 0)

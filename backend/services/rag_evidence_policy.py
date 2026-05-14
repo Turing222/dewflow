@@ -48,19 +48,29 @@ class RAGEvidencePolicy:
         best_rerank_score = self._max_numeric(chunks, "rerank_score")
 
         if not ai_settings.RAG_REFUSAL_ENABLED:
-            return self._allow("RAG 拒答策略未启用", hit_count, best_score, best_rerank_score)
+            return self._allow(
+                "RAG 拒答策略未启用", hit_count, best_score, best_rerank_score
+            )
         if kb_id is None or not rag_plan.should_use_rag:
-            return self._allow("当前问题不需要知识库证据", hit_count, best_score, best_rerank_score)
+            return self._allow(
+                "当前问题不需要知识库证据", hit_count, best_score, best_rerank_score
+            )
         if hit_count < ai_settings.RAG_MIN_HIT_COUNT:
-            return self._refuse("RAG 命中数量不足", hit_count, best_score, best_rerank_score)
+            return self._refuse(
+                "RAG 命中数量不足", hit_count, best_score, best_rerank_score
+            )
         if best_rerank_score is not None:
             if best_rerank_score < ai_settings.RAG_MIN_RERANK_SCORE:
-                return self._refuse("RAG rerank 相关性不足", hit_count, best_score, best_rerank_score)
-            return self._allow("RAG rerank 证据充足", hit_count, best_score, best_rerank_score)
-        if rag_plan.retrieval_mode == "hybrid":
-            return self._allow("RAG hybrid 命中数量充足", hit_count, best_score, best_rerank_score)
+                return self._refuse(
+                    "RAG rerank 相关性不足", hit_count, best_score, best_rerank_score
+                )
+            return self._allow(
+                "RAG rerank 证据充足", hit_count, best_score, best_rerank_score
+            )
         if best_score is None or best_score < ai_settings.RAG_MIN_RELEVANCE_SCORE:
-            return self._refuse("RAG 相关性分数不足", hit_count, best_score, best_rerank_score)
+            return self._refuse(
+                "RAG 相关性分数不足", hit_count, best_score, best_rerank_score
+            )
         return self._allow("RAG 证据充足", hit_count, best_score, best_rerank_score)
 
     @staticmethod
@@ -79,7 +89,9 @@ class RAGEvidencePolicy:
         best_score: float | None,
         best_rerank_score: float | None,
     ) -> RAGEvidenceDecision:
-        return RAGEvidenceDecision(False, reason, hit_count, best_score, best_rerank_score)
+        return RAGEvidenceDecision(
+            False, reason, hit_count, best_score, best_rerank_score
+        )
 
     @staticmethod
     def _refuse(
@@ -88,4 +100,6 @@ class RAGEvidencePolicy:
         best_score: float | None,
         best_rerank_score: float | None,
     ) -> RAGEvidenceDecision:
-        return RAGEvidenceDecision(True, reason, hit_count, best_score, best_rerank_score)
+        return RAGEvidenceDecision(
+            True, reason, hit_count, best_score, best_rerank_score
+        )

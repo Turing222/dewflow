@@ -136,6 +136,7 @@ class AISettings(BaseSettings):
     KNOWLEDGE_CHUNK_SIZE: int = 800
     KNOWLEDGE_CHUNK_OVERLAP: int = 120
     KNOWLEDGE_MAX_UPLOAD_SIZE_MB: int = 20
+    KNOWLEDGE_INGEST_STALE_TIMEOUT_SECONDS: int = Field(default=1800, ge=60)
 
     # ── Search Text ───────────────────────────────────────────────
     SEARCH_TEXT_DEFAULT_TOKEN_LIMIT: int = 60

@@ -36,7 +36,9 @@ async def test_enqueue_stream_passes_params_through():
 
     redis_client = FakeRedis()
 
-    with patch("backend.infra.task_dispatcher.redis.from_url", return_value=redis_client):
+    with patch(
+        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
+    ):
         await dispatcher.enqueue_stream(
             generation_payload=payload,
             channel=channel,
@@ -76,7 +78,9 @@ async def test_enqueue_nonstream_passes_params_and_returns_result():
     )
     redis_client = FakeRedis(result_payload=raw_result)
 
-    with patch("backend.infra.task_dispatcher.redis.from_url", return_value=redis_client):
+    with patch(
+        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
+    ):
         result = await dispatcher.enqueue_nonstream(
             generation_payload=payload,
             trace_context=trace_ctx,
@@ -105,7 +109,9 @@ async def test_enqueue_ingestion_passes_params_through():
 
     redis_client = FakeRedis()
 
-    with patch("backend.infra.task_dispatcher.redis.from_url", return_value=redis_client):
+    with patch(
+        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
+    ):
         await dispatcher.enqueue_ingestion(
             file_id=file_id,
             task_id=task_id,
@@ -124,7 +130,9 @@ async def test_wait_result_timeout_raises_timeout_error():
     dispatcher = TaskDispatcher()
     redis_client = FakeRedis()  # get() returns None by default
 
-    with patch("backend.infra.task_dispatcher.redis.from_url", return_value=redis_client):
+    with patch(
+        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
+    ):
         with pytest.raises(TimeoutError, match="TaskIQ task result timed out"):
             await dispatcher._wait_result("test-task-id", timeout=0.2)
 
@@ -146,7 +154,9 @@ async def test_wait_result_is_err_raises_runtime_error():
     )
     redis_client = FakeRedis(result_payload=raw_result)
 
-    with patch("backend.infra.task_dispatcher.redis.from_url", return_value=redis_client):
+    with patch(
+        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
+    ):
         with pytest.raises(RuntimeError, match="TaskIQ task failed"):
             await dispatcher._wait_result("test-task-id", timeout=10)
 
@@ -159,7 +169,9 @@ async def test_send_task_redis_push_error_propagates():
     redis_client = FakeRedis()
     redis_client.lpush.side_effect = ConnectionError("Redis unreachable")
 
-    with patch("backend.infra.task_dispatcher.redis.from_url", return_value=redis_client):
+    with patch(
+        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
+    ):
         with pytest.raises(ConnectionError, match="Redis unreachable"):
             await dispatcher._send_task("test_task", "arg1")
 
@@ -170,3 +182,26 @@ async def test_task_name_constants_match_expected():
     assert TASK_STREAM == "generate_llm_stream"
     assert TASK_NONSTREAM == "generate_llm_nonstream"
     assert TASK_INGESTION == "ingest_knowledge_file"
+
+
+def test_build_taskiq_message_is_loadable_by_worker_broker(monkeypatch):
+    monkeypatch.setenv("DEBUG", "false")
+
+    from backend.infra.task_broker import broker
+    from backend.infra.task_dispatcher import TaskDispatcher
+
+    payload = {"session_id": str(uuid.uuid4()), "query_text": "hello"}
+    raw_message = TaskDispatcher._build_taskiq_message(
+        task_id="contract-test-task",
+        task_name=TASK_INGESTION,
+        args=(payload, "task-id", {"traceparent": "00-test"}),
+    )
+
+    parsed = broker.formatter.loads(raw_message)
+
+    assert parsed.task_id == "contract-test-task"
+    assert parsed.task_name == TASK_INGESTION
+    assert parsed.labels == {}
+    assert parsed.labels_types == {}
+    assert parsed.args == [payload, "task-id", {"traceparent": "00-test"}]
+    assert parsed.kwargs == {}

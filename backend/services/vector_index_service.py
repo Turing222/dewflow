@@ -38,6 +38,19 @@ class _IndexChunk(TypedDict):
     meta_info: dict[str, object]
 
 
+class PreparedChunkRecord(TypedDict):
+    source_type: ChunkSourceType
+    file_id: uuid.UUID
+    content: str
+    search_text: str
+    content_hash: str
+    token_count: int
+    chunk_index: int
+    chunking_version: int
+    meta_info: dict[str, object]
+    embedding: list[float]
+
+
 class VectorIndexService(BaseService[AbstractUnitOfWork]):
     """知识库向量索引写入和检索服务。"""
 
@@ -80,50 +93,17 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                 "embedding.batch_size": self.embed_batch_size,
             },
         ) as span:
-            chunk_records: list[dict] = []
-            for start in range(0, len(chunks), self.embed_batch_size):
-                batch = [
-                    self._normalize_chunk(
-                        chunk,
-                        filename=filename,
-                        file_path=file_path,
-                    )
-                    for chunk in chunks[start : start + self.embed_batch_size]
-                ]
-                embedding_inputs = [chunk["embedding_content"] for chunk in batch]
-                embeddings = await self.embedder.encode_documents(embedding_inputs)
-                if len(embeddings) != len(batch):
-                    raise ValueError("RAG embedding 批量返回数量与输入切片数量不一致")
-                search_texts = await asyncio.to_thread(
-                    build_search_texts,
-                    [chunk["content"] for chunk in batch],
-                )
-
-                for offset, (chunk, embedding, search_text) in enumerate(
-                    zip(batch, embeddings, search_texts, strict=True)
-                ):
-                    idx = start + offset
-                    content = chunk["content"]
-                    embedding_content = chunk["embedding_content"]
-                    chunk_records.append(
-                        {
-                            "source_type": ChunkSourceType.FILE,
-                            "file_id": file_id,
-                            "content": content,
-                            "search_text": search_text,
-                            "content_hash": hashlib.sha256(
-                                embedding_content.encode("utf-8")
-                            ).hexdigest(),
-                            "token_count": count_tokens(content),
-                            "chunk_index": idx,
-                            "chunking_version": CHUNKING_VERSION,
-                            "meta_info": chunk["meta_info"],
-                            "embedding": embedding,
-                        }
-                    )
+            chunk_records = await self.prepare_chunk_records(
+                file_id=file_id,
+                chunks=chunks,
+                filename=filename,
+                file_path=file_path,
+            )
 
             await self.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
-            await self.uow.knowledge_repo.add_chunks(chunk_records)
+            await self.uow.knowledge_repo.add_chunks(
+                [dict(record) for record in chunk_records]
+            )
             set_span_attributes(
                 span,
                 {
@@ -133,6 +113,72 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                     else None,
                 },
             )
+
+    async def prepare_chunk_records(
+        self,
+        *,
+        file_id: uuid.UUID,
+        chunks: Sequence[str | ChunkPayload],
+        filename: str,
+        file_path: str,
+    ) -> list[PreparedChunkRecord]:
+        chunk_records: list[PreparedChunkRecord] = []
+        for start in range(0, len(chunks), self.embed_batch_size):
+            batch = [
+                self._normalize_chunk(
+                    chunk,
+                    filename=filename,
+                    file_path=file_path,
+                )
+                for chunk in chunks[start : start + self.embed_batch_size]
+            ]
+            batch_records = await self._prepare_chunk_record_batch(
+                file_id=file_id,
+                chunks=batch,
+                start_index=start,
+            )
+            chunk_records.extend(batch_records)
+        return chunk_records
+
+    async def _prepare_chunk_record_batch(
+        self,
+        *,
+        file_id: uuid.UUID,
+        chunks: Sequence[_IndexChunk],
+        start_index: int,
+    ) -> list[PreparedChunkRecord]:
+        embedding_inputs = [chunk["embedding_content"] for chunk in chunks]
+        embeddings = await self.embedder.encode_documents(embedding_inputs)
+        if len(embeddings) != len(chunks):
+            raise ValueError("RAG embedding 批量返回数量与输入切片数量不一致")
+        search_texts = await asyncio.to_thread(
+            build_search_texts,
+            [chunk["content"] for chunk in chunks],
+        )
+
+        records: list[PreparedChunkRecord] = []
+        for offset, (chunk, embedding, search_text) in enumerate(
+            zip(chunks, embeddings, search_texts, strict=True)
+        ):
+            content = chunk["content"]
+            embedding_content = chunk["embedding_content"]
+            records.append(
+                {
+                    "source_type": ChunkSourceType.FILE,
+                    "file_id": file_id,
+                    "content": content,
+                    "search_text": search_text,
+                    "content_hash": hashlib.sha256(
+                        embedding_content.encode("utf-8")
+                    ).hexdigest(),
+                    "token_count": count_tokens(content),
+                    "chunk_index": start_index + offset,
+                    "chunking_version": CHUNKING_VERSION,
+                    "meta_info": chunk["meta_info"],
+                    "embedding": embedding,
+                }
+            )
+        return records
 
     @staticmethod
     def _normalize_chunk(
@@ -225,10 +271,7 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
                     limit=limit,
                 )
             set_span_attributes(span, {"rag.hit_count": len(hits)})
-            return [
-                (chunk, self._rank_to_distance(rank))
-                for chunk, rank in hits
-            ]
+            return [(chunk, self._rank_to_distance(rank)) for chunk, rank in hits]
 
     async def search_chunks_for_kb_hybrid(
         self,

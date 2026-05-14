@@ -6,8 +6,9 @@
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
@@ -137,6 +138,20 @@ class KnowledgeRepository:
         await self.session.flush()
         await self.session.refresh(knowledge_file)
         return knowledge_file
+
+    async def mark_stale_ingestion_files_failed(
+        self,
+        *,
+        older_than: datetime,
+    ) -> int:
+        stmt = (
+            update(File)
+            .where(File.status.in_([FileStatus.PARSING, FileStatus.CHUNKING]))
+            .where(File.updated_at < older_than)
+            .values(status=FileStatus.FAILED)
+        )
+        result = await self.session.execute(stmt)
+        return int(getattr(result, "rowcount", 0) or 0)
 
     async def delete_chunks_for_file(self, file_id: uuid.UUID) -> None:
         stmt = delete(DocumentChunk).where(DocumentChunk.file_id == file_id)
