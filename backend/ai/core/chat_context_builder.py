@@ -1,6 +1,6 @@
 """Chat context builder.
 
-职责：合并短期对话记忆、RAG 检索结果和 Prompt 组装结果。
+职责：编排上下文组装流程——预算分配、历史窗口构建、RAG 引用构建、Prompt 拼接。
 边界：本模块不调用 LLM，也不写入会话消息；只为 workflow 准备输入上下文。
 副作用：会触发 RAG 检索并记录 trace 属性。
 """
@@ -10,9 +10,21 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, cast
 
+from backend.ai.core.context_budgeter import (
+    PRIORITY_HISTORY,
+    PRIORITY_QUERY,
+    PRIORITY_RAG_CHUNKS,
+    PRIORITY_SYSTEM,
+    BudgetBlock,
+    ContextBudgeter,
+)
+from backend.ai.core.live_window_builder import LiveWindowBuilder
+from backend.ai.core.message_compressor import MessageCompressor
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
+from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractRAGService
+from backend.core.exceptions import app_payload_too_large
 from backend.models.schemas.chat.dto import ChatMessageRole, ConversationMessage
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
@@ -43,12 +55,18 @@ class ChatContextBuilder:
         prompt_manager: PromptManager | None = None,
         rag_prompt_manager: PromptManager | None = None,
         rag_service: AbstractRAGService | None = None,
-    ):
+        context_budgeter: ContextBudgeter | None = None,
+        live_window_builder: LiveWindowBuilder | None = None,
+        message_compressor: MessageCompressor | None = None,
+    ) -> None:
         self.prompt_manager = prompt_manager or PromptManager()
         self.rag_prompt_manager = rag_prompt_manager or PromptManager(
             template_name="rag_system"
         )
         self.rag_service = rag_service
+        self.context_budgeter = context_budgeter or ContextBudgeter()
+        self.live_window_builder = live_window_builder or LiveWindowBuilder()
+        self.message_compressor = message_compressor or MessageCompressor()
 
     async def build(
         self,
@@ -64,18 +82,13 @@ class ChatContextBuilder:
             },
         ) as span:
             history_dicts = self._history_to_dicts(history_messages)
-            memory_history, memory_summary = self._prepare_memory_context(
-                history_dicts,
-                current_query,
-            )
             rag_chunks = await self._retrieve_rag_chunks(
                 query_text=current_query,
                 kb_id=kb_id,
             )
 
             assembled_context = self._assemble_from_memory_and_chunks(
-                memory_history=memory_history,
-                memory_summary=memory_summary,
+                history=history_dicts,
                 current_query=current_query,
                 kb_id=kb_id,
                 rag_chunks=rag_chunks,
@@ -87,12 +100,10 @@ class ChatContextBuilder:
                 span,
                 {
                     "chat.history.message_count": len(history_dicts),
-                    "chat.memory.message_count": len(memory_history),
-                    "chat.memory.summary_char_count": len(memory_summary),
-                    "rag.hit_count": len(rag_chunks),
-                    "chat.prompt.uses_rag": bool(rag_chunks),
                     "chat.prompt.message_count": len(assembled.messages),
                     "chat.prompt.tokens_input": assembled.total_tokens,
+                    "rag.hit_count": len(rag_chunks),
+                    "chat.prompt.uses_rag": bool(rag_chunks),
                 },
             )
             return PreparedChatContext(
@@ -110,13 +121,8 @@ class ChatContextBuilder:
     ) -> PreparedChatContext:
         """Build prompt context from already-retrieved RAG chunks."""
         history_dicts = self._history_to_dicts(history_messages)
-        memory_history, memory_summary = self._prepare_memory_context(
-            history_dicts,
-            current_query,
-        )
         return self._assemble_from_memory_and_chunks(
-            memory_history=memory_history,
-            memory_summary=memory_summary,
+            history=history_dicts,
             current_query=current_query,
             kb_id=kb_id,
             rag_chunks=rag_chunks,
@@ -125,38 +131,160 @@ class ChatContextBuilder:
     def _assemble_from_memory_and_chunks(
         self,
         *,
-        memory_history: list[ConversationMessage],
-        memory_summary: str,
+        history: list[ConversationMessage],
         current_query: str,
         kb_id: uuid.UUID | None,
         rag_chunks: list[dict],
     ) -> PreparedChatContext:
-        if rag_chunks:
-            rag_references = self._build_rag_references(
-                kb_id=kb_id,
-                query_text=current_query,
-                rag_chunks=rag_chunks,
+        model = self.context_budgeter.model_name
+
+        # 1. Build RAG references
+        rag_references = self._build_rag_references(
+            kb_id=kb_id,
+            query_text=current_query,
+            rag_chunks=rag_chunks,
+        )
+
+        # 2. Build blocks and allocate budget
+        blocks = self._build_blocks(
+            history=history,
+            current_query=current_query,
+            context_chunks=rag_references.context_chunks,
+            model=model,
+        )
+        allocated = self.context_budgeter.allocate(blocks)
+        history_budget = self._get_block_allocated(allocated, "history")
+        rag_chunks_budget = self._get_block_allocated(allocated, "rag_chunks")
+
+        # 3. Build history window
+        window_result = self.live_window_builder.build(
+            history=history,
+            current_query=current_query,
+            budget_tokens=history_budget,
+            model=model,
+        )
+
+        # 4. Assemble prompt
+        prompt_manager = (
+            self.rag_prompt_manager if rag_chunks else self.prompt_manager
+        )
+        search_context = rag_references.search_context if rag_chunks else None
+
+        context_chunks = self._fit_context_chunks(
+            rag_references.context_chunks,
+            budget_tokens=rag_chunks_budget,
+            model=model,
+        )
+
+        assembled = prompt_manager.assemble(
+            history=window_result.exact_messages,
+            current_query=current_query,
+            extra_vars={
+                "context_chunks": context_chunks,
+                "conversation_summary": window_result.bridge_summary,
+            },
+        )
+
+        # 5. Final validation
+        ok, actual = self.context_budgeter.validate(
+            assembled.messages, assembled.total_tokens
+        )
+        if not ok:
+            logger.warning(
+                "组装后 Context 超限: %d tokens (budget=%d)",
+                actual,
+                self.context_budgeter.total_budget,
             )
-            assembled = self.rag_prompt_manager.assemble(
-                memory_history,
-                current_query,
-                extra_vars={
-                    "context_chunks": rag_references.context_chunks,
-                    "conversation_summary": memory_summary,
+            raise app_payload_too_large(
+                "输入内容超过模型上下文限制，请缩短问题或减少参考资料后重试",
+                code="TOKEN_LIMIT_EXCEEDED",
+                details={
+                    "actual_tokens": actual,
+                    "token_budget": self.context_budgeter.total_budget,
+                    "max_context_tokens": self.context_budgeter.max_context_tokens,
                 },
             )
-            search_context = rag_references.search_context
-        else:
-            search_context = None
-            assembled = self.prompt_manager.assemble(
-                memory_history,
-                current_query,
-                extra_vars={"conversation_summary": memory_summary},
-            )
+
         return PreparedChatContext(
             assembled_prompt=assembled,
             search_context=search_context,
         )
+
+    @staticmethod
+    def _build_blocks(
+        *,
+        history: list[ConversationMessage],
+        current_query: str,
+        context_chunks: list[str],
+        model: str,
+    ) -> list[BudgetBlock]:
+        blocks: list[BudgetBlock] = [
+            BudgetBlock(name="system", priority=PRIORITY_SYSTEM, required=True),
+            BudgetBlock(
+                name="query",
+                priority=PRIORITY_QUERY,
+                content=current_query,
+                token_estimate=count_tokens(current_query, model),
+                required=True,
+                compressible=True,
+            ),
+            BudgetBlock(
+                name="history",
+                priority=PRIORITY_HISTORY,
+                token_estimate=count_messages_tokens(history, model),
+                compressible=True,
+            ),
+        ]
+        if context_chunks:
+            blocks.append(
+                BudgetBlock(
+                    name="rag_chunks",
+                    priority=PRIORITY_RAG_CHUNKS,
+                    content="\n".join(context_chunks),
+                    token_estimate=count_tokens("\n".join(context_chunks), model),
+                    compressible=True,
+                )
+            )
+        return blocks
+
+    @staticmethod
+    def _get_block_allocated(blocks: list[BudgetBlock], name: str) -> int:
+        for block in blocks:
+            if block.name == name:
+                return block.allocated
+        return 0
+
+    @staticmethod
+    def _fit_context_chunks(
+        context_chunks: list[str],
+        *,
+        budget_tokens: int,
+        model: str,
+    ) -> list[str]:
+        if not context_chunks or budget_tokens <= 0:
+            return []
+
+        selected_chunks: list[str] = []
+        for chunk in context_chunks:
+            candidate_chunks = [*selected_chunks, chunk]
+            if count_tokens("\n".join(candidate_chunks), model) <= budget_tokens:
+                selected_chunks.append(chunk)
+                continue
+
+            remaining_tokens = budget_tokens - count_tokens(
+                "\n".join(selected_chunks), model
+            )
+            if remaining_tokens > 0:
+                compressed_chunk = MessageCompressor.truncate(
+                    chunk, max(1, remaining_tokens * 3)
+                )
+                if compressed_chunk:
+                    selected_chunks.append(compressed_chunk)
+            break
+
+        return selected_chunks
+
+    # ── history normalization ──────────────────────────────────────
 
     @staticmethod
     def _history_to_dicts(messages) -> list[ConversationMessage]:
@@ -175,122 +303,7 @@ class ChatContextBuilder:
                 )
         return history
 
-    @staticmethod
-    def _normalize_text(text: str) -> str:
-        return " ".join((text or "").split())
-
-    @staticmethod
-    def _truncate_text(text: str, limit: int) -> str:
-        if limit <= 0:
-            return ""
-        if len(text) <= limit:
-            return text
-        return f"{text[: max(0, limit - 3)]}..."
-
-    @staticmethod
-    def _group_history_rounds(
-        history: list[ConversationMessage],
-    ) -> list[list[ConversationMessage]]:
-        if not history:
-            return []
-
-        rounds: list[list[ConversationMessage]] = []
-        current_round: list[ConversationMessage] = []
-        for msg in history:
-            role = msg["role"]
-            if role == "user" and current_round:
-                rounds.append(current_round)
-                current_round = []
-            current_round.append(msg)
-
-        if current_round:
-            rounds.append(current_round)
-        return rounds
-
-    @classmethod
-    def _exclude_latest_query_from_history(
-        cls,
-        history: list[ConversationMessage],
-        current_query: str,
-    ) -> list[ConversationMessage]:
-        if not history:
-            return history
-
-        latest = history[-1]
-        if latest["role"] != "user":
-            return history
-
-        latest_text = cls._normalize_text(latest["content"])
-        query_text = cls._normalize_text(current_query)
-        if latest_text and latest_text == query_text:
-            return history[:-1]
-        return history
-
-    @classmethod
-    def _build_rounds_summary(cls, rounds: list[list[ConversationMessage]]) -> str:
-        if not rounds:
-            return ""
-
-        snippet_limit = max(20, settings.CHAT_MEMORY_SNIPPET_CHARS)
-        max_chars = max(1, settings.CHAT_MEMORY_SUMMARY_MAX_CHARS)
-        lines: list[str] = []
-
-        for round_msgs in rounds:
-            user_text = cls._normalize_text(
-                " ".join(msg["content"] for msg in round_msgs if msg["role"] == "user")
-            )
-            assistant_text = cls._normalize_text(
-                " ".join(
-                    msg["content"] for msg in round_msgs if msg["role"] == "assistant"
-                )
-            )
-            if not user_text and not assistant_text:
-                continue
-
-            user_excerpt = cls._truncate_text(user_text, snippet_limit) or "(空)"
-            assistant_excerpt = (
-                cls._truncate_text(assistant_text, snippet_limit) or "(空)"
-            )
-            lines.append(f"- 用户: {user_excerpt} | 助手: {assistant_excerpt}")
-
-        if not lines:
-            return ""
-
-        original_lines = list(lines)
-        while lines and len("\n".join(lines)) > max_chars:
-            lines.pop(0)
-
-        if not lines:
-            return cls._truncate_text(original_lines[-1], max_chars)
-
-        return "\n".join(lines)
-
-    @classmethod
-    def _prepare_memory_context(
-        cls,
-        history: list[ConversationMessage],
-        current_query: str,
-    ) -> tuple[list[ConversationMessage], str]:
-        history_without_current = cls._exclude_latest_query_from_history(
-            history,
-            current_query,
-        )
-        rounds = cls._group_history_rounds(history_without_current)
-        recent_rounds = max(0, settings.CHAT_MEMORY_RECENT_ROUNDS)
-
-        if recent_rounds <= 0:
-            older_rounds = rounds
-            kept_rounds: list[list[ConversationMessage]] = []
-        elif len(rounds) > recent_rounds:
-            older_rounds = rounds[:-recent_rounds]
-            kept_rounds = rounds[-recent_rounds:]
-        else:
-            older_rounds = []
-            kept_rounds = rounds
-
-        recent_history = [msg for round_msgs in kept_rounds for msg in round_msgs]
-        summary_text = cls._build_rounds_summary(older_rounds)
-        return recent_history, summary_text
+    # ── RAG retrieval ──────────────────────────────────────────────
 
     async def _retrieve_rag_chunks(
         self,
@@ -350,6 +363,8 @@ class ChatContextBuilder:
             query_text=query_text,
             kb_id=kb_id,
         )
+
+    # ── RAG reference building ─────────────────────────────────────
 
     @staticmethod
     def build_search_context(

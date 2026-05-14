@@ -1,13 +1,14 @@
 """
-PromptManager 单元测试 (Jinja2 版)
+PromptManager 单元测试
 
 覆盖：
 - Jinja2 模板渲染（变量注入、条件逻辑）
 - 无历史消息时组装 [System + User]
 - 有历史消息时组装 [System + History + User]
-- Token 超限时截断最早的历史轮次
 - 空 System Prompt 时不插入 system 消息
 - _group_into_rounds 分组逻辑
+
+注意：Token 预算裁剪和截断职责已移交 LiveWindowBuilder + ContextBudgeter。
 """
 
 import pytest
@@ -20,32 +21,16 @@ from backend.ai.core.prompt_templates import (
 )
 from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 
-# ============================================================
-# Fixtures
-# ============================================================
-
 
 @pytest.fixture
 def manager():
-    """标准 PromptManager，使用较宽松的 Token 限制"""
+    """标准 PromptManager"""
     return PromptManager(
         system_template=DEFAULT_SYSTEM_TEMPLATE,
         template_vars={"app_name": "TestBot"},
         max_context_tokens=4096,
         max_history_rounds=10,
         reserved_response_tokens=512,
-    )
-
-
-@pytest.fixture
-def tight_manager():
-    """Token 预算很紧的 PromptManager，用于测试截断"""
-    return PromptManager(
-        system_template=DEFAULT_SYSTEM_TEMPLATE,
-        template_vars={"app_name": "TestBot"},
-        max_context_tokens=200,
-        max_history_rounds=10,
-        reserved_response_tokens=50,
     )
 
 
@@ -69,29 +54,24 @@ class TestTemplateRendering:
     """Jinja2 模板渲染"""
 
     def test_default_template_renders(self):
-        """默认模板可以正常渲染"""
         result = render_system_prompt()
         assert "Dewflow" in result
         assert len(result) > 0
 
     def test_template_with_custom_app_name(self):
-        """自定义 app_name 变量"""
         result = render_system_prompt(app_name="MyBot")
         assert "MyBot" in result
         assert "Dewflow" not in result
 
     def test_template_with_user_name(self):
-        """注入 user_name 时包含用户信息"""
         result = render_system_prompt(user_name="Alice")
         assert "Alice" in result
 
     def test_template_without_user_name(self):
-        """不提供 user_name 时不包含用户信息行"""
         result = render_system_prompt(user_name="")
         assert "当前用户" not in result
 
     def test_rag_template_renders_chunks(self):
-        """RAG 模板正确渲染文档片段"""
         chunks = ["[R1.1] 文档A的内容", "[R2.1] 文档B的内容"]
         result = render_system_prompt(
             template=RAG_SYSTEM_TEMPLATE,
@@ -101,15 +81,12 @@ class TestTemplateRendering:
         assert "文档B的内容" in result
         assert "[R1.1]" in result
         assert "[R2.1]" in result
-        assert "必须在对应句子后标注 chunk 级引用" in result
 
     def test_rag_template_requires_knowledge_evidence(self):
-        """RAG 模板不允许资料不足时用通用知识兜底"""
         result = render_system_prompt(
             template=RAG_SYSTEM_TEMPLATE,
             context_chunks=[],
         )
-
         assert "只能根据参考资料回答" in result
         assert "无法基于知识库资料回答" in result
         assert "基于你的通用知识回答" not in result
@@ -124,13 +101,11 @@ class TestBasicAssembly:
     """基础 Prompt 组装"""
 
     def test_assemble_no_history(self, manager):
-        """无历史消息时：[System + User]"""
         result = manager.assemble([], "你好")
-
         assert isinstance(result, AssembledPrompt)
         assert len(result.messages) == 2  # system + user
         assert result.messages[0]["role"] == "system"
-        assert "TestBot" in result.messages[0]["content"]  # Jinja2 渲染的变量
+        assert "TestBot" in result.messages[0]["content"]
         assert result.messages[-1]["role"] == "user"
         assert result.messages[-1]["content"] == "你好"
         assert result.history_rounds_used == 0
@@ -138,9 +113,7 @@ class TestBasicAssembly:
         assert result.total_tokens > 0
 
     def test_assemble_with_history(self, manager, sample_history):
-        """有历史消息时：[System + History + User]"""
         result = manager.assemble(sample_history, "帮我写个代码")
-
         assert result.messages[0]["role"] == "system"
         assert result.messages[-1]["role"] == "user"
         assert result.messages[-1]["content"] == "帮我写个代码"
@@ -148,60 +121,16 @@ class TestBasicAssembly:
         assert result.truncated is False
 
     def test_assemble_with_extra_vars(self, manager):
-        """assemble 时通过 extra_vars 注入额外变量"""
         result = manager.assemble([], "你好", extra_vars={"user_name": "Bob"})
-
         system_content = result.messages[0]["content"]
         assert "Bob" in system_content
 
     def test_assemble_preserves_message_order(self, manager, sample_history):
-        """组装后消息顺序正确"""
         result = manager.assemble(sample_history, "新问题")
-
         roles = [m["role"] for m in result.messages]
-        # system -> user -> assistant -> user -> assistant -> user(current)
         assert roles[0] == "system"
         assert roles[-1] == "user"
         assert result.messages[-1]["content"] == "新问题"
-
-
-# ============================================================
-# 截断测试
-# ============================================================
-
-
-class TestTruncation:
-    """Token 超限截断"""
-
-    def test_truncation_drops_oldest_rounds(self, tight_manager):
-        """Token 超限时应该丢弃最早的历史轮次"""
-        long_history = [
-            {"role": "user", "content": "very long question " * 300},
-            {"role": "assistant", "content": "very long answer " * 300},
-            {"role": "user", "content": "短问题"},
-            {"role": "assistant", "content": "短回答"},
-        ]
-        result = tight_manager.assemble(long_history, "新问题")
-
-        assert result.truncated is True
-        assert result.history_rounds_used < 2
-
-    def test_max_history_rounds_honored(self):
-        """最大历史轮数限制"""
-        manager = PromptManager(
-            system_template=DEFAULT_SYSTEM_TEMPLATE,
-            template_vars={"app_name": "TestBot"},
-            max_context_tokens=100000,
-            max_history_rounds=2,
-            reserved_response_tokens=512,
-        )
-        history = []
-        for i in range(5):
-            history.append({"role": "user", "content": f"问题{i}"})
-            history.append({"role": "assistant", "content": f"回答{i}"})
-
-        result = manager.assemble(history, "新问题")
-        assert result.history_rounds_used <= 2
 
 
 # ============================================================

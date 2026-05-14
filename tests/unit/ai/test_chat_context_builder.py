@@ -5,8 +5,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from jinja2 import Template
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
+from backend.ai.core.context_budgeter import ContextBudgeter
+from backend.ai.core.live_window_builder import LiveWindowBuilder
+from backend.ai.core.prompt_manager import PromptManager
+from backend.core.exceptions import AppException
 
 
 @pytest.mark.asyncio
@@ -226,3 +231,84 @@ def test_build_from_chunks_does_not_call_rag_service():
     rag_service.retrieve.assert_not_awaited()
     assert result.search_context is not None
     assert "worker provided fact" in result.assembled_prompt.messages[0]["content"]
+
+
+def test_build_from_chunks_trims_rag_chunks_to_budget():
+    builder = ChatContextBuilder(
+        rag_prompt_manager=PromptManager(
+            system_template=Template("{{ context_chunks|join('\\n') }}"),
+            max_context_tokens=240,
+            reserved_response_tokens=80,
+            model_name="gpt-4",
+        ),
+        context_budgeter=ContextBudgeter(
+            max_context_tokens=240,
+            reserved_response_tokens=80,
+            model_name="gpt-4",
+        ),
+        live_window_builder=LiveWindowBuilder(recent_rounds=1),
+    )
+
+    result = builder.build_from_chunks(
+        history_messages=[],
+        current_query="问题",
+        kb_id=uuid.uuid4(),
+        rag_chunks=[
+            {
+                "id": str(uuid.uuid4()),
+                "content": "A" * 80,
+                "source_type": "file",
+                "file_id": str(uuid.uuid4()),
+                "message_id": None,
+                "filename": "one.md",
+                "chunk_index": 0,
+                "meta_info": {},
+                "distance": 0.1,
+                "score": 0.9,
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "content": "B" * 8000,
+                "source_type": "file",
+                "file_id": str(uuid.uuid4()),
+                "message_id": None,
+                "filename": "two.md",
+                "chunk_index": 1,
+                "meta_info": {},
+                "distance": 0.2,
+                "score": 0.8,
+            },
+        ],
+    )
+
+    assert result.assembled_prompt.total_tokens <= builder.context_budgeter.total_budget
+    assert "A" * 80 in result.assembled_prompt.messages[0]["content"]
+    assert len(result.assembled_prompt.messages[0]["content"]) < 8000
+
+
+def test_build_from_chunks_raises_when_final_context_exceeds_budget():
+    builder = ChatContextBuilder(
+        prompt_manager=PromptManager(
+            system_template=Template("S" * 2000),
+            max_context_tokens=80,
+            reserved_response_tokens=20,
+            model_name="gpt-4",
+        ),
+        context_budgeter=ContextBudgeter(
+            max_context_tokens=80,
+            reserved_response_tokens=20,
+            model_name="gpt-4",
+        ),
+        live_window_builder=LiveWindowBuilder(recent_rounds=1),
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        builder.build_from_chunks(
+            history_messages=[],
+            current_query="问题",
+            kb_id=None,
+            rag_chunks=[],
+        )
+
+    assert exc_info.value.code == "TOKEN_LIMIT_EXCEEDED"
+    assert exc_info.value.status_code == 413
