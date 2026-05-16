@@ -106,6 +106,7 @@ addopts = "-m 'not performance'"
 markers = [
     "smoke: fast smoke tests for critical paths",
     "performance: concurrency/load-oriented tests, excluded from default runs",
+    "integration: tests that require external services like PostgreSQL or Redis",
 ]
 
 [tool.ty.environment]

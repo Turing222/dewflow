@@ -11,6 +11,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
+
+pytestmark = pytest.mark.integration
 import redis.asyncio as redis
 
 from backend.config.settings import settings

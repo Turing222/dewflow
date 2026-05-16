@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 
 import pytest
+
+pytestmark = pytest.mark.integration
 import redis.asyncio as redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
