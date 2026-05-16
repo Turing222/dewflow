@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import pytest
-
-pytestmark = pytest.mark.integration
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from backend.core.exception_handlers import setup_exception_handlers
 from backend.core.exceptions import app_not_found
 from backend.middleware.tracing import setup_tracing
+
+pytestmark = pytest.mark.component
 
 
 @pytest.fixture

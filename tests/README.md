@@ -6,7 +6,8 @@
 
 - `unit/`: 纯单元测试，默认必须通过；不依赖真实 PostgreSQL、Redis、S3、TaskIQ worker 或外部 HTTP 服务。
 - `unit/api|services|repositories|workflows|infra|ai|worker|...`: 在 `unit/` 内按源码领域继续细分，优先镜像 `backend/` 的模块边界。
-- `integration/`: 集成测试；允许依赖真实基础设施或完整应用生命周期，文件必须使用 `pytest.mark.integration`。
+- `component/`: 进程内组件测试；允许使用 FastAPI ASGI、router、middleware、dependency override 和 fake service，不依赖真实外部服务。
+- `integration/`: 集成测试；依赖真实 PostgreSQL、Redis、TaskIQ worker 或完整应用生命周期，文件必须使用 `pytest.mark.integration`。
 - `smoke/`: 冒烟测试；覆盖少量关键链路，用来判断环境是否基本可用。
 - `performance/`: 并发、负载、性能测试；默认不跑，必须使用 `pytest.mark.performance`。
 - `manual/`: 手动验证材料，不作为默认自动化测试集的一部分。
@@ -25,6 +26,18 @@ make qa-test-unit
 
 ```bash
 make qa-test-integration
+```
+
+- Marker 审计：
+
+```bash
+make qa-test-markers
+```
+
+- 组件测试：
+
+```bash
+make qa-test-component
 ```
 
 - 本地默认 profile：
@@ -63,10 +76,10 @@ uv run pytest -m smoke
 uv run pytest -m performance
 ```
 
-- 跑 unit + integration：
+- 跑 unit + component + integration：
 
 ```bash
-uv run pytest tests/unit tests/integration
+uv run pytest tests/unit tests/component tests/integration
 ```
 
 ## 其他说明

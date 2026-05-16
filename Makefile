@@ -10,6 +10,7 @@ SMOKE_BASE_URL ?= http://localhost:8000
 SMOKE_LIVE_PATH ?= /api/v1/health_check/live
 SMOKE_READY_PATH ?= /api/v1/health_check/db_ready
 UNIT_TARGETS ?= tests/unit
+COMPONENT_TARGETS ?= tests/component
 INTEGRATION_TARGETS ?= tests/integration
 PYTEST_ARGS ?=
 
@@ -25,7 +26,7 @@ export SMOKE_READY_PATH
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-unit qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks \
+	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks \
 	image-build \
 	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
@@ -41,12 +42,14 @@ help:
 		'  qa-boundaries        Check Web/Worker import boundaries' \
 		'  qa-format            Run Ruff formatter' \
 		'  qa-typecheck         Run type checking' \
-		'  qa-layer-deps        Verify each extras layer can import independently' \
-		'  qa-alembic-check     Validate migration chain integrity' \
-		'  qa-config-check      Validate config/env for deployment contexts' \
-		'  qa-test-unit         Run unit tests (UNIT_TARGETS=...)' \
-		'  qa-test-integration  Run integration tests (INTEGRATION_TARGETS=...)' \
-		'  qa-test-local        Run local default pytest profile' \
+			'  qa-layer-deps        Verify each extras layer can import independently' \
+			'  qa-alembic-check     Validate migration chain integrity' \
+			'  qa-config-check      Validate config/env for deployment contexts' \
+			'  qa-test-markers      Audit pytest dependency markers' \
+			'  qa-test-unit         Run unit tests (UNIT_TARGETS=...)' \
+			'  qa-test-component    Run component tests (COMPONENT_TARGETS=...)' \
+			'  qa-test-integration  Run integration tests (INTEGRATION_TARGETS=...)' \
+			'  qa-test-local        Run local default pytest profile' \
 		'  qa-test-ci           Run CI-safe pytest profile' \
 		'  qa-test-external     Run tests that need external dependencies' \
 		'  qa-test-all          Run all pytest suites except excluded markers' \
@@ -90,8 +93,14 @@ qa-alembic-check:
 qa-config-check:
 	uv run python scripts/qa/config_check.py $(ARGS)
 
+qa-test-markers:
+	uv run python scripts/qa/check_test_markers.py
+
 qa-test-unit:
 	DEWFLOW_TEST_PROFILE=unit bash scripts/qa/run_unit.sh $(PYTEST_ARGS) $(UNIT_TARGETS)
+
+qa-test-component:
+	DEWFLOW_TEST_PROFILE=unit uv run pytest $(PYTEST_ARGS) $(COMPONENT_TARGETS)
 
 qa-test-integration:
 	DEWFLOW_TEST_PROFILE=local bash scripts/qa/run_integration.sh $(PYTEST_ARGS) $(INTEGRATION_TARGETS)
@@ -153,6 +162,7 @@ verify-smoke:
 flow-static:
 	$(MAKE) qa-lint
 	$(MAKE) qa-boundaries
+	$(MAKE) qa-test-markers
 	$(MAKE) qa-typecheck
 	$(MAKE) qa-layer-deps
 	$(MAKE) qa-alembic-check

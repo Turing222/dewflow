@@ -6,13 +6,16 @@
 
 - 测试先按层级归类，再按被测模块归档。
 - 单元测试默认快速、确定、无真实外部依赖。
+- 组件测试运行在同一进程内，可以覆盖 router/middleware/dependency override 的协作边界。
 - 集成测试可以慢一些，但必须明确依赖和跳过条件。
 - 一个测试只验证一个主要行为；准备数据可以多，断言目标要清楚。
 - 优先测试公开行为，不为私有实现细节写脆弱测试，除非是在保护复杂边界。
 
 ## 放置规则
 
-- API endpoint、dependency override、请求/响应边界：放到 `tests/unit/api/` 或 `tests/integration/`。
+- API endpoint 直接调用：放到 `tests/unit/api/`。
+- FastAPI router、ASGI client、dependency override、fake service 的请求/响应协作测试：放到 `tests/component/api/`。
+- Middleware、exception handler、HTTP infra 的进程内协作测试：放到 `tests/component/http/`。
 - Service 业务规则：放到 `tests/unit/services/`。
 - Repository 查询构造和数据访问契约：放到 `tests/unit/repositories/`；需要真实数据库时放到 `tests/integration/`。
 - Workflow、orchestrator、跨服务编排：放到 `tests/unit/workflows/`。
@@ -39,6 +42,7 @@
 
 ## Marker 规则
 
+- `component`: 进程内组件测试，通常使用 ASGI client、dependency override 和 fake/mock 依赖。
 - `integration`: 依赖真实基础设施、完整应用生命周期或真实跨进程协作的测试。
 - `smoke`: 少量关键链路可用性测试。
 - `performance`: 并发、负载、耗时或资源敏感测试，默认排除。
@@ -50,6 +54,17 @@
 - `local_only`: 只在本地 profile 下运行。
 - `ci_only`: 只在 CI profile 下运行。
 - 新增 marker 必须同步注册到 `pyproject.toml`。
+
+## Marker 审计
+
+- `scripts/qa/check_test_markers.py` 会检查明显真实依赖特征是否有对应 marker。
+- 测试文件出现 `create_async_engine(...)` 时，必须标记 `requires_db`。
+- 测试文件出现 `redis.from_url(...)` 时，必须标记 `requires_redis`。
+- 测试文件出现 `.kiq(...)` 或 `taskiq worker` 时，必须标记 `requires_taskiq`。
+- 测试文件出现真实 S3 client 或 `TEST_S3_ENDPOINT_URL` 时，必须标记 `requires_s3`。
+- 测试文件出现 `TEST_LLM_API_KEY` 时，必须标记 `requires_llm`。
+- `tests/smoke/` 使用 `SMOKE_*` 环境和 `smoke` marker，不强制使用 `requires_*`。
+- fake/mock/stub、`api_key="test-key"`、`s3://bucket/key` 这类本地确定性测试不需要 `requires_*`。
 
 ## Profile + Marker + Fixture Skip
 
@@ -84,11 +99,13 @@
 
 ```bash
 uv run pytest --collect-only tests/unit tests/integration
+uv run pytest --collect-only tests/component
 uv run pytest tests/unit
 ```
 
 涉及集成测试 marker、目录或命令变更时，同时检查：
 
 ```bash
+uv run python scripts/qa/check_test_markers.py
 uv run pytest --collect-only tests/integration
 ```

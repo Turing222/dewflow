@@ -16,7 +16,7 @@ from backend.core.exception_handlers import setup_exception_handlers
 from backend.core.exceptions import app_forbidden
 from backend.models.schemas.user_schema import UserImportResponse
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.component
 
 
 class DummyUoW:

@@ -18,7 +18,7 @@ from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationResult
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.component
 
 
 class _FakeEncoding:

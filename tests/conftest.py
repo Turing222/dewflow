@@ -1,7 +1,7 @@
 """Global pytest fixtures and test-safe environment setup.
 
 Keep this file lightweight and avoid importing FastAPI app here.
-Fixtures that require app startup should live in tests/integration/conftest.py.
+Fixtures that require app startup should live in tests/component or tests/integration.
 """
 
 import os

@@ -12,6 +12,9 @@ uv run ruff check .
 log_section "Running import boundary check"
 uv run python scripts/check_import_boundaries.py
 
+log_section "Running test marker audit"
+uv run python scripts/qa/check_test_markers.py
+
 log_section "Running typecheck"
 uv run ty check .
 
