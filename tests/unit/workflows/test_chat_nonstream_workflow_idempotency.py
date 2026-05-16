@@ -7,6 +7,7 @@ import pytest
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.payloads import GenerationResult
 
 pytestmark = pytest.mark.asyncio
@@ -145,6 +146,8 @@ async def test_worker_dispatch_on_success():
     uow.user_repo.try_increment_used_tokens_with_limit = AsyncMock(return_value=True)
     uow.knowledge_repo = AsyncMock()
     uow.knowledge_repo.get_kb_by_name_for_user = AsyncMock(return_value=None)
+    uow.chat_repo = AsyncMock()
+    uow.chat_repo.get_context_state = AsyncMock(return_value=ContextState())
     uow.__aenter__.return_value = uow
 
     session = MagicMock(id=uuid.uuid4(), title="Test Session", kb_id=None)

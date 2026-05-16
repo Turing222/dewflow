@@ -13,6 +13,7 @@ from pathlib import Path
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.contracts.uploads import UploadFileLike
+from backend.core.constants import SUPPORTED_KNOWLEDGE_SUFFIXES
 from backend.core.exceptions import (
     AppException,
     app_not_found,
@@ -196,7 +197,7 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
     def _sanitize_filename(filename: str) -> str:
         base = Path(filename).name.strip()
         if not base:
-            return "unnamed.txt"
+            return "unnamed.md"
         base = base.replace("\x00", "")
         return base
 
@@ -207,6 +208,16 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
             )
 
         safe_filename = self._sanitize_filename(upload_file.filename)
+        suffix = Path(safe_filename).suffix.lower()
+        if suffix not in SUPPORTED_KNOWLEDGE_SUFFIXES:
+            raise app_validation_error(
+                "当前仅支持 Markdown 文件",
+                code="KNOWLEDGE_FILE_UNSUPPORTED_TYPE",
+                details={
+                    "filename": safe_filename,
+                    "supported_suffixes": sorted(SUPPORTED_KNOWLEDGE_SUFFIXES),
+                },
+            )
         if upload_file.size and upload_file.size > self.max_upload_size_bytes:
             raise app_validation_error(
                 f"上传文件超过大小限制（最大 {self.max_upload_size_mb}MB）",

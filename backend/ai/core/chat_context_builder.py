@@ -270,15 +270,22 @@ class ChatContextBuilder:
     ) -> list[str]:
         if not context_chunks or budget_tokens <= 0:
             return []
+        if count_tokens("\n".join(context_chunks), model) <= budget_tokens:
+            return context_chunks
+
+        message_overhead_tokens = 64
+        effective_budget = max(0, budget_tokens - message_overhead_tokens)
+        if effective_budget <= 0:
+            return []
 
         selected_chunks: list[str] = []
         for chunk in context_chunks:
             candidate_chunks = [*selected_chunks, chunk]
-            if count_tokens("\n".join(candidate_chunks), model) <= budget_tokens:
+            if count_tokens("\n".join(candidate_chunks), model) <= effective_budget:
                 selected_chunks.append(chunk)
                 continue
 
-            remaining_tokens = budget_tokens - count_tokens(
+            remaining_tokens = effective_budget - count_tokens(
                 "\n".join(selected_chunks), model
             )
             if remaining_tokens > 0:

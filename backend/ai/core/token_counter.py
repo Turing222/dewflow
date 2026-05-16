@@ -7,13 +7,14 @@
 
 import logging
 from collections.abc import Sequence
+from typing import Any
 
 from backend.models.schemas.chat.dto import ConversationMessage
 
 logger = logging.getLogger(__name__)
 
 _tiktoken_available = False
-_encoding_cache: dict = {}
+_encoding_cache: dict[str, Any | None] = {}
 
 try:
     import tiktoken
@@ -30,8 +31,11 @@ def _get_encoding(model: str):
         try:
             _encoding_cache[model] = tiktoken.encoding_for_model(model)
         except KeyError:
-            logger.debug("模型 '%s' 无专用编码器，使用 cl100k_base", model)
-            _encoding_cache[model] = tiktoken.get_encoding("cl100k_base")
+            logger.debug("模型 '%s' 无专用编码器，将使用字符估算", model)
+            _encoding_cache[model] = None
+        except Exception as exc:
+            logger.warning("加载模型 '%s' 编码器失败，将使用字符估算: %s", model, exc)
+            _encoding_cache[model] = None
     return _encoding_cache[model]
 
 
@@ -42,7 +46,8 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
 
     if _tiktoken_available:
         encoding = _get_encoding(model)
-        return len(encoding.encode(text))
+        if encoding is not None:
+            return len(encoding.encode(text))
 
     # 没有 tokenizer 时使用保守字符估算，避免把过长 prompt 放行。
     return max(1, len(text) // 3)

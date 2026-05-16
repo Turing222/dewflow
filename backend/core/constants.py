@@ -8,3 +8,6 @@ MAX_CHAT_MESSAGE_LIMIT = 500
 
 # Security
 MAX_PAYLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# Knowledge
+SUPPORTED_KNOWLEDGE_SUFFIXES = {".md", ".markdown"}

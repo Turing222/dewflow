@@ -69,6 +69,7 @@ async def test_default_encode_documents_is_bounded_and_ordered():
         DEFAULT_ENCODE_DOCUMENTS_CONCURRENCY = 2
 
         def __init__(self) -> None:
+            super().__init__()
             self.active = 0
             self.max_active = 0
 

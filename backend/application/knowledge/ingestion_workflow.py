@@ -10,8 +10,7 @@ import uuid
 from pathlib import Path
 from typing import cast
 
-import pypdfium2 as pdfium
-
+from backend.core.constants import SUPPORTED_KNOWLEDGE_SUFFIXES
 from backend.core.exceptions import (
     AppException,
     app_not_found,
@@ -23,22 +22,6 @@ from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chunking_service import ChunkingService, ChunkPayload
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.vector_index_service import VectorIndexService
-
-TEXT_FILE_SUFFIXES = {
-    ".txt",
-    ".md",
-    ".markdown",
-    ".csv",
-    ".json",
-    ".jsonl",
-    ".yaml",
-    ".yml",
-    ".log",
-    ".py",
-    ".sql",
-}
-
-PDF_FILE_SUFFIXES = {".pdf"}
 
 
 class KnowledgeRAGWorkflow:
@@ -162,57 +145,21 @@ class KnowledgeRAGWorkflow:
 
     def _extract_chunks(self, file_path: Path) -> list[ChunkPayload]:
         suffix = file_path.suffix.lower()
-        if suffix in TEXT_FILE_SUFFIXES:
-            return self._extract_text_chunks(file_path)
-        if suffix in PDF_FILE_SUFFIXES:
-            return self._extract_pdf_chunks(file_path)
+        if suffix in SUPPORTED_KNOWLEDGE_SUFFIXES:
+            return self._extract_markdown_chunks(file_path)
 
         raise app_validation_error(
-            f"暂不支持的文件类型: {suffix or '(无扩展名)'}，建议使用 txt/md/pdf",
+            "当前仅支持 Markdown 文件",
             code="KNOWLEDGE_FILE_UNSUPPORTED_TYPE",
+            details={
+                "suffix": suffix or "(无扩展名)",
+                "supported_suffixes": sorted(SUPPORTED_KNOWLEDGE_SUFFIXES),
+            },
         )
 
-    def _extract_text_chunks(self, file_path: Path) -> list[ChunkPayload]:
+    def _extract_markdown_chunks(self, file_path: Path) -> list[ChunkPayload]:
         text = file_path.read_text(encoding="utf-8", errors="ignore")
         return self.chunking_service.split_text(text, file_suffix=file_path.suffix)
-
-    def _extract_pdf_chunks(self, file_path: Path) -> list[ChunkPayload]:
-        try:
-            chunks: list[ChunkPayload] = []
-            for page_text, page_label in self._extract_pdf_text_by_page(file_path):
-                page_chunks = self.chunking_service.split_text(
-                    page_text,
-                    file_suffix=".txt",
-                )
-                for chunk in page_chunks:
-                    chunk["page_label"] = page_label
-                    chunks.append(chunk)
-            return chunks
-        except AppException:
-            raise
-        except Exception as exc:
-            raise app_validation_error(
-                f"文件解析失败: {file_path.name}",
-                code="KNOWLEDGE_FILE_PARSE_FAILED",
-            ) from exc
-
-    @staticmethod
-    def _extract_pdf_text_by_page(file_path: Path) -> list[tuple[str, str]]:
-        page_texts: list[tuple[str, str]] = []
-        with pdfium.PdfDocument(file_path) as document:
-            for page_index in range(len(document)):
-                page = document[page_index]
-                text_page = None
-                try:
-                    text_page = page.get_textpage()
-                    text = text_page.get_text_range().strip()
-                    if text:
-                        page_texts.append((text, str(page_index + 1)))
-                finally:
-                    if text_page is not None:
-                        text_page.close()
-                    page.close()
-        return page_texts
 
     @staticmethod
     def _prepare_chunks_for_index(

@@ -123,6 +123,7 @@ make qa-test-all          # All tests except performance markers
 
 ## Operational Constraints
 
+- Default to discussion, analysis, and guidance only; do not modify code or files unless the user explicitly asks for implementation, code changes, or file edits.
 - **NEVER generate > 150 lines in a single tool call** — split writes if needed
 - **Cap command output** with `| head -200` for git diff, logs, build output
 - **No browser access** to localhost — use `curl` for health checks

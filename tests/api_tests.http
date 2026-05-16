@@ -83,8 +83,10 @@ Authorization: Bearer {{login.response.body.$.access_token}}
 Content-Type: multipart/form-data; boundary=SmokeBoundary
 
 --SmokeBoundary
-Content-Disposition: form-data; name="file"; filename="demo.txt"
-Content-Type: text/plain
+Content-Disposition: form-data; name="file"; filename="demo.md"
+Content-Type: text/markdown
+
+# Demo
 
 hello knowledge upload
 this file is for manual smoke verification

@@ -122,9 +122,9 @@ async def test_rag_upload_ingest_and_chat_search_context(
         headers=headers,
         files={
             "file": (
-                f"rag-smoke-{suffix}.txt",
-                f"{unique_fact}: compose smoke should retrieve this chunk.\n",
-                "text/plain",
+                f"rag-smoke-{suffix}.md",
+                f"# Smoke Fact\n\n{unique_fact}: compose smoke should retrieve this chunk.\n",
+                "text/markdown",
             )
         },
     )

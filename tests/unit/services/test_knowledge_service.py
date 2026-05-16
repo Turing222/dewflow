@@ -69,7 +69,7 @@ class TestKnowledgeServiceStreamingUpload:
             return SimpleNamespace(id=uuid.uuid4(), **kwargs)
 
         repo.create_file.side_effect = create_file
-        upload_file = make_upload_file("demo.txt", content, size=len(content))
+        upload_file = make_upload_file("demo.md", content, size=len(content))
 
         result = await service.save_upload_file(
             kb_id=kb_id,
@@ -81,7 +81,7 @@ class TestKnowledgeServiceStreamingUpload:
         assert saved_path.exists()
         assert saved_path.read_bytes() == content
         assert saved_path.parent == storage_root / str(kb_id)
-        assert result.filename == "demo.txt"
+        assert result.filename == "demo.md"
         assert result.file_size == len(content)
         assert result.content_sha256 == hashlib.sha256(content).hexdigest()
         assert result.status == FileStatus.UPLOADED
@@ -107,8 +107,8 @@ class TestKnowledgeServiceStreamingUpload:
         duplicate = SimpleNamespace(
             id=uuid.uuid4(),
             kb_id=kb_id,
-            filename="existing.txt",
-            file_path="/already/indexed.txt",
+            filename="existing.md",
+            file_path="/already/indexed.md",
             file_size=len(content),
             content_sha256=hashlib.sha256(content).hexdigest(),
             status=FileStatus.READY,
@@ -123,7 +123,7 @@ class TestKnowledgeServiceStreamingUpload:
         result = await service.save_upload_file(
             kb_id=kb_id,
             user_id=user_id,
-            upload_file=make_upload_file("demo.txt", content, size=len(content)),
+            upload_file=make_upload_file("demo.md", content, size=len(content)),
         )
 
         assert result == duplicate
@@ -138,7 +138,7 @@ class TestKnowledgeServiceStreamingUpload:
         service, repo, storage_root = knowledge_service
 
         repo.get_kb_for_user.return_value = None
-        upload_file = make_upload_file("demo.txt", b"abc", size=3)
+        upload_file = make_upload_file("demo.md", b"abc", size=3)
 
         with pytest.raises(AppException):
             await service.save_upload_file(
@@ -147,6 +147,26 @@ class TestKnowledgeServiceStreamingUpload:
                 upload_file=upload_file,
             )
 
+        repo.create_file.assert_not_awaited()
+        assert not any(path.is_file() for path in storage_root.rglob("*"))
+
+    @pytest.mark.asyncio
+    async def test_save_upload_file_rejects_non_markdown_file(
+        self,
+        knowledge_service,
+    ):
+        service, repo, storage_root = knowledge_service
+        upload_file = make_upload_file("demo.txt", b"abc", size=3)
+
+        with pytest.raises(AppException) as exc_info:
+            await service.save_upload_file(
+                kb_id=uuid.uuid4(),
+                user_id=uuid.uuid4(),
+                upload_file=upload_file,
+            )
+
+        assert exc_info.value.code == "KNOWLEDGE_FILE_UNSUPPORTED_TYPE"
+        repo.get_kb_for_user.assert_not_awaited()
         repo.create_file.assert_not_awaited()
         assert not any(path.is_file() for path in storage_root.rglob("*"))
 
@@ -165,7 +185,7 @@ class TestKnowledgeServiceStreamingUpload:
             user_id=user_id,
         )
         oversize_content = b"a" * (service.max_upload_size_bytes + 128)
-        upload_file = make_upload_file("too-large.txt", oversize_content)
+        upload_file = make_upload_file("too-large.md", oversize_content)
 
         with pytest.raises(AppException) as exc_info:
             await service.save_upload_file(

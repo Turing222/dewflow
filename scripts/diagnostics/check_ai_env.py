@@ -19,7 +19,6 @@ def main() -> None:
     llm_ok = check_llm(live=args.live, prompt=args.prompt)
     embedding_ok = check_embedding(live=args.live, text=args.embedding_text)
     langfuse_ok = check_langfuse(live=args.live)
-    check_pdf_parser()
 
     if not all((llm_ok, embedding_ok, langfuse_ok)):
         raise SystemExit(1)
@@ -157,13 +156,7 @@ def check_langfuse(*, live: bool) -> bool:
         return False
 
 
-def check_pdf_parser() -> None:
-    try:
-        import pypdfium2 as pdfium
 
-        print(f"PDF parser: pypdfium2 {pdfium.version.PYPDFIUM_INFO}")
-    except Exception as exc:
-        print(f"PDF parser failed: {exc}")
 
 
 if __name__ == "__main__":

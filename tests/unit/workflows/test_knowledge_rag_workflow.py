@@ -32,70 +32,28 @@ def make_workflow(chunking_service: FakeChunkingService) -> KnowledgeRAGWorkflow
     )
 
 
-def test_extract_chunks_uses_plain_text_channel(tmp_path):
+def test_extract_chunks_uses_markdown_channel(tmp_path):
+    chunking = FakeChunkingService(chunk_size=80)
+    workflow = make_workflow(chunking)
+    file_path = tmp_path / "demo.md"
+    file_path.write_text("# Guide\n\nplain content", encoding="utf-8")
+
+    chunks = workflow._extract_chunks(file_path)
+
+    assert [chunk["content"] for chunk in chunks] == ["# Guide\n\nplain content"]
+    assert chunking.split_calls == [("# Guide\n\nplain content", ".md")]
+
+
+def test_extract_chunks_rejects_plain_text_file(tmp_path):
     chunking = FakeChunkingService(chunk_size=10)
     workflow = make_workflow(chunking)
     file_path = tmp_path / "demo.txt"
     file_path.write_text("plain content", encoding="utf-8")
 
-    chunks = workflow._extract_chunks(file_path)
+    with pytest.raises(AppException) as exc_info:
+        workflow._extract_chunks(file_path)
 
-    assert [chunk["content"] for chunk in chunks] == ["plain cont", "ent"]
-    assert chunking.split_calls == [("plain content", ".txt")]
-
-
-def test_extract_chunks_uses_lightweight_pdf_channel(monkeypatch, tmp_path):
-    chunking = FakeChunkingService(chunk_size=10)
-    workflow = make_workflow(chunking)
-    file_path = tmp_path / "demo.pdf"
-    file_path.write_text("fake", encoding="utf-8")
-
-    class FakeTextPage:
-        def __init__(self, text: str):
-            self.text = text
-
-        def get_text_range(self) -> str:
-            return self.text
-
-        def close(self) -> None:
-            pass
-
-    class FakePage:
-        def __init__(self, text: str):
-            self.text = text
-
-        def get_textpage(self) -> FakeTextPage:
-            return FakeTextPage(self.text)
-
-        def close(self) -> None:
-            pass
-
-    class FakePdfDocument:
-        def __init__(self, _: object):
-            self.pages = [FakePage("0123456789ABC"), FakePage("short")]
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return None
-
-        def __len__(self) -> int:
-            return len(self.pages)
-
-        def __getitem__(self, index: int) -> FakePage:
-            return self.pages[index]
-
-    monkeypatch.setattr(
-        "backend.application.knowledge.ingestion_workflow.pdfium.PdfDocument",
-        FakePdfDocument,
-    )
-
-    chunks = workflow._extract_chunks(file_path)
-
-    assert [chunk["content"] for chunk in chunks] == ["0123456789", "ABC", "short"]
-    assert [chunk["page_label"] for chunk in chunks] == ["1", "1", "2"]
-    assert chunking.split_calls == [("0123456789ABC", ".txt"), ("short", ".txt")]
+    assert exc_info.value.code == "KNOWLEDGE_FILE_UNSUPPORTED_TYPE"
 
 
 def test_prepare_chunks_for_index_adds_contextual_embedding_content():
@@ -167,12 +125,12 @@ class FakeStorage:
 
 @pytest.mark.asyncio
 async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path):
-    file_path = tmp_path / "downloaded.txt"
-    file_path.write_text("remote content", encoding="utf-8")
+    file_path = tmp_path / "downloaded.md"
+    file_path.write_text("# Remote\n\nremote content", encoding="utf-8")
     file_obj = SimpleNamespace(
         id="file-id",
         kb_id="kb-id",
-        filename="demo.txt",
+        filename="demo.md",
         file_path="s3://bucket/key",
         file_size=14,
         storage_backend="s3",
@@ -196,7 +154,7 @@ async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path):
         uow=FakeAsyncUow(),
         replace_file_chunks=AsyncMock(),
     )
-    chunking = FakeChunkingService(chunk_size=20)
+    chunking = FakeChunkingService(chunk_size=80)
     workflow = KnowledgeRAGWorkflow(
         knowledge_service=knowledge_service,
         chunking_service=chunking,
@@ -209,17 +167,17 @@ async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path):
         file_id="file-id",
         chunks=[
             {
-                "content": "remote content",
+                "content": "# Remote\n\nremote content",
                 "chunk_index": 0,
                 "meta_info": {
-                    "filename": "demo.txt",
+                    "filename": "demo.md",
                     "path": "s3://bucket/key",
                     "source_path": "s3://bucket/key",
                 },
-                "embedding_content": "[文档: demo.txt]\nremote content",
+                "embedding_content": "[文档: demo.md]\n# Remote\n\nremote content",
             }
         ],
-        filename="demo.txt",
+        filename="demo.md",
         file_path="s3://bucket/key",
     )
     assert statuses == [FileStatus.PARSING, FileStatus.CHUNKING, FileStatus.READY]

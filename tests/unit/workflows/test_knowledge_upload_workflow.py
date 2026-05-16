@@ -34,8 +34,8 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
             return_value=SavedKnowledgeFile(
                 file=SimpleNamespace(
                     id=file_id,
-                    file_path="/tmp/demo.txt",
-                    filename="demo.txt",
+                    file_path="/tmp/demo.md",
+                    filename="demo.md",
                     status=FileStatus.UPLOADED,
                 ),
                 should_ingest=True,
@@ -70,8 +70,8 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
     task_service.create_kb_ingestion_task.assert_awaited_once_with(
         kb_id=kb_id,
         file_id=file_id,
-        file_path="/tmp/demo.txt",
-        filename="demo.txt",
+        file_path="/tmp/demo.md",
+        filename="demo.md",
         user_id=user_id,
     )
     mock_dispatcher.enqueue_ingestion.assert_awaited_once_with(
@@ -99,8 +99,8 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job():
             return_value=SavedKnowledgeFile(
                 file=SimpleNamespace(
                     id=file_id,
-                    file_path="/tmp/existing.txt",
-                    filename="existing.txt",
+                    file_path="/tmp/existing.md",
+                    filename="existing.md",
                     status=FileStatus.READY,
                 ),
                 should_ingest=False,
@@ -130,8 +130,8 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job():
     task_service.create_completed_kb_ingestion_task.assert_awaited_once_with(
         kb_id=kb_id,
         file_id=file_id,
-        file_path="/tmp/existing.txt",
-        filename="existing.txt",
+        file_path="/tmp/existing.md",
+        filename="existing.md",
         user_id=user_id,
         deduplicated=True,
     )
@@ -158,8 +158,8 @@ async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job():
             return_value=SavedKnowledgeFile(
                 file=SimpleNamespace(
                     id=file_id,
-                    file_path="/tmp/demo.txt",
-                    filename="demo.txt",
+                    file_path="/tmp/demo.md",
+                    filename="demo.md",
                     status=FileStatus.UPLOADED,
                 ),
                 should_ingest=True,
@@ -194,8 +194,8 @@ async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job():
     task_service.create_kb_ingestion_task.assert_awaited_once_with(
         kb_id=kb_id,
         file_id=file_id,
-        file_path="/tmp/demo.txt",
-        filename="demo.txt",
+        file_path="/tmp/demo.md",
+        filename="demo.md",
         user_id=user_id,
     )
     mock_dispatcher.enqueue_ingestion.assert_awaited_once_with(

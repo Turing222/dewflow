@@ -305,15 +305,16 @@ def test_build_from_chunks_keeps_context_state_separate_from_rag_chunks():
 
 
 def test_build_from_chunks_trims_rag_chunks_to_budget():
+    retained_content = "A" * 20
     builder = ChatContextBuilder(
         rag_prompt_manager=PromptManager(
             system_template=Template("{{ context_chunks|join('\\n') }}"),
-            max_context_tokens=240,
+            max_context_tokens=340,
             reserved_response_tokens=80,
             model_name="gpt-4",
         ),
         context_budgeter=ContextBudgeter(
-            max_context_tokens=240,
+            max_context_tokens=340,
             reserved_response_tokens=80,
             model_name="gpt-4",
         ),
@@ -327,7 +328,7 @@ def test_build_from_chunks_trims_rag_chunks_to_budget():
         rag_chunks=[
             {
                 "id": str(uuid.uuid4()),
-                "content": "A" * 80,
+                "content": retained_content,
                 "source_type": "file",
                 "file_id": str(uuid.uuid4()),
                 "message_id": None,
@@ -353,7 +354,7 @@ def test_build_from_chunks_trims_rag_chunks_to_budget():
     )
 
     assert result.assembled_prompt.total_tokens <= builder.context_budgeter.total_budget
-    assert "A" * 80 in result.assembled_prompt.messages[0]["content"]
+    assert retained_content in result.assembled_prompt.messages[0]["content"]
     assert len(result.assembled_prompt.messages[0]["content"]) < 8000
 
 

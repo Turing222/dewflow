@@ -236,9 +236,9 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
         headers=headers,
         files={
             "file": (
-                f"smoke_{suffix}.txt",
+                f"smoke_{suffix}.md",
                 probe_document.encode(),
-                "text/plain",
+                "text/markdown",
             )
         },
         timeout=30.0,
@@ -278,7 +278,7 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
     )
     assert file_body["kb_id"] == kb_id
     assert file_body["status"] == "ready", file_body
-    assert file_body["filename"].endswith(".txt")
+    assert file_body["filename"].endswith(".md")
     assert file_body["file_size"] > 0
 
     chunks = await _fetch_file_chunks(file_id)
@@ -287,7 +287,9 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
     assert all(chunk["chunking_version"] == 2 for chunk in chunks)
     assert all(chunk["token_count"] == len(chunk["content"]) for chunk in chunks)
     assert all(chunk["embedding_dim"] == 768 for chunk in chunks)
-    assert all(chunk["meta_info"]["filename"] == f"smoke_{suffix}.txt" for chunk in chunks)
+    assert all(
+        chunk["meta_info"]["filename"] == f"smoke_{suffix}.md" for chunk in chunks
+    )
     assert all(chunk["meta_info"]["path"] == file_body["file_path"] for chunk in chunks)
 
     indexed_text = "\n".join(chunk["content"] for chunk in chunks)

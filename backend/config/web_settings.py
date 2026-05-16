@@ -97,6 +97,17 @@ class WebSettings(BaseSettings):
             raise ValueError("SECRET_KEY must not be empty")
         return value
 
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug_flag(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            val = value.strip().lower()
+            if val == "release":
+                return False
+            if val == "debug":
+                return True
+        return value
+
     @field_validator(
         "BACKEND_CORS_ORIGINS",
         "BACKEND_CORS_METHODS",
