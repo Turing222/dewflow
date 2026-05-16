@@ -10,6 +10,8 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
 async def test_minimal_workflow_construction():
     uow = MagicMock()
     dispatcher = AsyncMock()
-    workflow = ChatWorkflow(uow, dispatcher)
+    redis_client = AsyncMock()
+    permission_service = MagicMock()
+    workflow = ChatWorkflow(uow, dispatcher, redis_client, permission_service)
 
     assert workflow is not None

@@ -6,8 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
-pytestmark = pytest.mark.integration
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -16,8 +14,11 @@ from backend.api.v1.endpoint import chat_api
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.config.settings import settings
 from backend.models.orm.chat import MessageStatus
+from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationResult
+
+pytestmark = pytest.mark.integration
 
 
 class _FakeEncoding:
@@ -143,6 +144,9 @@ class FakeChatRepo:
 
     async def get_session(self, session_id: uuid.UUID):
         return self.sessions.get(session_id)
+
+    async def get_context_state(self, session_id: uuid.UUID) -> ContextState:
+        return ContextState()
 
     async def create_message(
         self,

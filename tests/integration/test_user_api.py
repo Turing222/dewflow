@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-pytestmark = pytest.mark.integration
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -16,8 +16,14 @@ from backend.core.exception_handlers import setup_exception_handlers
 from backend.core.exceptions import app_forbidden
 from backend.models.schemas.user_schema import UserImportResponse
 
+pytestmark = pytest.mark.integration
+
 
 class DummyUoW:
+    @asynccontextmanager
+    async def read_context(self) -> AsyncIterator[None]:
+        yield
+
     async def __aenter__(self):
         return self
 

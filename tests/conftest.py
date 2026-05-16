@@ -5,18 +5,38 @@ Fixtures that require app startup should live in tests/integration/conftest.py.
 """
 
 import os
+from collections.abc import Iterator
 
 import pytest
 
+from tests.helpers.env import REQUIRED_ENV_BY_MARKER, get_test_profile, optional_env
 
-def pytest_configure():
+
+def pytest_configure() -> None:
     """Normalize env before test collection imports backend settings."""
+    get_test_profile()
     os.environ.setdefault("APP_ENV", "test")
     os.environ.setdefault("SECRET_KEY", "test-secret")
 
 
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Skip tests that need unavailable profile capabilities."""
+    profile = get_test_profile()
+    marker_names = {marker.name for marker in item.iter_markers()}
+
+    if "local_only" in marker_names and profile == "ci":
+        pytest.skip("local_only test is skipped in CI profile")
+
+    if "ci_only" in marker_names and profile != "ci":
+        pytest.skip("ci_only test requires CI profile")
+
+    for marker_name, env_name in REQUIRED_ENV_BY_MARKER.items():
+        if marker_name in marker_names and optional_env(env_name) is None:
+            pytest.skip(f"{marker_name} requires {env_name}")
+
+
 @pytest.fixture(autouse=True)
-def stable_token_counter(monkeypatch):
+def stable_token_counter(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep token counting local and deterministic in tests."""
     from backend.ai.core import token_counter
 

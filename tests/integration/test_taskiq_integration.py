@@ -11,12 +11,16 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
-
-pytestmark = pytest.mark.integration
 import redis.asyncio as redis
 
 from backend.config.settings import settings
 from tests.integration.taskiq_test_tasks import integration_echo_task
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.requires_redis,
+    pytest.mark.requires_taskiq,
+]
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 TASKIQ_BIN = BACKEND_ROOT / ".venv/bin/taskiq"

@@ -107,6 +107,13 @@ markers = [
     "smoke: fast smoke tests for critical paths",
     "performance: concurrency/load-oriented tests, excluded from default runs",
     "integration: tests that require external services like PostgreSQL or Redis",
+    "requires_db: tests that require a PostgreSQL database URL via TEST_DATABASE_URL",
+    "requires_redis: tests that require a Redis URL via TEST_REDIS_URL",
+    "requires_taskiq: tests that require a TaskIQ Redis URL via TEST_TASKIQ_REDIS_URL",
+    "requires_s3: tests that require an S3 or MinIO endpoint via TEST_S3_ENDPOINT_URL",
+    "requires_llm: tests that require a real LLM API key via TEST_LLM_API_KEY",
+    "local_only: tests intended only for local developer runs",
+    "ci_only: tests intended only for CI profile runs",
 ]
 
 [tool.ty.environment]

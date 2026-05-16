@@ -9,13 +9,13 @@ from __future__ import annotations
 import os
 
 import pytest
-
-pytestmark = pytest.mark.integration
 import redis.asyncio as redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from backend.config.settings import settings
+
+pytestmark = pytest.mark.integration
 
 
 def _is_ci() -> bool:
@@ -23,6 +23,7 @@ def _is_ci() -> bool:
 
 
 @pytest.mark.asyncio
+@pytest.mark.requires_db
 async def test_ci_postgres_service_is_reachable() -> None:
     engine = create_async_engine(
         settings.database_url,
@@ -42,6 +43,7 @@ async def test_ci_postgres_service_is_reachable() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.requires_redis
 async def test_ci_redis_service_is_reachable() -> None:
     client = redis.from_url(settings.taskiq_redis_url, decode_responses=True)
     try:

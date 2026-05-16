@@ -25,7 +25,7 @@ export SMOKE_READY_PATH
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-unit qa-test-integration qa-test-all qa-checks \
+	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-unit qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks \
 	image-build \
 	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
@@ -46,6 +46,9 @@ help:
 		'  qa-config-check      Validate config/env for deployment contexts' \
 		'  qa-test-unit         Run unit tests (UNIT_TARGETS=...)' \
 		'  qa-test-integration  Run integration tests (INTEGRATION_TARGETS=...)' \
+		'  qa-test-local        Run local default pytest profile' \
+		'  qa-test-ci           Run CI-safe pytest profile' \
+		'  qa-test-external     Run tests that need external dependencies' \
 		'  qa-test-all          Run all pytest suites except excluded markers' \
 		'  qa-checks            Run lint and typecheck via scripts' \
 		'  image-build          Build the backend Docker image' \
@@ -88,10 +91,19 @@ qa-config-check:
 	uv run python scripts/qa/config_check.py $(ARGS)
 
 qa-test-unit:
-	bash scripts/qa/run_unit.sh $(PYTEST_ARGS) $(UNIT_TARGETS)
+	DEWFLOW_TEST_PROFILE=unit bash scripts/qa/run_unit.sh $(PYTEST_ARGS) $(UNIT_TARGETS)
 
 qa-test-integration:
-	bash scripts/qa/run_integration.sh $(PYTEST_ARGS) $(INTEGRATION_TARGETS)
+	DEWFLOW_TEST_PROFILE=local bash scripts/qa/run_integration.sh $(PYTEST_ARGS) $(INTEGRATION_TARGETS)
+
+qa-test-local:
+	DEWFLOW_TEST_PROFILE=local uv run pytest -m "not performance" $(PYTEST_ARGS)
+
+qa-test-ci:
+	DEWFLOW_TEST_PROFILE=ci uv run pytest -m "not performance and not local_only and not requires_llm and not requires_s3" $(PYTEST_ARGS)
+
+qa-test-external:
+	DEWFLOW_TEST_PROFILE=external uv run pytest -m "requires_llm or requires_s3 or requires_taskiq" $(PYTEST_ARGS)
 
 qa-test-all:
 	uv run pytest $(PYTEST_ARGS)
