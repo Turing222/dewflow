@@ -28,9 +28,9 @@ export SMOKE_READY_PATH
 .PHONY: help \
 	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks \
 	image-build \
-	env-smoke-prepare env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
+	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
-	seed-dev \
+	set-llm seed-dev \
 	verify-smoke \
 	flow-static flow-runtime flow-dev-check flow-ci layer-deps \
 	lint format typecheck test check clean-cache
@@ -56,6 +56,7 @@ help:
 		'  qa-checks            Run lint and typecheck via scripts' \
 		'  image-build          Build the backend Docker image' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
+		'  env-smoke-check      Run preflight checks for smoke environment (API keys)' \
 		'  env-smoke-up         Start the smoke environment' \
 		'  env-smoke-wait       Wait until the smoke environment is reachable' \
 		'  env-smoke-create-kb  Create a manual/smoke knowledge base for an existing user' \
@@ -63,6 +64,7 @@ help:
 		'  env-debug-down       Stop Docker debug dependencies' \
 		'  env-debug-logs       Show recent Docker debug dependency logs' \
 		'  env-debug-services   List services enabled by the debug compose stack' \
+		'  set-llm              Set API key securely (Usage: make set-llm PROVIDER=gemini)' \
 		'  seed-dev             Seed fixed local data for admin/permission testing' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
 		'  env-smoke-down       Stop the smoke environment' \
@@ -126,7 +128,10 @@ image-build:
 env-smoke-prepare:
 	bash scripts/smoke/prepare_env.sh
 
-env-smoke-up:
+env-smoke-check:
+	bash scripts/smoke/check_env.sh
+
+env-smoke-up: env-smoke-check
 	bash scripts/smoke/up.sh
 
 env-smoke-wait:
@@ -134,6 +139,9 @@ env-smoke-wait:
 
 env-smoke-create-kb:
 	bash scripts/smoke/create_kb.sh $(ARGS)
+
+set-llm:
+	@bash scripts/smoke/set_llm.sh "$(PROVIDER)"
 
 seed-dev:
 	uv run python scripts/seed/dev_seed.py $(ARGS)

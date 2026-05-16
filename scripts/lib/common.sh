@@ -99,6 +99,7 @@ generate_smoke_secret() {
 ensure_smoke_secret_file() {
     local env_name="$1"
     local default_path="$2"
+    local mode="${3:-random}"
     local secret_path
     local secret_dir
 
@@ -107,19 +108,45 @@ ensure_smoke_secret_file() {
     secret_dir="$(dirname "$secret_path")"
 
     mkdir -p "$secret_dir"
+    
     if [[ -s "$secret_path" ]]; then
+        chmod 600 "$secret_path"
+        return
+    fi
+    if [[ -f "$secret_path" && "$mode" == "empty" ]]; then
+        chmod 600 "$secret_path"
         return
     fi
 
-    umask 077
-    generate_smoke_secret >"$secret_path"
-    log_info "Generated smoke secret: $secret_path"
+    (
+        umask 077
+        if [[ "$mode" == "empty" ]]; then
+            touch "$secret_path"
+            log_info "Created empty secret file: $secret_path"
+        else
+            generate_smoke_secret >"$secret_path"
+            log_info "Generated smoke secret: $secret_path"
+        fi
+        chmod 600 "$secret_path"
+    )
 }
 
 ensure_smoke_required_secrets() {
-    ensure_smoke_secret_file "SMOKE_SECRET_KEY_FILE" "./secrets/smoke/secret_key.txt"
-    ensure_smoke_secret_file "SMOKE_POSTGRES_PASSWORD_FILE" "./secrets/smoke/postgres_password.txt"
-    ensure_smoke_secret_file "SMOKE_REDIS_PASSWORD_FILE" "./secrets/smoke/redis_password.txt"
+    ensure_smoke_secret_file "SMOKE_SECRET_KEY_FILE" "./secrets/smoke/secret_key.txt" "random"
+    ensure_smoke_secret_file "SMOKE_POSTGRES_PASSWORD_FILE" "./secrets/smoke/postgres_password.txt" "random"
+    ensure_smoke_secret_file "SMOKE_REDIS_PASSWORD_FILE" "./secrets/smoke/redis_password.txt" "random"
+
+    # Auto-touch empty API key files
+    ensure_smoke_secret_file "SMOKE_OPENAI_API_KEY_FILE" "./secrets/smoke/openai_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_DASHSCOPE_API_KEY_FILE" "./secrets/smoke/dashscope_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_GEMINI_API_KEY_FILE" "./secrets/smoke/gemini_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_GOOGLE_API_KEY_FILE" "./secrets/smoke/google_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_FILE" "./secrets/smoke/deepseek_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_LLM_API_KEY_FILE" "./secrets/smoke/llm_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_RAG_EMBED_API_KEY_FILE" "./secrets/smoke/rag_embed_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_LANGFUSE_SECRET_KEY_FILE" "./secrets/smoke/langfuse_secret_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_S3_ACCESS_KEY_ID_FILE" "./secrets/smoke/s3_access_key_id.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_S3_SECRET_ACCESS_KEY_FILE" "./secrets/smoke/s3_secret_access_key.txt" "empty"
 }
 
 ensure_smoke_volumes() {
