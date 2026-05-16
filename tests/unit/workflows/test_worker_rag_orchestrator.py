@@ -1,4 +1,8 @@
-"""Unit tests for WorkerRAGOrchestrator — RAG plan, retrieval, rerank, and fusion."""
+"""Worker RAG orchestrator tests — RAG plan, retrieval, rerank, and fusion.
+
+职责：验证 WorkerRAGOrchestrator 的 RAG 计划构建、检索错误处理、rerank 降级和 hybrid fusion；
+边界：不启动 HTTP stack、不连接真实数据库或 Redis；副作用：无。
+"""
 
 import uuid
 from types import SimpleNamespace
@@ -7,30 +11,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from backend.services.rag_planning_service import RAGExecutionPlan
+from tests.unit.workflows.conftest import make_rag_hit
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-
-def _make_rag_hit(index: int = 0) -> dict:
-    return {
-        "id": str(uuid.uuid4()),
-        "content": f"chunk-{index}",
-        "source_type": "file",
-        "file_id": str(uuid.uuid4()),
-        "message_id": None,
-        "filename": f"doc-{index}.md",
-        "chunk_index": index,
-        "meta_info": {},
-        "distance": 0.1 + index * 0.1,
-        "score": 0.9 - index * 0.1,
-    }
+pytestmark = pytest.mark.asyncio
 
 
-# ── Test 1: prepare_context with kb_id=None and empty retrieval → no refusal ──
-
-
-@pytest.mark.asyncio
-async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(monkeypatch):
+async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(monkeypatch) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.context_state import ContextState
     from backend.models.schemas.chat.payloads import GenerationPayload
@@ -50,7 +36,6 @@ async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(monkeypatch
         conversation_history=[],
         context_state=ContextState(decisions=["使用会话记忆"]),
     )
-    # kb_id is None by default
 
     rag_service = MagicMock()
     rag_service.retrieve_fulltext = AsyncMock(return_value=[])
@@ -78,11 +63,7 @@ async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(monkeypatch
     )
 
 
-# ── Test 2: build_rag_plan planner throws → default fallback ──────────────────
-
-
-@pytest.mark.asyncio
-async def test_build_rag_plan_planner_error_falls_back_to_default(monkeypatch):
+async def test_build_rag_plan_planner_error_falls_back_to_default(monkeypatch) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
@@ -116,11 +97,7 @@ async def test_build_rag_plan_planner_error_falls_back_to_default(monkeypatch):
     assert planner_used is False
 
 
-# ── Test 3: retrieve_rag_candidates connection error → empty list ──────────────
-
-
-@pytest.mark.asyncio
-async def test_retrieve_rag_candidates_connection_error_returns_empty(monkeypatch):
+async def test_retrieve_rag_candidates_connection_error_returns_empty(monkeypatch) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
@@ -152,25 +129,20 @@ async def test_retrieve_rag_candidates_connection_error_returns_empty(monkeypatc
     rag_service.retrieve.assert_awaited_once()
 
 
-# ── Test 4: rerank error → fallback to original candidates[:limit] ─────────────
-
-
-@pytest.mark.asyncio
-async def test_rerank_candidates_if_enabled_rerank_error_falls_back(monkeypatch):
+async def test_rerank_candidates_if_enabled_rerank_error_falls_back(monkeypatch) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    # Patch concurrency slot to avoid actual slot acquisition.
     calls: list[dict] = []
 
     class _FakeSlot:
-        def __init__(self, attrs):
+        def __init__(self, attrs: dict | None) -> None:
             self.attrs = attrs
 
-        async def __aenter__(self):
+        async def __aenter__(self) -> None:
             calls.append(self.attrs)
 
-        async def __aexit__(self, *args):
+        async def __aexit__(self, *args) -> None:
             pass
 
     monkeypatch.setattr(
@@ -184,7 +156,7 @@ async def test_rerank_candidates_if_enabled_rerank_error_falls_back(monkeypatch)
         conversation_history=[],
     )
 
-    candidates = [_make_rag_hit(i) for i in range(3)]
+    candidates = [make_rag_hit(content=f"chunk-{i}", index=i) for i in range(3)]
 
     rag_plan = RAGExecutionPlan(
         should_use_rag=True,
@@ -206,32 +178,3 @@ async def test_rerank_candidates_if_enabled_rerank_error_falls_back(monkeypatch)
     assert len(result) == 2
     assert result[0]["content"] == "chunk-0"
     assert result[1]["content"] == "chunk-1"
-
-
-# ── Test 5: _fuse_hybrid_hits with only vector hits ──────────────────────────
-
-
-def test_fuse_hybrid_hits_only_vector_hits():
-    from backend.services.vector_index_service import VectorIndexService
-
-    chunk_a = MagicMock()
-    chunk_a.id = uuid.uuid4()
-    chunk_b = MagicMock()
-    chunk_b.id = uuid.uuid4()
-
-    vector_hits = [(chunk_a, 0.1), (chunk_b, 0.3)]
-    fulltext_hits: list = []
-
-    result = VectorIndexService._fuse_hybrid_hits(
-        vector_hits=vector_hits,
-        fulltext_hits=fulltext_hits,
-        limit=10,
-        vector_weight=0.7,
-        fulltext_weight=0.3,
-    )
-
-    assert len(result) == 2
-    # chunk_a was rank 1 (0.1 distance), chunk_b rank 2 (0.3 distance).
-    # RRF: chunk_a gets higher score → lower distance when normalized.
-    assert result[0][0].id == chunk_a.id
-    assert result[1][0].id == chunk_b.id

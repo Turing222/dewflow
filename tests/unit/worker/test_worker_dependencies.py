@@ -1,3 +1,8 @@
+"""Worker dependencies unit tests.
+
+职责：验证 WorkerContainer 关闭清理和 wrapper 函数委托行为；边界：使用 DummyEngine/DummyContainer 替身，不连接真实基础设施；副作用：无。
+"""
+
 from unittest.mock import AsyncMock
 
 import pytest
@@ -7,7 +12,7 @@ from backend.worker.dependencies import WorkerContainer
 
 
 @pytest.fixture(autouse=True)
-def reset_worker_container():
+def reset_worker_container() -> None:
     dependencies.set_worker_container(None)
     yield
     dependencies.set_worker_container(None)
@@ -28,27 +33,27 @@ class DummyContainer:
         self.object_storage = object()
         self.close = AsyncMock()
 
-    def get_session_factory(self):
+    def get_session_factory(self) -> object:
         return self.session_factory
 
-    def get_llm_service(self):
+    def get_llm_service(self) -> object:
         return self.llm_service
 
-    def get_embedder(self):
+    def get_embedder(self) -> object:
         return self.embedder
 
-    def get_rag_service(self, llm_service=None):
+    def get_rag_service(self, llm_service: object = None) -> object:  # type: ignore[override]
         return self.rag_service
 
-    def get_rag_planning_service(self):
+    def get_rag_planning_service(self) -> object:
         return self.rag_planning_service
 
-    def get_object_storage(self):
+    def get_object_storage(self) -> object:
         return self.object_storage
 
 
 @pytest.mark.asyncio
-async def test_worker_container_close_disposes_engine() -> None:
+async def test_worker_container_close_disposes_engine_and_clears_refs() -> None:
     container = WorkerContainer()
     engine = DummyEngine()
     llm_service = AsyncMock()
@@ -75,7 +80,7 @@ async def test_worker_container_close_disposes_engine() -> None:
     assert container._object_storage is None
 
 
-def test_worker_wrapper_functions_delegate_to_container() -> None:
+def test_wrapper_functions_delegate_to_container_return_services() -> None:
     container = DummyContainer()
     dependencies.set_worker_container(container)
 

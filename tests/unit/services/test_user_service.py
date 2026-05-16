@@ -1,3 +1,8 @@
+"""User service unit tests.
+
+职责：验证 UserService 的注册、认证和工作空间创建行为；边界：使用 SimpleNamespace mock 和 monkeypatch，不连接真实数据库；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -16,7 +21,7 @@ from backend.services.user_service import UserService
 
 
 @pytest.fixture
-def service_ctx():
+def user_service_ctx() -> SimpleNamespace:
     repo = SimpleNamespace(
         get_by_email=AsyncMock(),
         get_by_username=AsyncMock(),
@@ -47,12 +52,14 @@ def _build_user_create() -> UserCreate:
 
 
 @pytest.mark.asyncio
-async def test_user_register_success(service_ctx, monkeypatch):
+async def test_user_register_returns_created_user(
+    user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     user_in = _build_user_create()
-    service_ctx.repo.get_by_email.return_value = None
-    service_ctx.repo.get_by_username.return_value = None
+    user_service_ctx.repo.get_by_email.return_value = None
+    user_service_ctx.repo.get_by_username.return_value = None
     created_user = SimpleNamespace(id=uuid.uuid4(), username=user_in.username)
-    service_ctx.repo.create.return_value = created_user
+    user_service_ctx.repo.create.return_value = created_user
 
     async def fake_hash(password: str) -> str:
         assert password == "Password123"
@@ -60,10 +67,10 @@ async def test_user_register_success(service_ctx, monkeypatch):
 
     monkeypatch.setattr("backend.services.user_service.get_password_hash", fake_hash)
 
-    result = await service_ctx.service.user_register(user_in)
+    result = await user_service_ctx.service.user_register(user_in)
 
     assert result == created_user
-    create_call = service_ctx.repo.create.await_args.kwargs["obj_in"]
+    create_call = user_service_ctx.repo.create.await_args.kwargs["obj_in"]
     assert create_call["username"] == "new_user"
     assert create_call["email"] == "new_user@example.com"
     assert create_call["hashed_password"] == "hashed-password"
@@ -72,39 +79,39 @@ async def test_user_register_success(service_ctx, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_user_register_with_personal_workspace_creates_owner_workspace(
-    service_ctx, monkeypatch
-):
+async def test_user_register_with_personal_workspace_creates_owner_workspace_role(
+    user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     user_in = _build_user_create()
     user_id = uuid.uuid4()
     created_user = SimpleNamespace(id=user_id, username=user_in.username)
     workspace = SimpleNamespace(id=uuid.uuid4())
-    service_ctx.repo.get_by_email.return_value = None
-    service_ctx.repo.get_by_username.return_value = None
-    service_ctx.repo.create.return_value = created_user
-    service_ctx.access_repo.create_workspace.return_value = workspace
+    user_service_ctx.repo.get_by_email.return_value = None
+    user_service_ctx.repo.get_by_username.return_value = None
+    user_service_ctx.repo.create.return_value = created_user
+    user_service_ctx.access_repo.create_workspace.return_value = workspace
 
     async def fake_hash(_: str) -> str:
         return "hashed-password"
 
     monkeypatch.setattr("backend.services.user_service.get_password_hash", fake_hash)
 
-    result = await service_ctx.service.user_register_with_personal_workspace(user_in)
+    result = await user_service_ctx.service.user_register_with_personal_workspace(user_in)
 
     assert result is created_user
-    service_ctx.access_repo.create_workspace.assert_awaited_once_with(
+    user_service_ctx.access_repo.create_workspace.assert_awaited_once_with(
         name="new_user's Workspace",
         slug=f"new_user-{user_id.hex[:8]}",
         owner_id=user_id,
     )
-    service_ctx.access_repo.add_workspace_role.assert_awaited_once_with(
+    user_service_ctx.access_repo.add_workspace_role.assert_awaited_once_with(
         user_id=user_id,
         workspace_id=workspace.id,
         role=WorkspaceRole.OWNER,
     )
 
 
-def test_user_create_forbids_role_and_workspace_fields():
+def test_user_create_forbids_role_and_workspace_fields_raises_validation_error() -> None:
     with pytest.raises(ValueError):
         UserCreate.model_validate(
             {
@@ -118,29 +125,33 @@ def test_user_create_forbids_role_and_workspace_fields():
 
 
 @pytest.mark.asyncio
-async def test_user_register_rejects_existing_email(service_ctx):
-    service_ctx.repo.get_by_email.return_value = SimpleNamespace(id=uuid.uuid4())
+async def test_user_register_rejects_existing_email(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    user_service_ctx.repo.get_by_email.return_value = SimpleNamespace(id=uuid.uuid4())
 
     with pytest.raises(AppException, match="该邮箱已被注册"):
-        await service_ctx.service.user_register(_build_user_create())
+        await user_service_ctx.service.user_register(_build_user_create())
 
 
 @pytest.mark.asyncio
-async def test_user_register_rejects_existing_username(service_ctx):
-    service_ctx.repo.get_by_email.return_value = None
-    service_ctx.repo.get_by_username.return_value = SimpleNamespace(id=uuid.uuid4())
+async def test_user_register_rejects_existing_username(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    user_service_ctx.repo.get_by_email.return_value = None
+    user_service_ctx.repo.get_by_username.return_value = SimpleNamespace(id=uuid.uuid4())
 
     with pytest.raises(AppException, match="该用户名已被注册"):
-        await service_ctx.service.user_register(_build_user_create())
+        await user_service_ctx.service.user_register(_build_user_create())
 
 
 @pytest.mark.asyncio
 async def test_user_register_maps_integrity_error_to_validation_error(
-    service_ctx, monkeypatch
-):
-    service_ctx.repo.get_by_email.return_value = None
-    service_ctx.repo.get_by_username.return_value = None
-    service_ctx.repo.create.side_effect = IntegrityError(
+    user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_service_ctx.repo.get_by_email.return_value = None
+    user_service_ctx.repo.get_by_username.return_value = None
+    user_service_ctx.repo.create.side_effect = IntegrityError(
         "insert users", {"username": "new_user"}, Exception("duplicate key")
     )
 
@@ -150,25 +161,29 @@ async def test_user_register_maps_integrity_error_to_validation_error(
     monkeypatch.setattr("backend.services.user_service.get_password_hash", fake_hash)
 
     with pytest.raises(AppException, match="用户名或邮箱已被注册"):
-        await service_ctx.service.user_register(_build_user_create())
+        await user_service_ctx.service.user_register(_build_user_create())
 
 
 @pytest.mark.asyncio
-async def test_user_update_raises_not_found_when_user_missing(service_ctx):
-    service_ctx.repo.get.return_value = None
+async def test_user_update_raises_not_found_when_user_missing(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    user_service_ctx.repo.get.return_value = None
 
     with pytest.raises(AppException, match="用户不存在"):
-        await service_ctx.service.user_update(
+        await user_service_ctx.service.user_update(
             user_id=uuid.uuid4(),
             user_in=UserUpdate(username="new_name"),
         )
 
 
 @pytest.mark.asyncio
-async def test_authenticate_returns_none_when_user_missing(service_ctx):
-    service_ctx.repo.get_by_username.return_value = None
+async def test_authenticate_returns_none_when_user_missing(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    user_service_ctx.repo.get_by_username.return_value = None
 
-    result = await service_ctx.service.authenticate(
+    result = await user_service_ctx.service.authenticate(
         UserLogin(username="new_user", password="Password123")
     )
 
@@ -177,17 +192,17 @@ async def test_authenticate_returns_none_when_user_missing(service_ctx):
 
 @pytest.mark.asyncio
 async def test_authenticate_returns_none_when_password_invalid(
-    service_ctx, monkeypatch
-):
+    user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     user = SimpleNamespace(id=uuid.uuid4(), hashed_password="hashed")
-    service_ctx.repo.get_by_username.return_value = user
+    user_service_ctx.repo.get_by_username.return_value = user
 
-    async def fake_verify(_, __) -> bool:
+    async def fake_verify(_: str, __: str) -> bool:
         return False
 
     monkeypatch.setattr("backend.services.user_service.verify_password", fake_verify)
 
-    result = await service_ctx.service.authenticate(
+    result = await user_service_ctx.service.authenticate(
         UserLogin(username="new_user", password="Password123")
     )
 
@@ -195,16 +210,18 @@ async def test_authenticate_returns_none_when_password_invalid(
 
 
 @pytest.mark.asyncio
-async def test_authenticate_success(service_ctx, monkeypatch):
+async def test_authenticate_returns_user_on_valid_credentials(
+    user_service_ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     user = SimpleNamespace(id=uuid.uuid4(), hashed_password="hashed")
-    service_ctx.repo.get_by_username.return_value = user
+    user_service_ctx.repo.get_by_username.return_value = user
 
-    async def fake_verify(_, __) -> bool:
+    async def fake_verify(_: str, __: str) -> bool:
         return True
 
     monkeypatch.setattr("backend.services.user_service.verify_password", fake_verify)
 
-    result = await service_ctx.service.authenticate(
+    result = await user_service_ctx.service.authenticate(
         UserLogin(username="new_user", password="Password123")
     )
 

@@ -1,7 +1,12 @@
+"""Chunking service unit tests.
+
+职责：验证 ChunkingService 的 Markdown 结构拆分、段落合并和固定窗口回退行为；边界：纯函数调用，不依赖外部服务；副作用：无。
+"""
+
 from backend.services.chunking_service import ChunkingService
 
 
-def test_split_markdown_tracks_heading_section_path():
+def test_split_markdown_tracks_heading_section_path_in_chunks() -> None:
     service = ChunkingService(chunk_size=200, chunk_overlap=20)
 
     chunks = service.split_text(
@@ -18,7 +23,7 @@ def test_split_markdown_tracks_heading_section_path():
     assert [chunk["chunk_index"] for chunk in chunks] == [0, 1, 2]
 
 
-def test_split_markdown_keeps_fenced_code_block_together():
+def test_split_markdown_keeps_fenced_code_block_together_in_one_chunk() -> None:
     service = ChunkingService(chunk_size=200, chunk_overlap=20)
 
     chunks = service.split_text(
@@ -31,7 +36,7 @@ def test_split_markdown_keeps_fenced_code_block_together():
     assert chunks[0]["section_path"] == "Example"
 
 
-def test_split_text_merges_small_paragraphs():
+def test_split_text_merges_small_paragraphs_into_fewer_chunks() -> None:
     service = ChunkingService(chunk_size=200, chunk_overlap=20)
 
     chunks = service.split_text(
@@ -42,7 +47,7 @@ def test_split_text_merges_small_paragraphs():
     assert chunks[0]["content"] == "first paragraph\n\nsecond paragraph"
 
 
-def test_split_text_falls_back_to_fixed_window_for_long_paragraph():
+def test_split_text_falls_back_to_fixed_window_for_long_paragraph() -> None:
     service = ChunkingService(chunk_size=200, chunk_overlap=20)
 
     chunks = service.split_text("x" * 260, file_suffix=".txt")

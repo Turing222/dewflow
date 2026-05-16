@@ -1,4 +1,12 @@
+"""Chat repository unit tests.
+
+职责：验证 ChatRepository 的 session/message CRUD 和 context state 读写行为；边界：使用 AsyncMock session，不连接真实数据库；副作用：无。
+"""
+
+from __future__ import annotations
+
 import uuid
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,25 +15,28 @@ from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat.context_state import ContextState
 from backend.repositories.chat_repo import ChatRepository
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.fixture
-def mock_session():
+def mock_async_session() -> AsyncMock:
     return AsyncMock()
 
 
 @pytest.fixture
-def repo(mock_session):
+def repo(mock_async_session: AsyncMock) -> Generator[ChatRepository, None, None]:
     with patch("backend.repositories.chat_repo.CRUDBase") as mock_crud_cls:
         instance = mock_crud_cls.return_value
         instance.get = AsyncMock()
         instance.create = AsyncMock()
         instance.update = AsyncMock()
         instance.remove = AsyncMock()
-        yield ChatRepository(mock_session)
+        yield ChatRepository(mock_async_session)
 
 
-@pytest.mark.asyncio
-async def test_create_session_maps_input_into_llm_config(repo):
+async def test_create_session_maps_input_to_llm_config_returns_created(
+    repo: ChatRepository,
+) -> None:
     user_id = uuid.uuid4()
     kb_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
@@ -49,8 +60,9 @@ async def test_create_session_maps_input_into_llm_config(repo):
     assert kwargs["llm_config"] == {"temperature": 0.7}
 
 
-@pytest.mark.asyncio
-async def test_get_context_state_returns_default_when_session_missing(repo):
+async def test_get_context_state_returns_default_when_session_missing(
+    repo: ChatRepository,
+) -> None:
     repo.session_crud.get.return_value = None
 
     result = await repo.get_context_state(uuid.uuid4())
@@ -58,8 +70,9 @@ async def test_get_context_state_returns_default_when_session_missing(repo):
     assert result == ContextState()
 
 
-@pytest.mark.asyncio
-async def test_get_context_state_injects_session_version(repo):
+async def test_get_context_state_injects_session_version_into_result(
+    repo: ChatRepository,
+) -> None:
     session = MagicMock()
     session.context_state = {
         "decisions": ["使用混合检索"],
@@ -77,11 +90,12 @@ async def test_get_context_state_injects_session_version(repo):
     assert result.version == 7
 
 
-@pytest.mark.asyncio
-async def test_update_context_state_if_version_matches_returns_true(mock_session):
-    repo = ChatRepository(mock_session)
+async def test_update_context_state_if_version_matches_returns_true(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
     result_proxy = MagicMock(rowcount=1)
-    mock_session.execute.return_value = result_proxy
+    mock_async_session.execute.return_value = result_proxy
 
     updated = await repo.update_context_state_if_version_matches(
         session_id=uuid.uuid4(),
@@ -90,15 +104,16 @@ async def test_update_context_state_if_version_matches_returns_true(mock_session
     )
 
     assert updated is True
-    stmt = mock_session.execute.call_args.args[0]
+    stmt = mock_async_session.execute.call_args.args[0]
     compiled = str(stmt)
     assert "context_state_version" in compiled
 
 
-@pytest.mark.asyncio
-async def test_update_context_state_if_version_matches_returns_false(mock_session):
-    repo = ChatRepository(mock_session)
-    mock_session.execute.return_value = MagicMock(rowcount=0)
+async def test_update_context_state_if_version_matches_returns_false(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
+    mock_async_session.execute.return_value = MagicMock(rowcount=0)
 
     updated = await repo.update_context_state_if_version_matches(
         session_id=uuid.uuid4(),
@@ -109,8 +124,9 @@ async def test_update_context_state_if_version_matches_returns_false(mock_sessio
     assert updated is False
 
 
-@pytest.mark.asyncio
-async def test_create_message_passes_extended_fields(repo):
+async def test_create_message_passes_extended_fields_returns_created(
+    repo: ChatRepository,
+) -> None:
     session_id = uuid.uuid4()
     user_id = uuid.uuid4()
     expected = MagicMock()
@@ -142,26 +158,28 @@ async def test_create_message_passes_extended_fields(repo):
     assert kwargs["message_metadata"] == {"source": "test"}
 
 
-@pytest.mark.asyncio
-async def test_get_user_sessions_builds_query_and_executes(mock_session):
-    repo = ChatRepository(mock_session)
+async def test_get_user_sessions_builds_ordered_paginated_query(
+    mock_async_session: AsyncMock,
+) -> None:
+    repo = ChatRepository(mock_async_session)
     user_id = uuid.uuid4()
     result_proxy = MagicMock()
     result_proxy.scalars.return_value.all.return_value = [MagicMock(), MagicMock()]
-    mock_session.execute.return_value = result_proxy
+    mock_async_session.execute.return_value = result_proxy
 
     result = await repo.get_user_sessions(user_id=user_id, skip=2, limit=10)
 
     assert len(result) == 2
-    mock_session.execute.assert_awaited_once()
-    stmt = mock_session.execute.call_args.args[0]
+    mock_async_session.execute.assert_awaited_once()
+    stmt = mock_async_session.execute.call_args.args[0]
     sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "FROM chat_sessions" in sql
     assert "ORDER BY chat_sessions.updated_at DESC" in sql
 
 
-@pytest.mark.asyncio
-async def test_update_message_status_with_optional_fields(repo):
+async def test_update_message_status_merges_optional_fields_returns_updated(
+    repo: ChatRepository,
+) -> None:
     message_id = uuid.uuid4()
     existing = MagicMock()
     updated = MagicMock()
@@ -187,8 +205,9 @@ async def test_update_message_status_with_optional_fields(repo):
     assert kwargs["obj_in"]["tokens_output"] == 34
 
 
-@pytest.mark.asyncio
-async def test_update_message_status_returns_none_when_message_missing(repo):
+async def test_update_message_status_returns_none_when_message_missing(
+    repo: ChatRepository,
+) -> None:
     repo.message_crud.get.return_value = None
 
     result = await repo.update_message_status(

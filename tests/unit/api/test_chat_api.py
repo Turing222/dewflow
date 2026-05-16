@@ -1,12 +1,21 @@
+"""Chat API unit tests.
+
+职责：验证 chat endpoint 的 stream event 序列化和审计记录；边界：直接调用 endpoint 函数，不启动 HTTP stack 或真实 worker；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from backend.api.v1.endpoint import chat_api
 from backend.services.audit_service import AuditService
+
+pytestmark = pytest.mark.asyncio
 
 
 class CapturingSession:
@@ -16,7 +25,7 @@ class CapturingSession:
     async def __aenter__(self) -> CapturingSession:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> bool:
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool:
         return False
 
     def add(self, event: object) -> None:
@@ -35,7 +44,7 @@ class CapturingSessionFactory:
 
 
 class TypedStreamWorkflow:
-    async def handle_query_stream(self, command):
+    async def handle_query_stream(self, command: Any) -> AsyncIterator[dict[str, str]]:
         message_id = uuid.uuid4()
         yield {
             "type": "meta",
@@ -47,8 +56,7 @@ class TypedStreamWorkflow:
         yield {"type": "done"}
 
 
-@pytest.mark.asyncio
-async def test_query_stream_serializes_typed_events_and_audits_meta_resource():
+async def test_query_stream_serializes_typed_events_and_audits_meta_resource() -> None:
     session_factory = CapturingSessionFactory()
     audit_service = AuditService(
         uow=SimpleNamespace(),

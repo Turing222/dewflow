@@ -1,3 +1,8 @@
+"""Audit repository unit tests.
+
+职责：验证 AuditRepository 的计数和分页查询行为；边界：使用 AsyncMock session，不连接真实数据库；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -8,16 +13,19 @@ import pytest
 from backend.models.orm.access import AuditOutcome
 from backend.repositories.audit_repo import AuditEventFilters, AuditRepository
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.fixture
-def repo_ctx():
+def repo_ctx() -> tuple[AuditRepository, AsyncMock]:
     session = AsyncMock()
     repo = AuditRepository(session=session)
     return repo, session
 
 
-@pytest.mark.asyncio
-async def test_count_events_applies_filters(repo_ctx):
+async def test_count_events_applies_filters_returns_count(
+    repo_ctx: tuple[AuditRepository, AsyncMock],
+) -> None:
     repo, session = repo_ctx
     actor_user_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
@@ -42,8 +50,9 @@ async def test_count_events_applies_filters(repo_ctx):
     assert "audit_events.workspace_id" in sql
 
 
-@pytest.mark.asyncio
-async def test_count_events_returns_zero_when_scalar_is_none(repo_ctx):
+async def test_count_events_returns_zero_when_scalar_is_none(
+    repo_ctx: tuple[AuditRepository, AsyncMock],
+) -> None:
     repo, session = repo_ctx
     session.scalar.return_value = None
 
@@ -52,8 +61,9 @@ async def test_count_events_returns_zero_when_scalar_is_none(repo_ctx):
     assert result == 0
 
 
-@pytest.mark.asyncio
-async def test_list_events_orders_and_paginates(repo_ctx):
+async def test_list_events_orders_and_paginates_returns_filtered(
+    repo_ctx: tuple[AuditRepository, AsyncMock],
+) -> None:
     repo, session = repo_ctx
     expected = [MagicMock(), MagicMock()]
     result_proxy = MagicMock()

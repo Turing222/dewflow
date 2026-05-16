@@ -1,3 +1,9 @@
+"""Knowledge RAG ingestion workflow tests — chunking, file type validation, and embedding preparation.
+
+职责：验证 KnowledgeRAGWorkflow 的文件分块提取、类型校验、embedding 内容生成和完整摄取流程；
+边界：不启动 HTTP stack、不连接真实数据库或 S3；副作用：使用 tmp_path 写临时文件。
+"""
+
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -7,10 +13,11 @@ import pytest
 from backend.application.knowledge.ingestion_workflow import KnowledgeRAGWorkflow
 from backend.core.exceptions import AppException
 from backend.models.orm.knowledge import FileStatus
+from tests.unit.workflows.conftest import FakeAsyncUow
 
 
 class FakeChunkingService:
-    def __init__(self, chunk_size: int = 10):
+    def __init__(self, chunk_size: int = 10) -> None:
         self.chunk_size = chunk_size
         self.split_calls: list[tuple[str, str]] = []
 
@@ -32,7 +39,7 @@ def make_workflow(chunking_service: FakeChunkingService) -> KnowledgeRAGWorkflow
     )
 
 
-def test_extract_chunks_uses_markdown_channel(tmp_path):
+def test_extract_chunks_uses_markdown_channel(tmp_path) -> None:
     chunking = FakeChunkingService(chunk_size=80)
     workflow = make_workflow(chunking)
     file_path = tmp_path / "demo.md"
@@ -44,7 +51,7 @@ def test_extract_chunks_uses_markdown_channel(tmp_path):
     assert chunking.split_calls == [("# Guide\n\nplain content", ".md")]
 
 
-def test_extract_chunks_rejects_plain_text_file(tmp_path):
+def test_extract_chunks_rejects_plain_text_file(tmp_path) -> None:
     chunking = FakeChunkingService(chunk_size=10)
     workflow = make_workflow(chunking)
     file_path = tmp_path / "demo.txt"
@@ -56,7 +63,7 @@ def test_extract_chunks_rejects_plain_text_file(tmp_path):
     assert exc_info.value.code == "KNOWLEDGE_FILE_UNSUPPORTED_TYPE"
 
 
-def test_prepare_chunks_for_index_adds_contextual_embedding_content():
+def test_prepare_chunks_for_index_adds_contextual_embedding_content() -> None:
     chunks = [
         {
             "content": "body",
@@ -86,7 +93,7 @@ def test_prepare_chunks_for_index_adds_contextual_embedding_content():
     assert prepared[1]["embedding_content"] == "[文档: demo.md] [页码: 2]\npage body"
 
 
-def test_extract_chunks_rejects_docx_without_structured_parser(tmp_path):
+def test_extract_chunks_rejects_docx_without_structured_parser(tmp_path) -> None:
     chunking = FakeChunkingService()
     workflow = make_workflow(chunking)
     file_path = tmp_path / "demo.docx"
@@ -96,7 +103,7 @@ def test_extract_chunks_rejects_docx_without_structured_parser(tmp_path):
         workflow._extract_chunks(file_path)
 
 
-def test_extract_chunks_rejects_unsupported_file_suffix(tmp_path):
+def test_extract_chunks_rejects_unsupported_file_suffix(tmp_path) -> None:
     chunking = FakeChunkingService()
     workflow = make_workflow(chunking)
     file_path = tmp_path / "demo.bin"
@@ -106,16 +113,8 @@ def test_extract_chunks_rejects_unsupported_file_suffix(tmp_path):
         workflow._extract_chunks(file_path)
 
 
-class FakeAsyncUow:
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_):
-        return None
-
-
 class FakeStorage:
-    def __init__(self, path):
+    def __init__(self, path) -> None:
         self.path = path
 
     @asynccontextmanager
@@ -124,7 +123,7 @@ class FakeStorage:
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path):
+async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path) -> None:
     file_path = tmp_path / "downloaded.md"
     file_path.write_text("# Remote\n\nremote content", encoding="utf-8")
     file_obj = SimpleNamespace(
@@ -137,9 +136,9 @@ async def test_ingest_file_downloads_from_storage_before_extracting(tmp_path):
         storage_bucket="bucket",
         storage_key="key",
     )
-    statuses = []
+    statuses: list = []
 
-    async def set_file_status(*, file_id, status):
+    async def set_file_status(*, file_id, status) -> SimpleNamespace:
         statuses.append(status)
         if status == FileStatus.PARSING:
             return file_obj

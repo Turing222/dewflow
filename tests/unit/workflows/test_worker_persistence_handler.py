@@ -1,4 +1,8 @@
-"""Unit tests for WorkerPersistenceHandler — token billing and failure persistence."""
+"""Worker persistence handler tests — token billing and failure persistence.
+
+职责：验证 WorkerPersistenceHandler 的成功持久化（token 计费、幂等锁更新）和失败持久化
+（Redis 锁清理、消息状态写入）；边界：不启动 HTTP stack 或真实 Redis；副作用：无。
+"""
 
 import uuid
 from unittest.mock import AsyncMock
@@ -7,9 +11,11 @@ import pytest
 
 from backend.models.orm.chat import MessageStatus
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.fixture
-def mock_uow():
+def fake_persistence_uow() -> AsyncMock:
     uow = AsyncMock()
     uow.__aenter__ = AsyncMock(return_value=uow)
     uow.__aexit__ = AsyncMock(return_value=False)
@@ -20,24 +26,23 @@ def mock_uow():
 
 
 @pytest.fixture
-def mock_redis_client():
+def fake_persistence_redis() -> AsyncMock:
     redis_client = AsyncMock()
     redis_client.init = AsyncMock()
     return redis_client
 
 
-@pytest.mark.asyncio
 async def test_persist_success_token_limit_exceeded_writes_failed(
-    mock_uow, mock_redis_client
-):
+    fake_persistence_uow, fake_persistence_redis
+) -> None:
     from backend.application.chat.worker_persistence_handler import (
         WorkerPersistenceHandler,
     )
 
-    handler = WorkerPersistenceHandler(uow=mock_uow, redis_client=mock_redis_client)
+    handler = WorkerPersistenceHandler(uow=fake_persistence_uow, redis_client=fake_persistence_redis)
 
     assistant_message_id = uuid.uuid4()
-    mock_uow.user_repo.try_increment_used_tokens_with_limit = AsyncMock(
+    fake_persistence_uow.user_repo.try_increment_used_tokens_with_limit = AsyncMock(
         return_value=False
     )
 
@@ -51,22 +56,21 @@ async def test_persist_success_token_limit_exceeded_writes_failed(
         start_time=0.0,
     )
 
-    mock_uow.chat_repo.update_message_status.assert_awaited_once()
-    call_kwargs = mock_uow.chat_repo.update_message_status.call_args.kwargs
+    fake_persistence_uow.chat_repo.update_message_status.assert_awaited_once()
+    call_kwargs = fake_persistence_uow.chat_repo.update_message_status.call_args.kwargs
     assert call_kwargs["status"] == MessageStatus.FAILED
     assert call_kwargs["content"] == "Token 余额不足，本次消耗未记录"
     assert call_kwargs["message_metadata"]["response_outcome"] == "failed"
 
 
-@pytest.mark.asyncio
 async def test_persist_success_assistant_message_id_none_skips(
-    mock_uow, mock_redis_client
-):
+    fake_persistence_uow, fake_persistence_redis
+) -> None:
     from backend.application.chat.worker_persistence_handler import (
         WorkerPersistenceHandler,
     )
 
-    handler = WorkerPersistenceHandler(uow=mock_uow, redis_client=mock_redis_client)
+    handler = WorkerPersistenceHandler(uow=fake_persistence_uow, redis_client=fake_persistence_redis)
 
     await handler.persist_success(
         assistant_message_id=None,
@@ -78,23 +82,22 @@ async def test_persist_success_assistant_message_id_none_skips(
         start_time=0.0,
     )
 
-    mock_uow.user_repo.try_increment_used_tokens_with_limit.assert_not_awaited()
-    mock_uow.chat_repo.update_message_status.assert_not_awaited()
+    fake_persistence_uow.user_repo.try_increment_used_tokens_with_limit.assert_not_awaited()
+    fake_persistence_uow.chat_repo.update_message_status.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_persist_failure_redis_lock_cleanup_fails_still_writes_message(
-    mock_uow, mock_redis_client
-):
+    fake_persistence_uow, fake_persistence_redis
+) -> None:
     from backend.application.chat.worker_persistence_handler import (
         WorkerPersistenceHandler,
     )
 
     mock_redis_conn = AsyncMock()
     mock_redis_conn.delete = AsyncMock(side_effect=ConnectionError("Redis gone"))
-    mock_redis_client.init = AsyncMock(return_value=mock_redis_conn)
+    fake_persistence_redis.init = AsyncMock(return_value=mock_redis_conn)
 
-    handler = WorkerPersistenceHandler(uow=mock_uow, redis_client=mock_redis_client)
+    handler = WorkerPersistenceHandler(uow=fake_persistence_uow, redis_client=fake_persistence_redis)
 
     await handler.persist_failure(
         assistant_message_id=uuid.uuid4(),
@@ -103,32 +106,30 @@ async def test_persist_failure_redis_lock_cleanup_fails_still_writes_message(
     )
 
     mock_redis_conn.delete.assert_awaited_once_with("somekey")
-    mock_uow.chat_repo.update_message_status.assert_awaited_once()
+    fake_persistence_uow.chat_repo.update_message_status.assert_awaited_once()
     assert (
-        mock_uow.chat_repo.update_message_status.call_args.kwargs["status"]
+        fake_persistence_uow.chat_repo.update_message_status.call_args.kwargs["status"]
         == MessageStatus.FAILED
     )
 
 
-@pytest.mark.asyncio
 async def test_persist_failure_update_throws_swallowed(
-    mock_uow, mock_redis_client
-):
+    fake_persistence_uow, fake_persistence_redis
+) -> None:
     from backend.application.chat.worker_persistence_handler import (
         WorkerPersistenceHandler,
     )
 
-    mock_uow.chat_repo.update_message_status = AsyncMock(
+    fake_persistence_uow.chat_repo.update_message_status = AsyncMock(
         side_effect=RuntimeError("DB error")
     )
 
-    handler = WorkerPersistenceHandler(uow=mock_uow, redis_client=mock_redis_client)
+    handler = WorkerPersistenceHandler(uow=fake_persistence_uow, redis_client=fake_persistence_redis)
 
-    # Should not raise — exception is swallowed internally.
     await handler.persist_failure(
         assistant_message_id=uuid.uuid4(),
         error_content="failed",
         idempotency_lock_key=None,
     )
 
-    mock_uow.chat_repo.update_message_status.assert_awaited_once()
+    fake_persistence_uow.chat_repo.update_message_status.assert_awaited_once()

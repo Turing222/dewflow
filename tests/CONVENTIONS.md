@@ -40,11 +40,23 @@
 - fixture 默认保持局部；只有两个以上文件复用时再上移。
 - 对环境变量、时间、UUID、token 计数等不稳定来源做显式固定。
 
+## Unit 测试写法
+
+- 每个文件围绕一个模块或一组紧密相关行为组织，不混入跨层级集成验证。
+- 文件顶部优先写模块职责 header，说明职责、边界和副作用。
+- 先覆盖行为边界，再统一格式；至少考虑成功、拒绝/失败、边界值、跳过/旁路、依赖异常或空结果。
+- 测试名使用 `test_<行为>_<预期结果>`，避免只写 `test_success`、`test_error`。
+- async 文件可以使用文件级 `pytestmark = pytest.mark.asyncio`，不要在每个函数重复标记。
+- fixture 名称表达被测上下文或能力，例如 `payload_client`、`fake_user_repo`；避免泛泛的 `client`、`mock`。
+- fixture 和测试函数补返回类型；异步生成器 fixture 使用 `AsyncIterator[...]`。
+- mock 只断言关键协作参数，不把无关调用顺序和内部实现全部钉死。
+- 注释只解释风险、边界或非显然约束，不解释代码正在做什么。
+
 ## Marker 规则
 
 - `component`: 进程内组件测试，通常使用 ASGI client、dependency override 和 fake/mock 依赖。
 - `integration`: 依赖真实基础设施、完整应用生命周期或真实跨进程协作的测试。
-- `smoke`: 少量关键链路可用性测试。
+- `smoke`: 针对运行中环境的真实 HTTP stack 冒烟测试，通常访问 `SMOKE_BASE_URL`。
 - `performance`: 并发、负载、耗时或资源敏感测试，默认排除。
 - `requires_db`: 需要 `TEST_DATABASE_URL`。
 - `requires_redis`: 需要 `TEST_REDIS_URL`。
@@ -64,7 +76,90 @@
 - 测试文件出现真实 S3 client 或 `TEST_S3_ENDPOINT_URL` 时，必须标记 `requires_s3`。
 - 测试文件出现 `TEST_LLM_API_KEY` 时，必须标记 `requires_llm`。
 - `tests/smoke/` 使用 `SMOKE_*` 环境和 `smoke` marker，不强制使用 `requires_*`。
+- 纯构造、导入、轻量 wiring 检查放到 `tests/unit/`；文件名或函数名可以使用 `construction`、`minimal` 或 `unit_smoke`，但不要使用 `smoke` marker。
 - fake/mock/stub、`api_key="test-key"`、`s3://bucket/key` 这类本地确定性测试不需要 `requires_*`。
+
+## 示例模板
+
+单元测试：不访问真实外部依赖，围绕行为边界组织用例。
+
+```python
+from collections.abc import AsyncIterator
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture
+async def payload_client() -> AsyncIterator[AsyncClient]:
+    transport = ASGITransport(app=build_test_app(), raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
+async def test_replays_json_body_when_size_equals_limit(
+    payload_client: AsyncClient,
+) -> None:
+    response = await payload_client.post(
+        "/echo-size",
+        content=b"hello",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"size": 5, "body": "hello"}
+
+
+async def test_rejects_large_json_body_while_streaming(
+    payload_client: AsyncClient,
+) -> None:
+    response = await payload_client.post(
+        "/echo-size",
+        content=chunked_large_body(),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 413
+```
+
+需要 Redis 的 integration：声明 `integration` 和 `requires_redis`，通过 `require_env()` 读取测试环境变量。
+
+```python
+import pytest
+import redis.asyncio as redis
+
+from tests.helpers.env import require_env
+
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration, pytest.mark.requires_redis]
+
+
+async def test_cache_roundtrip_with_real_redis():
+    client = redis.from_url(require_env("TEST_REDIS_URL"), decode_responses=True)
+    try:
+        await client.set("dewflow:test:key", "value")
+        assert await client.get("dewflow:test:key") == "value"
+    finally:
+        await client.delete("dewflow:test:key")
+        await client.aclose()
+```
+
+本地或 CI profile skip：只用 profile marker 表达运行范围，不在测试体里手写 profile 判断。
+
+```python
+import pytest
+
+
+@pytest.mark.local_only
+def test_local_diagnostic_output_is_available():
+    assert True
+
+
+@pytest.mark.ci_only
+def test_ci_contract_is_enabled():
+    assert True
+```
 
 ## Profile + Marker + Fixture Skip
 

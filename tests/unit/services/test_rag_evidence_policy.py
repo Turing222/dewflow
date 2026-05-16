@@ -1,8 +1,17 @@
+"""RAG evidence policy unit tests.
+
+职责：验证 RAGEvidencePolicy 的相关性分数判断和拒绝/放行行为；边界：使用 monkeypatch 固定配置，不依赖真实 LLM；副作用：无。
+"""
+
+import pytest
+
 from backend.services.rag_evidence_policy import RAGEvidencePolicy
 from backend.services.rag_planning_service import RAGExecutionPlan
 
 
-def test_hybrid_retrieval_requires_relevance_score(monkeypatch):
+def test_hybrid_retrieval_raises_on_low_relevance_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
         True,
@@ -34,7 +43,9 @@ def test_hybrid_retrieval_requires_relevance_score(monkeypatch):
     assert decision.reason == "RAG 相关性分数不足"
 
 
-def test_hybrid_retrieval_allows_sufficient_relevance_score(monkeypatch):
+def test_hybrid_retrieval_passes_on_sufficient_relevance_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
         True,

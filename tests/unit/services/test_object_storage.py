@@ -1,3 +1,8 @@
+"""Object storage unit tests.
+
+职责：验证 LocalObjectStorage 和 S3ObjectStorage 的上传、下载和清理行为；边界：使用 FakeS3Client 和 tmp_path，不连接真实 S3 或外部存储；副作用：无。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -14,20 +19,22 @@ from backend.services.object_storage import (
     UploadSizeLimitExceeded,
 )
 
+pytestmark = pytest.mark.asyncio
+
 
 def make_upload_file(filename: str, content: bytes) -> UploadFile:
     return UploadFile(file=BytesIO(content), filename=filename, size=len(content))
 
 
 class FakeS3Client:
-    def __init__(self):
+    def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.metadata: dict[tuple[str, str], dict] = {}
         self.deleted: list[tuple[str, str]] = []
 
     def upload_fileobj(
         self,
-        file_obj,
+        file_obj: object,
         bucket: str,
         key: str,
         ExtraArgs: dict | None = None,
@@ -35,7 +42,7 @@ class FakeS3Client:
         self.objects[(bucket, key)] = file_obj.read()
         self.metadata[(bucket, key)] = ExtraArgs or {}
 
-    def download_fileobj(self, bucket: str, key: str, file_obj) -> None:
+    def download_fileobj(self, bucket: str, key: str, file_obj: object) -> None:
         file_obj.write(self.objects[(bucket, key)])
 
     def delete_object(self, *, Bucket: str, Key: str) -> None:
@@ -46,7 +53,7 @@ class FakeS3Client:
 class FailingUploadS3Client(FakeS3Client):
     def upload_fileobj(
         self,
-        file_obj,
+        file_obj: object,
         bucket: str,
         key: str,
         ExtraArgs: dict | None = None,
@@ -54,8 +61,7 @@ class FailingUploadS3Client(FakeS3Client):
         raise RuntimeError("upload failed")
 
 
-@pytest.mark.asyncio
-async def test_local_object_storage_saves_downloads_and_deletes(tmp_path: Path):
+async def test_local_storage_saves_downloads_and_deletes_file(tmp_path: Path) -> None:
     storage = LocalObjectStorage(tmp_path)
     upload = make_upload_file("demo.txt", b"hello")
 
@@ -78,8 +84,7 @@ async def test_local_object_storage_saves_downloads_and_deletes(tmp_path: Path):
     assert not Path(stored.uri).exists()
 
 
-@pytest.mark.asyncio
-async def test_local_object_storage_cleans_temp_file_on_size_limit(tmp_path: Path):
+async def test_local_storage_cleans_temp_file_on_size_limit(tmp_path: Path) -> None:
     storage = LocalObjectStorage(tmp_path)
     upload = make_upload_file("large.txt", b"too large")
 
@@ -94,8 +99,7 @@ async def test_local_object_storage_cleans_temp_file_on_size_limit(tmp_path: Pat
     assert list(tmp_path.rglob("*.part")) == []
 
 
-@pytest.mark.asyncio
-async def test_s3_object_storage_saves_downloads_and_cleans_temp_file():
+async def test_s3_storage_saves_downloads_and_cleans_temp_file() -> None:
     client = FakeS3Client()
     storage = S3ObjectStorage(bucket="bucket-a", prefix="prefix", client=client)
     upload = make_upload_file("demo.txt", b"hello s3")
@@ -135,8 +139,7 @@ async def test_s3_object_storage_saves_downloads_and_cleans_temp_file():
     assert ("bucket-a", stored.key) in client.deleted
 
 
-@pytest.mark.asyncio
-async def test_s3_object_storage_deletes_object_on_upload_failure():
+async def test_s3_storage_deletes_object_on_upload_failure() -> None:
     client = FailingUploadS3Client()
     storage = S3ObjectStorage(bucket="bucket-a", client=client)
     upload = make_upload_file("demo.txt", b"hello s3")

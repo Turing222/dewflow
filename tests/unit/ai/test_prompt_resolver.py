@@ -1,3 +1,10 @@
+"""Prompt resolver unit tests.
+
+职责：验证 Langfuse cache、YAML fallback 和 TTL reload 行为；边界：使用临时 YAML 与 fake cache，不访问真实 Langfuse；副作用：仅写入 pytest 临时目录。
+"""
+
+from __future__ import annotations
+
 from pathlib import Path
 
 from backend.ai.core.prompt_resolver import PromptResolver
@@ -79,7 +86,7 @@ templates:
     )
 
 
-def test_prompt_resolver_prefers_langfuse_cache(tmp_path: Path):
+def test_prompt_resolver_prefers_langfuse_cache(tmp_path: Path) -> None:
     cache_path = tmp_path / "prompts.yaml"
     write_cache(cache_path, content="cache {{ app_name }}")
     resolver = PromptResolver(
@@ -92,7 +99,7 @@ def test_prompt_resolver_prefers_langfuse_cache(tmp_path: Path):
     assert resolver.get_metadata()["source"] == "langfuse_cache"
 
 
-def test_prompt_resolver_falls_back_to_yaml_when_cache_missing(tmp_path: Path):
+def test_prompt_resolver_falls_back_to_yaml_when_cache_missing(tmp_path: Path) -> None:
     resolver = PromptResolver(
         prompt_config_loader=lambda: make_prompt_config(
             cache_path=tmp_path / "missing.yaml"
@@ -105,7 +112,7 @@ def test_prompt_resolver_falls_back_to_yaml_when_cache_missing(tmp_path: Path):
     assert resolver.get_metadata()["source"] == "yaml_fallback"
 
 
-def test_prompt_resolver_reloads_cache_after_ttl(tmp_path: Path):
+def test_prompt_resolver_reloads_cache_after_ttl(tmp_path: Path) -> None:
     cache_path = tmp_path / "prompts.yaml"
     write_cache(cache_path, content="cache v1")
     now = 0.0

@@ -1,3 +1,8 @@
+"""Task repository unit tests.
+
+职责：验证 TaskRepository 的用户任务查询构造；边界：使用 AsyncMock session，不连接真实数据库；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -7,16 +12,19 @@ import pytest
 
 from backend.repositories.task_repo import TaskRepository
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.fixture
-def repo_ctx():
+def repo_ctx() -> tuple[TaskRepository, AsyncMock]:
     session = AsyncMock()
     repo = TaskRepository(session=session)
     return repo, session
 
 
-@pytest.mark.asyncio
-async def test_get_user_tasks_filters_by_payload_user_id(repo_ctx):
+async def test_get_user_tasks_filters_by_payload_user_id_returns_ordered_tasks(
+    repo_ctx: tuple[TaskRepository, AsyncMock],
+) -> None:
     repo, session = repo_ctx
     user_id = uuid.uuid4()
     expected = [MagicMock(), MagicMock()]

@@ -1,3 +1,8 @@
+"""Permission service unit tests.
+
+职责：验证 PermissionService 的权限检查、角色策略和配置校验行为；边界：使用 SimpleNamespace mock，不连接真实数据库；副作用：无。
+"""
+
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,7 +39,7 @@ def make_service_with_role(role: WorkspaceRole | None) -> PermissionService:
 
 
 @pytest.mark.asyncio
-async def test_superuser_has_permission_without_role_lookup():
+async def test_superuser_has_permission_without_role_lookup_returns_true() -> None:
     service = make_service_with_role(None)
     user = make_user(is_superuser=True)
 
@@ -49,7 +54,7 @@ async def test_superuser_has_permission_without_role_lookup():
 
 
 @pytest.mark.asyncio
-async def test_member_role_allows_file_write_but_not_role_manage():
+async def test_member_role_allows_file_write_but_denies_role_manage() -> None:
     service = make_service_with_role(WorkspaceRole.MEMBER)
     user = make_user()
     workspace_id = uuid.uuid4()
@@ -73,7 +78,7 @@ async def test_member_role_allows_file_write_but_not_role_manage():
 
 
 @pytest.mark.asyncio
-async def test_require_permission_raises_permission_denied():
+async def test_require_permission_raises_permission_denied_on_missing_role() -> None:
     service = make_service_with_role(WorkspaceRole.VIEWER)
 
     with pytest.raises(AppException) as exc_info:
@@ -87,7 +92,7 @@ async def test_require_permission_raises_permission_denied():
 
 
 @pytest.mark.asyncio
-async def test_has_permission_for_user_id_loads_user_and_role():
+async def test_has_permission_for_user_id_loads_user_and_role_returns_result() -> None:
     service = make_service_with_role(WorkspaceRole.VIEWER)
 
     allowed = await service.has_permission_for_user_id(
@@ -100,7 +105,7 @@ async def test_has_permission_for_user_id_loads_user_and_role():
     service.uow.user_repo.get.assert_awaited_once()
 
 
-def test_configured_owner_wildcard_allows_every_permission():
+def test_configured_owner_wildcard_allows_every_permission() -> None:
     policy = load_permission_policy()
 
     for permission in Permission:
@@ -110,7 +115,7 @@ def test_configured_owner_wildcard_allows_every_permission():
         )
 
 
-def test_invalid_permission_config_rejects_unknown_permission(tmp_path: Path):
+def test_invalid_permission_config_rejects_unknown_permission(tmp_path: Path) -> None:
     config_dir = tmp_path / "configs"
     access_dir = config_dir / "access"
     access_dir.mkdir(parents=True)

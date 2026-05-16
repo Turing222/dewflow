@@ -56,7 +56,7 @@ flowchart TD
 示例：
 
 ```bash
-make qa-test-unit UNIT_TARGETS=tests/unit/api/test_user_api_unit.py
+make qa-test-unit UNIT_TARGETS=tests/unit/api/test_user_api.py
 ```
 
 如果改动影响多个模块，则运行对应的单元测试集合，例如：

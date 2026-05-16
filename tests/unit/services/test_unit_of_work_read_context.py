@@ -1,9 +1,16 @@
+"""Unit of Work read context unit tests.
+
+职责：验证 SQLAlchemyUnitOfWork read_context 的会话管理、异常回滚和嵌套防护行为；边界：使用 DummySession，不连接真实数据库；副作用：无。
+"""
+
 from unittest.mock import AsyncMock
 
 import pytest
 
 from backend.services import unit_of_work as uow_module
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
+
+pytestmark = pytest.mark.asyncio
 
 
 class DummySession:
@@ -19,7 +26,7 @@ class DummyRepository:
 
 
 @pytest.fixture(autouse=True)
-def patch_repositories(monkeypatch) -> None:
+def patch_repositories(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "AccessRepository",
         "AuditRepository",
@@ -31,8 +38,7 @@ def patch_repositories(monkeypatch) -> None:
         monkeypatch.setattr(uow_module, name, DummyRepository)
 
 
-@pytest.mark.asyncio
-async def test_read_context_closes_without_commit() -> None:
+async def test_read_context_closes_without_commit_returns_none() -> None:
     session = DummySession()
     uow = SQLAlchemyUnitOfWork(lambda: session)
 
@@ -45,8 +51,7 @@ async def test_read_context_closes_without_commit() -> None:
     session.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_read_context_rolls_back_on_exception() -> None:
+async def test_read_context_rolls_back_on_exception_and_raises() -> None:
     session = DummySession()
     uow = SQLAlchemyUnitOfWork(lambda: session)
 
@@ -59,8 +64,7 @@ async def test_read_context_rolls_back_on_exception() -> None:
     session.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_read_context_inside_active_uow_raises() -> None:
+async def test_read_context_inside_active_uow_raises_runtime_error() -> None:
     session = DummySession()
     uow = SQLAlchemyUnitOfWork(lambda: session)
 
@@ -70,8 +74,7 @@ async def test_read_context_inside_active_uow_raises() -> None:
                 pass
 
 
-@pytest.mark.asyncio
-async def test_read_context_exit_sets_session_to_none() -> None:
+async def test_read_context_exit_sets_session_to_none_on_cleanup() -> None:
     session = DummySession()
     uow = SQLAlchemyUnitOfWork(lambda: session)
 

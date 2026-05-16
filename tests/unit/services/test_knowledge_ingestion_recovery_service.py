@@ -1,3 +1,8 @@
+"""Knowledge ingestion recovery service unit tests.
+
+职责：验证 KnowledgeIngestionRecoveryService 的过期摄入恢复行为；边界：使用 SimpleNamespace + AsyncMock，不连接真实数据库；副作用：无。
+"""
+
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -9,9 +14,10 @@ from backend.services.knowledge_ingestion_recovery_service import (
     KnowledgeIngestionRecoveryService,
 )
 
+pytestmark = pytest.mark.asyncio
 
-@pytest.mark.asyncio
-async def test_recover_stale_ingestions_marks_files_and_tasks_failed():
+
+async def test_recover_stale_ingestions_marks_files_and_tasks_as_failed() -> None:
     knowledge_repo = SimpleNamespace(
         mark_stale_ingestion_files_failed=AsyncMock(return_value=2),
     )

@@ -1,3 +1,8 @@
+"""RAG service unit tests.
+
+职责：验证 RAGService 的全文检索、混合检索和 rerank 排序行为；边界：使用 AsyncMock 替换 vector_index_service 和 LLM，不连接真实数据库或模型；副作用：无。
+"""
+
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -6,8 +11,10 @@ import pytest
 
 from backend.services.rag_service import RAGService
 
+pytestmark = pytest.mark.asyncio
 
-def _build_service(llm_service=None) -> RAGService:
+
+def _build_service(llm_service: object = None) -> RAGService:
     return RAGService(
         embedder=MagicMock(),
         vector_index_service=MagicMock(),
@@ -18,7 +25,7 @@ def _build_service(llm_service=None) -> RAGService:
     )
 
 
-def _chunk(content: str, index: int):
+def _chunk(content: str, index: int) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.uuid4(),
         content=content,
@@ -31,8 +38,7 @@ def _chunk(content: str, index: int):
     )
 
 
-@pytest.mark.asyncio
-async def test_retrieve_fulltext_formats_hits():
+async def test_retrieve_fulltext_formats_hits_returns_results() -> None:
     service = _build_service()
     kb_id = uuid.uuid4()
     chunk = SimpleNamespace(
@@ -66,8 +72,7 @@ async def test_retrieve_fulltext_formats_hits():
     assert result[0]["score"] == 0.8
 
 
-@pytest.mark.asyncio
-async def test_retrieve_hybrid_returns_empty_on_error():
+async def test_retrieve_hybrid_returns_empty_on_error() -> None:
     service = _build_service()
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         side_effect=RuntimeError("db error")
@@ -82,8 +87,7 @@ async def test_retrieve_hybrid_returns_empty_on_error():
     assert result == []
 
 
-@pytest.mark.asyncio
-async def test_retrieve_with_rerank_orders_by_llm_scores():
+async def test_retrieve_with_rerank_orders_results_by_llm_scores() -> None:
     llm_service = SimpleNamespace(
         generate_response=AsyncMock(
             return_value=SimpleNamespace(
@@ -109,8 +113,7 @@ async def test_retrieve_with_rerank_orders_by_llm_scores():
     llm_service.generate_response.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json():
+async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json() -> None:
     llm_service = SimpleNamespace(
         generate_response=AsyncMock(
             return_value=SimpleNamespace(
@@ -134,8 +137,7 @@ async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json():
     assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
 
 
-@pytest.mark.asyncio
-async def test_retrieve_with_rerank_without_llm_returns_candidate_order():
+async def test_retrieve_with_rerank_without_llm_returns_candidate_order() -> None:
     service = _build_service(llm_service=None)
     candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(

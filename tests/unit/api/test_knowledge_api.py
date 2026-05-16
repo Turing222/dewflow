@@ -1,3 +1,8 @@
+"""Knowledge API unit tests.
+
+职责：验证 endpoint 对上传 workflow 的参数传递和响应返回；边界：直接调用 endpoint 函数，不启动 FastAPI app 或真实存储；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -10,9 +15,10 @@ from fastapi import UploadFile
 from backend.api.v1.endpoint import knowledge_api
 from backend.models.schemas.knowledge_schema import KnowledgeUploadResponse
 
+pytestmark = pytest.mark.asyncio
 
-@pytest.mark.asyncio
-async def test_upload_file_delegates_to_submit_workflow():
+
+async def test_upload_file_delegates_to_submit_workflow() -> None:
     kb_id = uuid.uuid4()
     user_id = uuid.uuid4()
     upload_file = MagicMock(spec=UploadFile)
@@ -41,8 +47,7 @@ async def test_upload_file_delegates_to_submit_workflow():
     )
 
 
-@pytest.mark.asyncio
-async def test_upload_file_to_default_kb_delegates_to_submit_workflow():
+async def test_upload_file_to_default_kb_delegates_to_submit_workflow() -> None:
     user_id = uuid.uuid4()
     upload_file = MagicMock(spec=UploadFile)
     expected = KnowledgeUploadResponse(

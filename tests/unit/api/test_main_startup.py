@@ -1,19 +1,28 @@
+"""Main startup unit tests.
+
+职责：验证 main 导入副作用和 lifespan 启停顺序；边界：使用 monkeypatch 替换外部初始化，不连接真实 DB/Redis；副作用：临时刷新 backend.main 模块。
+"""
+
 from __future__ import annotations
 
 import importlib
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 
-def _fresh_main_module():
+def _fresh_main_module() -> Any:
     sys.modules.pop("backend.main", None)
     return importlib.import_module("backend.main")
 
 
-def test_importing_main_does_not_setup_logging(monkeypatch):
+def test_importing_main_does_not_setup_logging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
 
     def fake_setup_logging() -> None:
@@ -29,19 +38,19 @@ def test_importing_main_does_not_setup_logging(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_lifespan_sets_up_logging_first(monkeypatch):
+async def test_lifespan_sets_up_logging_first(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[str] = []
     main = _fresh_main_module()
 
     @asynccontextmanager
-    async def fake_init_db(app):
+    async def fake_init_db(app: object) -> AsyncIterator[None]:
         events.append("db")
         yield
 
-    async def fake_redis_init():
+    async def fake_redis_init() -> None:
         events.append("redis_init")
 
-    async def fake_redis_close():
+    async def fake_redis_close() -> None:
         events.append("redis_close")
 
     monkeypatch.setattr(main, "setup_logging", lambda: events.append("logging"))

@@ -1,3 +1,10 @@
+"""LLM configuration unit tests.
+
+职责：验证 LLM、embedding 和 prompt 配置加载规则；边界：使用仓库内配置或临时目录，不访问真实模型服务；副作用：仅写入 pytest 临时目录。
+"""
+
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -7,7 +14,7 @@ from backend.config.loader import ConfigurationError
 from backend.config.prompts import load_prompt_config
 
 
-def test_load_prompt_config_reads_yaml_templates():
+def test_load_prompt_config_reads_yaml_templates() -> None:
     config = load_prompt_config()
 
     assert "Dewflow" in config.default_variables["app_name"]
@@ -16,7 +23,7 @@ def test_load_prompt_config_reads_yaml_templates():
     assert "context_chunks" in config.get_template_content("rag_system")
 
 
-def test_load_llm_model_config_resolves_aliases():
+def test_load_llm_model_config_resolves_aliases() -> None:
     config = load_llm_model_config()
 
     assert config.resolve_profile("mock").provider == "mock"
@@ -37,7 +44,9 @@ def test_load_llm_model_config_resolves_aliases():
     assert qwen3_embedding.dimensions == 768
 
 
-def test_embedding_profile_does_not_fallback_to_llm_base_url(monkeypatch):
+def test_embedding_profile_does_not_fallback_to_llm_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "backend.config.settings.settings.LLM_BASE_URL",
         "https://api.deepseek.com",
@@ -51,7 +60,7 @@ def test_embedding_profile_does_not_fallback_to_llm_base_url(monkeypatch):
     assert config.resolve_embedding_profile("openai-compatible").resolve_base_url() is None
 
 
-def test_llm_profile_extra_body_rejects_unknown_keys(tmp_path: Path):
+def test_llm_profile_extra_body_rejects_unknown_keys(tmp_path: Path) -> None:
     config_dir = tmp_path / "configs"
     llm_dir = config_dir / "llm"
     llm_dir.mkdir(parents=True)
@@ -73,7 +82,7 @@ profiles:
         load_llm_model_config(config_dir=config_dir)
 
 
-def test_llm_profile_extra_body_accepts_thinking_mode():
+def test_llm_profile_extra_body_accepts_thinking_mode() -> None:
     config = load_llm_model_config()
 
     assert config.resolve_profile("deepseek-v4-flash").extra_body == {
@@ -81,7 +90,9 @@ def test_llm_profile_extra_body_accepts_thinking_mode():
     }
 
 
-def test_llm_profile_resolves_multiple_api_keys(monkeypatch):
+def test_llm_profile_resolves_multiple_api_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "key-a, key-b;key-c\nkey-a")
     config = load_llm_model_config()
 
@@ -92,7 +103,7 @@ def test_llm_profile_resolves_multiple_api_keys(monkeypatch):
     )
 
 
-def test_invalid_models_config_rejects_duplicate_alias(tmp_path: Path):
+def test_invalid_models_config_rejects_duplicate_alias(tmp_path: Path) -> None:
     config_dir = tmp_path / "configs"
     llm_dir = config_dir / "llm"
     llm_dir.mkdir(parents=True)
@@ -117,7 +128,7 @@ profiles:
         load_llm_model_config(config_dir=config_dir)
 
 
-def test_invalid_prompts_config_requires_core_templates(tmp_path: Path):
+def test_invalid_prompts_config_requires_core_templates(tmp_path: Path) -> None:
     config_dir = tmp_path / "configs"
     llm_dir = config_dir / "llm"
     llm_dir.mkdir(parents=True)

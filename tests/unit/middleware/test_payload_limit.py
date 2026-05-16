@@ -1,3 +1,8 @@
+"""Payload limit middleware unit tests.
+
+职责：验证请求体大小限制、跳过规则和 JSON body replay；边界：使用 ASGITransport 进程内请求，不访问真实网络；副作用：无。
+"""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -8,36 +13,39 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.middleware.payload_limit import PayloadLimitMiddleware
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.fixture
-async def client():
+async def payload_client() -> AsyncIterator[AsyncClient]:
     inner_app = FastAPI()
 
     @inner_app.post("/echo-size")
-    async def echo_size(request: Request):
+    async def echo_size(request: Request) -> dict[str, int | str]:
         body = await request.body()
         return {"size": len(body), "body": body.decode("utf-8")}
 
     @inner_app.get("/echo-get")
-    async def echo_get():
+    async def echo_get() -> dict[str, bool]:
         return {"ok": True}
 
     app = PayloadLimitMiddleware(inner_app, max_payload_size=5)
     transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 
 
-async def _chunked_body() -> AsyncIterator[bytes]:
+async def _chunked_large_body() -> AsyncIterator[bytes]:
     yield b"abc"
     yield b"def"
 
 
-@pytest.mark.asyncio
-async def test_payload_limit_rejects_large_json_body(client):
-    response = await client.post(
+async def test_rejects_large_json_body_while_streaming(
+    payload_client: AsyncClient,
+) -> None:
+    response = await payload_client.post(
         "/echo-size",
-        content=_chunked_body(),
+        content=_chunked_large_body(),
         headers={"Content-Type": "application/json"},
     )
 
@@ -45,9 +53,10 @@ async def test_payload_limit_rejects_large_json_body(client):
     assert response.json() == {"detail": "Payload Too Large"}
 
 
-@pytest.mark.asyncio
-async def test_payload_limit_replays_allowed_json_body(client):
-    response = await client.post(
+async def test_replays_json_body_when_size_equals_limit(
+    payload_client: AsyncClient,
+) -> None:
+    response = await payload_client.post(
         "/echo-size",
         content=b"hello",
         headers={"Content-Type": "application/json"},
@@ -57,26 +66,48 @@ async def test_payload_limit_replays_allowed_json_body(client):
     assert response.json() == {"size": 5, "body": "hello"}
 
 
-@pytest.mark.asyncio
-async def test_payload_limit_skips_get_requests(client):
-    response = await client.get("/echo-get")
+async def test_skips_get_requests_returns_200(payload_client: AsyncClient) -> None:
+    response = await payload_client.get("/echo-get")
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
 
-@pytest.mark.asyncio
-async def test_payload_limit_skips_multipart_form_data_buffering(client):
-    # multipart/form-data body is not buffered into memory.
-    # Content-Length header check still applies (fast integer comparison).
-    # This test verifies that a body under the limit passes through
-    # without being consumed by body buffering.
-    response = await client.post(
+async def test_skips_multipart_body_buffering_never_returns_413(
+    payload_client: AsyncClient,
+) -> None:
+    response = await payload_client.post(
         "/echo-size",
         content=b"ok",
         headers={"Content-Type": "multipart/form-data; boundary=---boundary"},
     )
 
-    # Body passes through to the endpoint; Starlette may return 200 or 400
-    # depending on multipart parsing, but never 413
+    # Multipart upload size is enforced outside this middleware, so this path
+    # must not reject solely because buffering was skipped.
     assert response.status_code != 413
+
+
+async def test_rejects_large_non_json_body_when_content_length_is_known(
+    payload_client: AsyncClient,
+) -> None:
+    response = await payload_client.post(
+        "/echo-size",
+        content=b"abcdef",
+        headers={"Content-Type": "text/plain"},
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Payload Too Large"}
+
+
+async def test_skips_chunked_non_json_without_content_length_passes_through(
+    payload_client: AsyncClient,
+) -> None:
+    response = await payload_client.post(
+        "/echo-size",
+        content=_chunked_large_body(),
+        headers={"Content-Type": "text/plain"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["size"] == 6

@@ -1,3 +1,8 @@
+"""Vector index service unit tests.
+
+职责：验证 VectorIndexService 的 chunk 替换、embedding 批处理和全文检索查询归一化行为；边界：使用 AsyncMock 和 SimpleNamespace，不连接真实数据库或 embedding 服务；副作用：无。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -10,9 +15,10 @@ import pytest
 from backend.ai.core.token_counter import count_tokens
 from backend.services.vector_index_service import CHUNKING_VERSION, VectorIndexService
 
+pytestmark = pytest.mark.asyncio
 
-@pytest.mark.asyncio
-async def test_replace_file_chunks_uses_batch_embedding():
+
+async def test_replace_file_chunks_uses_batch_embedding_returns_replaced() -> None:
     file_id = uuid.uuid4()
     repo = SimpleNamespace(
         delete_chunks_for_file=AsyncMock(),
@@ -65,8 +71,7 @@ async def test_replace_file_chunks_uses_batch_embedding():
     assert {record["chunking_version"] for record in records} == {CHUNKING_VERSION}
 
 
-@pytest.mark.asyncio
-async def test_replace_file_chunks_uses_embedding_content_for_structured_chunks():
+async def test_replace_file_chunks_prefers_embedding_content_for_structured_chunks() -> None:
     file_id = uuid.uuid4()
     repo = SimpleNamespace(
         delete_chunks_for_file=AsyncMock(),
@@ -113,8 +118,7 @@ async def test_replace_file_chunks_uses_embedding_content_for_structured_chunks(
     }
 
 
-@pytest.mark.asyncio
-async def test_replace_file_chunks_rejects_mismatched_embedding_count():
+async def test_replace_file_chunks_raises_on_mismatched_embedding_count() -> None:
     repo = SimpleNamespace(
         delete_chunks_for_file=AsyncMock(),
         add_chunks=AsyncMock(),
@@ -140,8 +144,7 @@ async def test_replace_file_chunks_rejects_mismatched_embedding_count():
     repo.add_chunks.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_prepare_chunk_records_does_not_write_repository():
+async def test_prepare_chunk_records_skips_repository_write() -> None:
     file_id = uuid.uuid4()
     repo = SimpleNamespace(
         delete_chunks_for_file=AsyncMock(),
@@ -169,8 +172,7 @@ async def test_prepare_chunk_records_does_not_write_repository():
     repo.add_chunks.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_fulltext_search_normalizes_query_before_repository_call():
+async def test_fulltext_search_normalizes_query_before_repo_call() -> None:
     kb_id = uuid.uuid4()
     repo = SimpleNamespace(
         search_chunks_for_kb_fulltext=AsyncMock(return_value=[]),
@@ -194,3 +196,25 @@ async def test_fulltext_search_normalizes_query_before_repository_call():
     assert call_kwargs["limit"] == 5
     assert call_kwargs["normalized_query"].startswith("数据库 max_connections")
     assert "query_text" not in call_kwargs
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestWarning")
+def test_fuse_hybrid_hits_only_vector_hits() -> None:
+    chunk_a = SimpleNamespace(id=uuid.uuid4())
+    chunk_b = SimpleNamespace(id=uuid.uuid4())
+
+    vector_hits = [(chunk_a, 0.1), (chunk_b, 0.3)]
+    fulltext_hits: list = []
+
+    result = VectorIndexService._fuse_hybrid_hits(
+        vector_hits=vector_hits,
+        fulltext_hits=fulltext_hits,
+        limit=10,
+        vector_weight=0.7,
+        fulltext_weight=0.3,
+    )
+
+    assert len(result) == 2
+    # RRF: chunk_a (rank 1, distance 0.1) gets higher score → lower distance when normalized.
+    assert result[0][0].id == chunk_a.id
+    assert result[1][0].id == chunk_b.id

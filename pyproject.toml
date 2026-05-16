@@ -104,7 +104,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-m 'not performance'"
 markers = [
-    "smoke: fast smoke tests for critical paths",
+    "smoke: HTTP stack smoke tests against a running environment",
     "component: in-process component tests using ASGI and dependency overrides",
     "performance: concurrency/load-oriented tests, excluded from default runs",
     "integration: tests that require external services like PostgreSQL or Redis",

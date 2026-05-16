@@ -1,3 +1,10 @@
+"""Chat non-stream workflow idempotency and token quota tests.
+
+职责：验证 ChatNonStreamWorkflow 的 Redis 幂等锁防重复、token 余额不足拒绝、
+失败消息回放和 worker 派发成功；边界：不启动 HTTP stack、不连接真实 Redis；
+副作用：无。
+"""
+
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,7 +20,7 @@ from backend.models.schemas.chat.payloads import GenerationResult
 pytestmark = pytest.mark.asyncio
 
 
-def _build_workflow(uow=None, dispatcher=None, redis_client=None):
+def _build_workflow(uow=None, dispatcher=None, redis_client=None) -> ChatNonStreamWorkflow:
     return ChatNonStreamWorkflow(
         uow=uow or MagicMock(),
         dispatcher=dispatcher or AsyncMock(),
@@ -22,7 +29,7 @@ def _build_workflow(uow=None, dispatcher=None, redis_client=None):
     )
 
 
-async def test_idempotency():
+async def test_idempotency_lock_prevents_duplicate_request() -> None:
     uow = MagicMock()
 
     mock_redis = AsyncMock()
@@ -69,7 +76,7 @@ async def test_idempotency():
         )
 
 
-async def test_token_quota():
+async def test_token_quota_exceeded_raises_error() -> None:
     uow = MagicMock()
     workflow = _build_workflow(uow=uow)
     user_id = uuid.uuid4()
@@ -89,7 +96,7 @@ async def test_token_quota():
         )
 
 
-async def test_idempotency_replay_with_non_success_message_does_not_prepare_request():
+async def test_idempotency_replay_with_non_success_message_does_not_prepare_request() -> None:
     uow = MagicMock()
     user_id = uuid.uuid4()
     client_req_id = "test-req-failed"
@@ -123,8 +130,7 @@ async def test_idempotency_replay_with_non_success_message_does_not_prepare_requ
     prepare_request.assert_not_awaited()
 
 
-async def test_worker_dispatch_on_success():
-    """Verify the web workflow dispatches to worker and returns response on success."""
+async def test_worker_dispatch_on_success() -> None:
     uow = MagicMock()
     user_id = uuid.uuid4()
 

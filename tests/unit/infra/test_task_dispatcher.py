@@ -1,4 +1,7 @@
-"""Unit tests for TaskDispatcher — verify TaskIQ Redis messages."""
+"""Task dispatcher unit tests.
+
+职责：验证 TaskIQ Redis 消息构造、结果读取和错误映射；边界：使用 fake Redis 和 pickle payload，不连接真实 broker；副作用：无。
+"""
 
 import json
 import pickle
@@ -17,13 +20,13 @@ class FakeRedis:
         self.aclose = AsyncMock()
 
 
-def _decode_lpush_message(redis_client: FakeRedis) -> dict:
+def _decode_lpush_message(redis_client: FakeRedis) -> dict[str, object]:
     _, message = redis_client.lpush.await_args.args
     return json.loads(message.decode())
 
 
 @pytest.mark.asyncio
-async def test_enqueue_stream_passes_params_through():
+async def test_enqueue_stream_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
     dispatcher = TaskDispatcher()
@@ -54,7 +57,7 @@ async def test_enqueue_stream_passes_params_through():
 
 
 @pytest.mark.asyncio
-async def test_enqueue_nonstream_passes_params_and_returns_result():
+async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
     from backend.models.schemas.chat.payloads import GenerationResult
 
@@ -99,7 +102,7 @@ async def test_enqueue_nonstream_passes_params_and_returns_result():
 
 
 @pytest.mark.asyncio
-async def test_enqueue_ingestion_passes_params_through():
+async def test_enqueue_ingestion_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
     dispatcher = TaskDispatcher()
@@ -124,7 +127,7 @@ async def test_enqueue_ingestion_passes_params_through():
 
 
 @pytest.mark.asyncio
-async def test_wait_result_timeout_raises_timeout_error():
+async def test_wait_result_timeout_raises_timeout_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
     dispatcher = TaskDispatcher()
@@ -138,7 +141,7 @@ async def test_wait_result_timeout_raises_timeout_error():
 
 
 @pytest.mark.asyncio
-async def test_wait_result_is_err_raises_runtime_error():
+async def test_wait_result_is_err_raises_runtime_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
     dispatcher = TaskDispatcher()
@@ -162,7 +165,7 @@ async def test_wait_result_is_err_raises_runtime_error():
 
 
 @pytest.mark.asyncio
-async def test_send_task_redis_push_error_propagates():
+async def test_send_task_redis_push_error_propagates() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
     dispatcher = TaskDispatcher()
@@ -177,14 +180,16 @@ async def test_send_task_redis_push_error_propagates():
 
 
 @pytest.mark.asyncio
-async def test_task_name_constants_match_expected():
+async def test_task_name_constants_match_expected() -> None:
     """Ensure task name constants are not accidentally changed."""
     assert TASK_STREAM == "generate_llm_stream"
     assert TASK_NONSTREAM == "generate_llm_nonstream"
     assert TASK_INGESTION == "ingest_knowledge_file"
 
 
-def test_build_taskiq_message_is_loadable_by_worker_broker(monkeypatch):
+def test_build_taskiq_message_is_loadable_by_worker_broker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("DEBUG", "false")
 
     from backend.infra.task_broker import broker

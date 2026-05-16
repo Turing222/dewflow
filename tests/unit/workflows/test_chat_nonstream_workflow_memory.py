@@ -1,13 +1,13 @@
-"""LiveWindowBuilder 内存上下文测试。
+"""LiveWindowBuilder memory context tests — history window construction and query deduplication.
 
-这些测试原先属于 ChatContextBuilder，重构后已移至 LiveWindowBuilder。
+职责：验证 LiveWindowBuilder 的当前 query 去重、轮次分割和摘要字符限制；
+边界：纯内存计算，不依赖外部服务；副作用：无。
 """
 
 from backend.ai.core.live_window_builder import LiveWindowBuilder
 
 
-def test_exclude_latest_query_when_duplicate():
-    """最后一条 user 消息与当前 query 相同时应被排除。"""
+def test_exclude_latest_query_when_duplicate() -> None:
     history = [
         {"role": "user", "content": "你好"},
         {"role": "assistant", "content": "你好，我在。"},
@@ -22,8 +22,7 @@ def test_exclude_latest_query_when_duplicate():
     ]
 
 
-def test_build_splits_recent_rounds_and_summary():
-    """最近轮次保留原文，旧轮次生成桥接摘要。"""
+def test_build_splits_recent_rounds_and_summary() -> None:
     builder = LiveWindowBuilder(
         recent_rounds=1, snippet_chars=60, summary_max_chars=1000
     )
@@ -52,8 +51,7 @@ def test_build_splits_recent_rounds_and_summary():
     assert "第二轮问题" not in result.bridge_summary
 
 
-def test_build_rounds_summary_respects_max_chars():
-    """旧轮次摘要的总字符数不超过 summary_max_chars。"""
+def test_build_rounds_summary_respects_max_chars() -> None:
     builder = LiveWindowBuilder(snippet_chars=30, summary_max_chars=200)
 
     rounds = [

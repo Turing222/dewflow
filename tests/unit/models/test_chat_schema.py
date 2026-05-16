@@ -1,10 +1,15 @@
+"""Chat schema unit tests.
+
+职责：验证 QuerySentRequest extra_body 字段的接受和拒绝行为；边界：直接调用 Pydantic model_validate，不启动 FastAPI；副作用：无。
+"""
+
 import pytest
 from pydantic import ValidationError
 
 from backend.models.schemas.chat.api import QuerySentRequest
 
 
-def test_query_request_extra_body_accepts_thinking_mode():
+def test_extra_body_accepts_thinking_mode() -> None:
     request = QuerySentRequest.model_validate(
         {
             "query": "你好",
@@ -18,7 +23,7 @@ def test_query_request_extra_body_accepts_thinking_mode():
     }
 
 
-def test_query_request_extra_body_rejects_unknown_keys():
+def test_extra_body_rejects_unknown_keys() -> None:
     with pytest.raises(ValidationError):
         QuerySentRequest.model_validate(
             {

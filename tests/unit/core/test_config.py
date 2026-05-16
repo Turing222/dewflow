@@ -1,13 +1,22 @@
+"""Core configuration unit tests.
+
+职责：验证 settings 加载、环境覆盖和配置检查规则；边界：使用 monkeypatch 与临时配置目录，不读取开发者私有配置；副作用：修改进程环境并由 pytest 恢复。
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
+
+import pytest
 
 from backend.config.settings import Settings
 from backend.config.web_settings import DEFAULT_SECRET_KEY, get_web_settings
 from scripts.qa.config_check import run_checks
 
 
-def test_settings_can_load_without_explicit_secret_key(monkeypatch):
+def test_settings_can_load_without_explicit_secret_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("DEBUG", "false")
     monkeypatch.delenv("SECRET_KEY", raising=False)
     monkeypatch.delenv("SECRET_KEY_FILE", raising=False)
@@ -17,7 +26,10 @@ def test_settings_can_load_without_explicit_secret_key(monkeypatch):
     assert settings.SECRET_KEY == DEFAULT_SECRET_KEY
 
 
-def test_non_local_web_config_rejects_default_secret_key(monkeypatch, capsys):
+def test_non_local_web_config_rejects_default_secret_key(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("DEBUG", "false")
     monkeypatch.setenv("SECRET_KEY", DEFAULT_SECRET_KEY)
@@ -30,7 +42,9 @@ def test_non_local_web_config_rejects_default_secret_key(monkeypatch, capsys):
     assert "SECRET_KEY must not use the local default outside local" in captured.out
 
 
-def test_cors_defaults_are_wildcard_for_local(monkeypatch):
+def test_cors_defaults_are_wildcard_for_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
     monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
@@ -42,7 +56,9 @@ def test_cors_defaults_are_wildcard_for_local(monkeypatch):
     assert settings.BACKEND_CORS_HEADERS == ["*"]
 
 
-def test_cors_defaults_are_restricted_for_production(monkeypatch):
+def test_cors_defaults_are_restricted_for_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
     monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
@@ -58,7 +74,7 @@ def test_cors_defaults_are_restricted_for_production(monkeypatch):
     ]
 
 
-def test_cors_env_overrides_defaults(monkeypatch):
+def test_cors_env_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("BACKEND_CORS_METHODS", "GET,POST")
     monkeypatch.setenv("BACKEND_CORS_HEADERS", "Authorization,Content-Type")
@@ -70,7 +86,10 @@ def test_cors_env_overrides_defaults(monkeypatch):
     assert settings.BACKEND_CORS_HEADERS == ["Authorization", "Content-Type"]
 
 
-def test_cors_defaults_follow_yaml_app_env(monkeypatch, tmp_path: Path):
+def test_cors_defaults_follow_yaml_app_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     config_dir = tmp_path / "configs"
     app_dir = config_dir / "app"
     app_dir.mkdir(parents=True)
@@ -91,7 +110,10 @@ def test_cors_defaults_follow_yaml_app_env(monkeypatch, tmp_path: Path):
     ]
 
 
-def test_app_env_loads_layered_yaml_config(monkeypatch, tmp_path: Path):
+def test_app_env_loads_layered_yaml_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     config_dir = tmp_path / "configs"
     app_dir = config_dir / "app"
     app_dir.mkdir(parents=True)
@@ -116,7 +138,10 @@ def test_app_env_loads_layered_yaml_config(monkeypatch, tmp_path: Path):
     assert settings.LLM_PROVIDER == "mock"
 
 
-def test_environment_overrides_app_yaml(monkeypatch, tmp_path: Path):
+def test_environment_overrides_app_yaml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     config_dir = tmp_path / "configs"
     app_dir = config_dir / "app"
     app_dir.mkdir(parents=True)
@@ -136,7 +161,9 @@ def test_environment_overrides_app_yaml(monkeypatch, tmp_path: Path):
     assert settings.local_storage_root == Path("env-files")
 
 
-def test_database_url_overrides_postgres_parts(monkeypatch):
+def test_database_url_overrides_postgres_parts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SECRET_KEY", "test-secret")
 
     settings = Settings(
@@ -149,7 +176,9 @@ def test_database_url_overrides_postgres_parts(monkeypatch):
     assert "db-pass" not in settings.database_url_safe
 
 
-def test_cors_empty_string_parses_to_empty_list(monkeypatch):
+def test_cors_empty_string_parses_to_empty_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.setenv("BACKEND_CORS_METHODS", "")
     monkeypatch.delenv("SECRET_KEY", raising=False)
@@ -159,7 +188,9 @@ def test_cors_empty_string_parses_to_empty_list(monkeypatch):
     assert settings.BACKEND_CORS_METHODS == []
 
 
-def test_cors_whitespace_comma_parses_correctly(monkeypatch):
+def test_cors_whitespace_comma_parses_correctly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.setenv("BACKEND_CORS_HEADERS", " Authorization , Content-Type , ")
     monkeypatch.delenv("SECRET_KEY", raising=False)
@@ -169,7 +200,9 @@ def test_cors_whitespace_comma_parses_correctly(monkeypatch):
     assert settings.BACKEND_CORS_HEADERS == ["Authorization", "Content-Type"]
 
 
-def test_rag_refusal_settings_can_load_from_env(monkeypatch):
+def test_rag_refusal_settings_can_load_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.setenv("RAG_REFUSAL_ENABLED", "false")
     monkeypatch.setenv("RAG_MIN_HIT_COUNT", "2")

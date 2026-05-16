@@ -1,3 +1,10 @@
+"""RAG embedding provider unit tests.
+
+职责：验证 embedding provider factory、批处理和维度校验；边界：使用 fake SDK client，不访问真实 embedding 服务；副作用：无。
+"""
+
+from __future__ import annotations
+
 import asyncio
 from types import SimpleNamespace
 
@@ -13,7 +20,7 @@ from backend.contracts.interfaces import AbstractRAGEmbedder
 from backend.core.exceptions import AppException
 
 
-def test_factory_returns_openai_compatible_embedder():
+def test_factory_returns_openai_compatible_embedder() -> None:
     embedder = RAGEmbedderFactory.create(
         provider="openai-compatible",
         model_name="text-embedding-3-small",
@@ -25,7 +32,7 @@ def test_factory_returns_openai_compatible_embedder():
     assert isinstance(embedder, OpenAICompatibleEmbedder)
 
 
-def test_factory_returns_google_embedder():
+def test_factory_returns_google_embedder() -> None:
     embedder = RAGEmbedderFactory.create(
         provider="google",
         model_name="gemini-embedding-001",
@@ -37,7 +44,7 @@ def test_factory_returns_google_embedder():
 
 
 @pytest.mark.asyncio
-async def test_factory_returns_mock_embedder():
+async def test_factory_returns_mock_embedder() -> None:
     embedder = RAGEmbedderFactory.create(
         provider="mock",
         model_name="unused",
@@ -53,7 +60,7 @@ async def test_factory_returns_mock_embedder():
     ]
 
 
-def test_factory_rejects_local_embedding_provider():
+def test_factory_rejects_local_embedding_provider() -> None:
     with pytest.raises(ValueError):
         RAGEmbedderFactory.create(
             provider="local-model",
@@ -64,7 +71,7 @@ def test_factory_rejects_local_embedding_provider():
 
 
 @pytest.mark.asyncio
-async def test_default_encode_documents_is_bounded_and_ordered():
+async def test_default_encode_documents_is_bounded_and_ordered() -> None:
     class SlowEmbedder(AbstractRAGEmbedder):
         DEFAULT_ENCODE_DOCUMENTS_CONCURRENCY = 2
 
@@ -92,7 +99,7 @@ async def test_default_encode_documents_is_bounded_and_ordered():
 
 
 @pytest.mark.asyncio
-async def test_default_encode_documents_propagates_errors():
+async def test_default_encode_documents_propagates_errors() -> None:
     class FailingEmbedder(AbstractRAGEmbedder):
         async def encode_query(self, text: str) -> list[float]:
             return [float(text)]
@@ -107,7 +114,7 @@ async def test_default_encode_documents_propagates_errors():
 
 
 @pytest.mark.asyncio
-async def test_openai_embedder_encode_query_success(monkeypatch):
+async def test_openai_embedder_encode_query_success(monkeypatch) -> None:
     fake_response = SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3])])
     fake_client = SimpleNamespace(
         embeddings=SimpleNamespace(create=lambda **_: fake_response)
@@ -129,7 +136,7 @@ async def test_openai_embedder_encode_query_success(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_openai_embedder_encode_documents_batches_inputs(monkeypatch):
+async def test_openai_embedder_encode_documents_batches_inputs(monkeypatch) -> None:
     calls = []
     fake_response = SimpleNamespace(
         data=[
@@ -164,7 +171,7 @@ async def test_openai_embedder_encode_documents_batches_inputs(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_openai_embedder_encode_query_dim_mismatch(monkeypatch):
+async def test_openai_embedder_encode_query_dim_mismatch(monkeypatch) -> None:
     fake_response = SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2])])
     fake_client = SimpleNamespace(
         embeddings=SimpleNamespace(create=lambda **_: fake_response)
@@ -186,7 +193,7 @@ async def test_openai_embedder_encode_query_dim_mismatch(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_openai_embedder_rejects_empty_text():
+async def test_openai_embedder_rejects_empty_text() -> None:
     embedder = OpenAICompatibleEmbedder(
         model_name="text-embedding-3-small",
         base_url="http://example.com/v1",
@@ -199,7 +206,7 @@ async def test_openai_embedder_rejects_empty_text():
 
 
 @pytest.mark.asyncio
-async def test_google_embedder_uses_query_and_document_task_types(monkeypatch):
+async def test_google_embedder_uses_query_and_document_task_types(monkeypatch) -> None:
     calls = []
     fake_response = SimpleNamespace(
         embeddings=[SimpleNamespace(values=[0.1, 0.2, 0.3])]
@@ -245,7 +252,7 @@ async def test_google_embedder_uses_query_and_document_task_types(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_google_embedder_encode_query_dim_mismatch(monkeypatch):
+async def test_google_embedder_encode_query_dim_mismatch(monkeypatch) -> None:
     fake_response = SimpleNamespace(embeddings=[SimpleNamespace(values=[0.1, 0.2])])
     fake_client = SimpleNamespace(
         models=SimpleNamespace(embed_content=lambda **_: fake_response)

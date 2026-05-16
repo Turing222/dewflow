@@ -1,3 +1,10 @@
+"""Pydantic AI LLM service unit tests.
+
+职责：验证 agent 输入构造、provider factory 和 extra_body 合并；边界：使用 monkeypatch/stub 替换 SDK 调用，不访问真实 LLM；副作用：无。
+"""
+
+from __future__ import annotations
+
 import uuid
 from types import SimpleNamespace
 
@@ -20,7 +27,7 @@ def make_query(messages: list[dict] | None = None) -> LLMQueryDTO:
     )
 
 
-def test_build_agent_input_splits_system_history_and_current_user():
+def test_build_agent_input_splits_system_history_and_current_user() -> None:
     messages = [
         {"role": "system", "content": "你是专业助手。"},
         {"role": "user", "content": "上一问"},
@@ -37,7 +44,7 @@ def test_build_agent_input_splits_system_history_and_current_user():
 
 
 @pytest.mark.asyncio
-async def test_generate_response_uses_pydantic_agent(monkeypatch):
+async def test_generate_response_uses_pydantic_agent(monkeypatch) -> None:
     service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
     captured = {}
 
@@ -58,7 +65,7 @@ async def test_generate_response_uses_pydantic_agent(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_generate_response_merges_extra_body(monkeypatch):
+async def test_generate_response_merges_extra_body(monkeypatch) -> None:
     service = PydanticAILLMService(
         api_key="test-key",
         model_name="gemini-test",
@@ -84,7 +91,7 @@ async def test_generate_response_merges_extra_body(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_stream_response_yields_delta_chunks(monkeypatch):
+async def test_stream_response_yields_delta_chunks(monkeypatch) -> None:
     service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
 
     class FakeStreamResult:
@@ -114,7 +121,7 @@ async def test_stream_response_yields_delta_chunks(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_generate_response_marks_circuit_failure(monkeypatch):
+async def test_generate_response_marks_circuit_failure(monkeypatch) -> None:
     service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
     calls = {"failure": 0}
 
@@ -141,14 +148,14 @@ async def test_generate_response_marks_circuit_failure(monkeypatch):
     assert calls["failure"] == 1
 
 
-def test_create_agent_requires_gemini_api_key():
+def test_create_agent_requires_gemini_api_key() -> None:
     service = PydanticAILLMService(api_key="", model_name="gemini-test")
 
     with pytest.raises(AppException):
         service._create_agent("instructions")
 
 
-def test_circuit_breaker_config_can_be_injected():
+def test_circuit_breaker_config_can_be_injected() -> None:
     service = PydanticAILLMService(
         api_key="test-key",
         model_name="gemini-test",
@@ -160,7 +167,7 @@ def test_circuit_breaker_config_can_be_injected():
     assert service._circuit.cooldown_seconds == 11
 
 
-def test_create_agent_enables_pydantic_ai_instrumentation():
+def test_create_agent_enables_pydantic_ai_instrumentation() -> None:
     service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
 
     agent = service._create_agent("instructions")
@@ -169,7 +176,7 @@ def test_create_agent_enables_pydantic_ai_instrumentation():
     assert agent.name == "llm"
 
 
-def test_create_model_supports_google_provider():
+def test_create_model_supports_google_provider() -> None:
     profile = get_llm_model_config().resolve_profile("gemini")
 
     model = create_pydantic_ai_model(profile=profile, api_key="test-key")
@@ -177,7 +184,7 @@ def test_create_model_supports_google_provider():
     assert type(model).__name__ == "GoogleModel"
 
 
-def test_create_model_supports_openai_compatible_provider():
+def test_create_model_supports_openai_compatible_provider() -> None:
     profile = get_llm_model_config().resolve_profile("deepseek-v4-flash")
 
     model = create_pydantic_ai_model(profile=profile, api_key="test-key")
@@ -185,13 +192,13 @@ def test_create_model_supports_openai_compatible_provider():
     assert type(model).__name__ == "OpenAIChatModel"
 
 
-def test_factory_returns_pydantic_ai_service_for_gemini_provider():
+def test_factory_returns_pydantic_ai_service_for_gemini_provider() -> None:
     service = LLMProviderFactory.create("gemini")
 
     assert isinstance(service, PydanticAILLMService)
 
 
-def test_factory_returns_pydantic_ai_service_for_openai_compatible(monkeypatch):
+def test_factory_returns_pydantic_ai_service_for_openai_compatible(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
 
     service = LLMProviderFactory.create("openai-compatible")
@@ -200,7 +207,7 @@ def test_factory_returns_pydantic_ai_service_for_openai_compatible(monkeypatch):
     assert service.provider_name == "openai-compatible"
 
 
-def test_factory_deepseek_v4_alias_sets_model(monkeypatch):
+def test_factory_deepseek_v4_alias_sets_model(monkeypatch) -> None:
     monkeypatch.setattr(
         "backend.ai.providers.llm.factory.settings.DEEPSEEK_API_KEY",
         "deepseek-key",
@@ -213,7 +220,7 @@ def test_factory_deepseek_v4_alias_sets_model(monkeypatch):
     assert service.model_name == "deepseek-v4-flash"
 
 
-def test_factory_expands_multiple_keys_into_routing_service(monkeypatch):
+def test_factory_expands_multiple_keys_into_routing_service(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key-a,deepseek-key-b")
 
     service = LLMProviderFactory.create("deepseek")
@@ -229,7 +236,7 @@ def test_factory_expands_multiple_keys_into_routing_service(monkeypatch):
     assert first.max_retries == 0
 
 
-def test_factory_returns_routing_service_for_model_route(monkeypatch):
+def test_factory_returns_routing_service_for_model_route(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
 

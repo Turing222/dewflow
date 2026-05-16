@@ -1,3 +1,8 @@
+"""User API unit tests.
+
+职责：验证 user endpoint 的分支选择、错误映射和服务调用参数；边界：直接调用 endpoint 函数，不启动 FastAPI app 或真实数据库；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -20,17 +25,20 @@ from backend.models.schemas.user_schema import (
 
 
 class DummyUoW:
-    def read_context(self):
+    def __init__(self) -> None:
+        pass
+
+    def read_context(self) -> DummyUoW:
         return self
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> DummyUoW:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool:
         return False
 
 
-def make_user(**overrides):
+def make_user(**overrides: object) -> SimpleNamespace:
     now = datetime.now(UTC)
     data = {
         "id": uuid.uuid4(),
@@ -48,7 +56,7 @@ def make_user(**overrides):
 
 
 @pytest.fixture
-def user_service():
+def user_service() -> SimpleNamespace:
     service = SimpleNamespace(
         uow=DummyUoW(),
         get_by_username=AsyncMock(),
@@ -60,7 +68,7 @@ def user_service():
 
 
 @pytest.fixture
-def import_service():
+def import_service() -> SimpleNamespace:
     service = SimpleNamespace(
         uow=DummyUoW(),
         import_from_upload=AsyncMock(),
@@ -69,7 +77,7 @@ def import_service():
 
 
 @pytest.mark.asyncio
-async def test_read_users_me_returns_user_response():
+async def test_read_users_me_returns_user_response() -> None:
     current_user = make_user(username="me_user", email="me@example.com")
 
     result = await user_api.read_users_me(current_user=current_user)
@@ -80,7 +88,7 @@ async def test_read_users_me_returns_user_response():
 
 
 @pytest.mark.asyncio
-async def test_read_user_uses_username_branch(user_service):
+async def test_read_user_uses_username_branch(user_service: SimpleNamespace) -> None:
     target = make_user(username="alice", email="alice@example.com")
     user_service.get_by_username.return_value = target
 
@@ -96,7 +104,7 @@ async def test_read_user_uses_username_branch(user_service):
 
 
 @pytest.mark.asyncio
-async def test_read_user_uses_email_branch(user_service):
+async def test_read_user_uses_email_branch(user_service: SimpleNamespace) -> None:
     target = make_user(username="alice", email="alice@example.com")
     user_service.get_by_email.return_value = target
 
@@ -112,7 +120,9 @@ async def test_read_user_uses_email_branch(user_service):
 
 
 @pytest.mark.asyncio
-async def test_read_user_returns_404_when_not_found(user_service):
+async def test_read_user_returns_404_when_not_found(
+    user_service: SimpleNamespace,
+) -> None:
     user_service.get_by_username.return_value = None
 
     with pytest.raises(AppException) as exc_info:
@@ -127,7 +137,7 @@ async def test_read_user_returns_404_when_not_found(user_service):
 
 
 @pytest.mark.asyncio
-async def test_update_user_success(user_service):
+async def test_update_user_success(user_service: SimpleNamespace) -> None:
     user_id = uuid.uuid4()
     user_in = UserUpdate(username="new_name")
     updated = make_user(id=user_id, username="new_name")
@@ -147,7 +157,9 @@ async def test_update_user_success(user_service):
 
 
 @pytest.mark.asyncio
-async def test_update_user_returns_404_when_not_found(user_service):
+async def test_update_user_returns_404_when_not_found(
+    user_service: SimpleNamespace,
+) -> None:
     user_service.user_update.return_value = None
 
     with pytest.raises(AppException) as exc_info:
@@ -163,7 +175,9 @@ async def test_update_user_returns_404_when_not_found(user_service):
     assert exc_info.value.message == "用户不存在"
 
 
-def test_update_user_rejects_unknown_fields_before_service(user_service):
+def test_update_user_rejects_unknown_fields_before_service(
+    user_service: SimpleNamespace,
+) -> None:
     with pytest.raises(ValidationError):
         UserUpdate.model_validate({"username": "new_name", "role": "admin"})
 
@@ -171,7 +185,7 @@ def test_update_user_rejects_unknown_fields_before_service(user_service):
 
 
 @pytest.mark.asyncio
-async def test_create_user_success(user_service):
+async def test_create_user_success(user_service: SimpleNamespace) -> None:
     user_in = UserCreate(
         username="new_user",
         email="new_user@example.com",
@@ -193,7 +207,9 @@ async def test_create_user_success(user_service):
 
 
 @pytest.mark.asyncio
-async def test_create_user_returns_400_when_service_returns_none(user_service):
+async def test_create_user_returns_400_when_service_returns_none(
+    user_service: SimpleNamespace,
+) -> None:
     user_service.user_register_with_personal_workspace.return_value = None
 
     with pytest.raises(AppException) as exc_info:
@@ -214,7 +230,7 @@ async def test_create_user_returns_400_when_service_returns_none(user_service):
 
 
 @pytest.mark.asyncio
-async def test_csv_bulk_insert_users_success(import_service):
+async def test_csv_bulk_insert_users_success(import_service: SimpleNamespace) -> None:
     upload_file = MagicMock(spec=UploadFile)
     expected = UserImportResponse(
         filename="users.csv",

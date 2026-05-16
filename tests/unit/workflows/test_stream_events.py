@@ -1,3 +1,9 @@
+"""Stream event encoding and decoding tests — typed payloads, round-trip, and legacy compatibility.
+
+职责：验证流式事件的编码/解码往返、旧格式兼容和 HTTP SSE wire format；
+边界：纯数据转换，不依赖外部服务；副作用：无。
+"""
+
 from backend.api.v1.sse_events import (
     chunk_event,
     done_event,
@@ -16,13 +22,13 @@ from backend.application.chat.stream_events import (
 )
 
 
-def test_stream_event_helpers_build_typed_payloads():
+def test_stream_event_helpers_build_typed_payloads() -> None:
     assert stream_chunk_event("hello") == {"type": "chunk", "content": "hello"}
     assert stream_error_event("failed") == {"type": "error", "message": "failed"}
     assert stream_done_event() == {"type": "done"}
 
 
-def test_stream_events_round_trip_structured_payloads():
+def test_stream_events_round_trip_structured_payloads() -> None:
     assert decode_stream_event(encode_chunk_event("hello")) == {
         "type": "chunk",
         "content": "hello",
@@ -34,7 +40,7 @@ def test_stream_events_round_trip_structured_payloads():
     assert decode_stream_event(encode_done_event()) == {"type": "done"}
 
 
-def test_stream_events_accept_legacy_payloads():
+def test_stream_events_accept_legacy_payloads() -> None:
     assert decode_stream_event("raw chunk") == {
         "type": "chunk",
         "content": "raw chunk",
@@ -46,7 +52,7 @@ def test_stream_events_accept_legacy_payloads():
     assert decode_stream_event("[DONE]") == {"type": "done"}
 
 
-def test_http_sse_event_helpers_build_typed_payloads():
+def test_http_sse_event_helpers_build_typed_payloads() -> None:
     assert meta_event(
         session_id="session-1",
         session_title="demo",
@@ -62,7 +68,7 @@ def test_http_sse_event_helpers_build_typed_payloads():
     assert done_event() == {"type": "done"}
 
 
-def test_http_sse_events_keep_existing_wire_format():
+def test_http_sse_events_keep_existing_wire_format() -> None:
     assert (
         encode_sse_event(
             meta_event(

@@ -1,7 +1,12 @@
+"""ContextState schema unit tests.
+
+职责：验证 ContextState 的默认值、序列化方法和字段清洗行为；边界：直接调用 Pydantic 方法，不涉及数据库或 HTTP；副作用：无。
+"""
+
 from backend.models.schemas.chat.context_state import ContextState
 
 
-def test_context_state_defaults_to_empty_memory():
+def test_defaults_to_empty_memory_when_no_input() -> None:
     state = ContextState()
 
     assert state.decisions == []
@@ -12,7 +17,7 @@ def test_context_state_defaults_to_empty_memory():
     assert not state.has_memory()
 
 
-def test_context_state_storage_dict_excludes_version():
+def test_to_storage_dict_excludes_version() -> None:
     state = ContextState(
         decisions=["使用 pgvector"],
         constraints=["回答必须中文"],
@@ -28,7 +33,7 @@ def test_context_state_storage_dict_excludes_version():
     assert "version" not in payload
 
 
-def test_context_state_prompt_dict_excludes_versions():
+def test_to_prompt_dict_excludes_versions() -> None:
     state = ContextState(
         user_goal="完成 RAG 记忆设计",
         decisions=["使用会话级状态"],
@@ -44,7 +49,7 @@ def test_context_state_prompt_dict_excludes_versions():
     assert "schema_version" not in payload
 
 
-def test_context_state_prompt_dict_strips_blank_text_fields():
+def test_to_prompt_dict_strips_blank_text_fields() -> None:
     state = ContextState(
         user_goal="  ",
         current_focus="  RAG 策略  ",

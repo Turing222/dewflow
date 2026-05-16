@@ -1,14 +1,6 @@
-"""
-PromptManager 单元测试
+"""Prompt manager unit tests.
 
-覆盖：
-- Jinja2 模板渲染（变量注入、条件逻辑）
-- 无历史消息时组装 [System + User]
-- 有历史消息时组装 [System + History + User]
-- 空 System Prompt 时不插入 system 消息
-- _group_into_rounds 分组逻辑
-
-注意：Token 预算裁剪和截断职责已移交 LiveWindowBuilder + ContextBudgeter。
+职责：验证模板渲染、消息组装、历史分组和 token 计数；边界：使用本地模板和纯内存消息，不访问外部 prompt 服务；副作用：无。
 """
 
 import pytest
@@ -23,7 +15,7 @@ from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 
 
 @pytest.fixture
-def manager():
+def manager() -> PromptManager:
     """标准 PromptManager"""
     return PromptManager(
         system_template=DEFAULT_SYSTEM_TEMPLATE,
@@ -35,7 +27,7 @@ def manager():
 
 
 @pytest.fixture
-def sample_history():
+def sample_history() -> list[dict[str, str]]:
     """两轮对话历史"""
     return [
         {"role": "user", "content": "你好"},
@@ -53,25 +45,25 @@ def sample_history():
 class TestTemplateRendering:
     """Jinja2 模板渲染"""
 
-    def test_default_template_renders(self):
+    def test_default_template_renders(self) -> None:
         result = render_system_prompt()
         assert "Dewflow" in result
         assert len(result) > 0
 
-    def test_template_with_custom_app_name(self):
+    def test_template_with_custom_app_name(self) -> None:
         result = render_system_prompt(app_name="MyBot")
         assert "MyBot" in result
         assert "Dewflow" not in result
 
-    def test_template_with_user_name(self):
+    def test_template_with_user_name(self) -> None:
         result = render_system_prompt(user_name="Alice")
         assert "Alice" in result
 
-    def test_template_without_user_name(self):
+    def test_template_without_user_name(self) -> None:
         result = render_system_prompt(user_name="")
         assert "当前用户" not in result
 
-    def test_rag_template_renders_chunks(self):
+    def test_rag_template_renders_chunks(self) -> None:
         chunks = ["[R1.1] 文档A的内容", "[R2.1] 文档B的内容"]
         result = render_system_prompt(
             template=RAG_SYSTEM_TEMPLATE,
@@ -82,7 +74,7 @@ class TestTemplateRendering:
         assert "[R1.1]" in result
         assert "[R2.1]" in result
 
-    def test_rag_template_requires_knowledge_evidence(self):
+    def test_rag_template_requires_knowledge_evidence(self) -> None:
         result = render_system_prompt(
             template=RAG_SYSTEM_TEMPLATE,
             context_chunks=[],
@@ -100,7 +92,7 @@ class TestTemplateRendering:
 class TestBasicAssembly:
     """基础 Prompt 组装"""
 
-    def test_assemble_no_history(self, manager):
+    def test_assemble_no_history(self, manager) -> None:
         result = manager.assemble([], "你好")
         assert isinstance(result, AssembledPrompt)
         assert len(result.messages) == 2  # system + user
@@ -112,7 +104,7 @@ class TestBasicAssembly:
         assert result.truncated is False
         assert result.total_tokens > 0
 
-    def test_assemble_with_history(self, manager, sample_history):
+    def test_assemble_with_history(self, manager, sample_history) -> None:
         result = manager.assemble(sample_history, "帮我写个代码")
         assert result.messages[0]["role"] == "system"
         assert result.messages[-1]["role"] == "user"
@@ -120,12 +112,12 @@ class TestBasicAssembly:
         assert result.history_rounds_used == 2  # 两轮历史
         assert result.truncated is False
 
-    def test_assemble_with_extra_vars(self, manager):
+    def test_assemble_with_extra_vars(self, manager) -> None:
         result = manager.assemble([], "你好", extra_vars={"user_name": "Bob"})
         system_content = result.messages[0]["content"]
         assert "Bob" in system_content
 
-    def test_assemble_preserves_message_order(self, manager, sample_history):
+    def test_assemble_preserves_message_order(self, manager, sample_history) -> None:
         result = manager.assemble(sample_history, "新问题")
         roles = [m["role"] for m in result.messages]
         assert roles[0] == "system"
@@ -141,11 +133,11 @@ class TestBasicAssembly:
 class TestGroupIntoRounds:
     """_group_into_rounds 方法"""
 
-    def test_empty_history(self):
+    def test_empty_history(self) -> None:
         rounds = PromptManager._group_into_rounds([])
         assert rounds == []
 
-    def test_standard_rounds(self):
+    def test_standard_rounds(self) -> None:
         history = [
             {"role": "user", "content": "Q1"},
             {"role": "assistant", "content": "A1"},
@@ -159,7 +151,7 @@ class TestGroupIntoRounds:
             {"role": "assistant", "content": "A1"},
         ]
 
-    def test_skips_system_messages(self):
+    def test_skips_system_messages(self) -> None:
         history = [
             {"role": "system", "content": "旧的系统提示"},
             {"role": "user", "content": "Q1"},
@@ -178,17 +170,17 @@ class TestGroupIntoRounds:
 class TestTokenUtils:
     """Token 计算工具"""
 
-    def test_count_tokens_empty(self):
+    def test_count_tokens_empty(self) -> None:
         assert count_tokens("") == 0
 
-    def test_count_tokens_nonempty(self):
+    def test_count_tokens_nonempty(self) -> None:
         result = count_tokens("Hello, world!")
         assert result > 0
 
-    def test_count_messages_tokens_empty(self):
+    def test_count_messages_tokens_empty(self) -> None:
         assert count_messages_tokens([]) == 0
 
-    def test_count_messages_tokens_basic(self):
+    def test_count_messages_tokens_basic(self) -> None:
         messages = [
             {"role": "system", "content": "你是助手"},
             {"role": "user", "content": "你好"},

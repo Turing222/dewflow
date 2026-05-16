@@ -1,3 +1,8 @@
+"""Workspace service unit tests.
+
+职责：验证 WorkspaceService 的创建、更新、删除和成员管理行为；边界：使用 make_service 工厂和 SimpleNamespace mock，不连接真实数据库；副作用：无。
+"""
+
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -19,8 +24,8 @@ from backend.services.permission_service import Permission
 from backend.services.workspace_service import WorkspaceService
 
 
-def make_user(**overrides):
-    data = {
+def make_user(**overrides: object) -> SimpleNamespace:
+    data: dict[str, object] = {
         "id": uuid.uuid4(),
         "username": "alice",
         "email": "alice@example.com",
@@ -31,9 +36,9 @@ def make_user(**overrides):
     return SimpleNamespace(**data)
 
 
-def make_workspace(**overrides):
+def make_workspace(**overrides: object) -> SimpleNamespace:
     now = datetime.now(UTC)
-    data = {
+    data: dict[str, object] = {
         "id": uuid.uuid4(),
         "name": "Team",
         "slug": "team",
@@ -45,9 +50,9 @@ def make_workspace(**overrides):
     return SimpleNamespace(**data)
 
 
-def make_user_role(**overrides):
+def make_user_role(**overrides: object) -> SimpleNamespace:
     now = datetime.now(UTC)
-    data = {
+    data: dict[str, object] = {
         "id": uuid.uuid4(),
         "user_id": uuid.uuid4(),
         "workspace_id": uuid.uuid4(),
@@ -59,7 +64,10 @@ def make_user_role(**overrides):
     return SimpleNamespace(**data)
 
 
-def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER):
+ServiceContext = tuple[WorkspaceService, SimpleNamespace, SimpleNamespace, SimpleNamespace, SimpleNamespace]
+
+
+def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER) -> ServiceContext:
     workspace = make_workspace()
     member_user = make_user(username="bob", email="bob@example.com")
     member_role = make_user_role(
@@ -74,7 +82,7 @@ def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER):
         add_workspace_role=AsyncMock(),
         update_workspace=AsyncMock(return_value=workspace),
         delete_workspace=AsyncMock(),
-        soft_delete_workspace=AsyncMock(),  # R7: 软删除接口
+        soft_delete_workspace=AsyncMock(),
         list_workspaces_for_user=AsyncMock(
             return_value=[(workspace, role)] if role else []
         ),
@@ -94,7 +102,7 @@ def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER):
     )
     require_perm_mock = AsyncMock()
 
-    async def _require_perm_side_effect(*, permission, **_):
+    async def _require_perm_side_effect(*, permission: Permission, **_: object) -> None:
         manage_perms = {Permission.WORKSPACE_MANAGE, Permission.ROLE_MANAGE}
         if role is None and permission in manage_perms:
             from backend.core.exceptions import app_forbidden
@@ -118,14 +126,14 @@ def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER):
     return service, access_repo, workspace, member_user, member_role
 
 
-def test_workspace_create_normalizes_slug():
+def test_workspace_create_normalizes_slug_returns_created() -> None:
     workspace_in = WorkspaceCreate(name="Alice Team", slug="Alice-Team")
 
     assert workspace_in.slug == "alice-team"
 
 
 @pytest.mark.asyncio
-async def test_create_workspace_assigns_current_user_as_owner():
+async def test_create_workspace_assigns_current_user_as_owner() -> None:
     service, access_repo, workspace, _, _ = make_service()
     user = make_user()
 
@@ -149,7 +157,7 @@ async def test_create_workspace_assigns_current_user_as_owner():
 
 
 @pytest.mark.asyncio
-async def test_create_workspace_rejects_duplicate_slug():
+async def test_create_workspace_rejects_duplicate_slug() -> None:
     existing = make_workspace(slug="taken")
     service, access_repo, _, _, _ = make_service()
     access_repo.get_workspace_by_slug.return_value = existing
@@ -164,7 +172,7 @@ async def test_create_workspace_rejects_duplicate_slug():
 
 
 @pytest.mark.asyncio
-async def test_update_workspace_requires_manage_permission():
+async def test_update_workspace_raises_on_missing_manage_permission() -> None:
     service, access_repo, workspace, _, _ = make_service(role=WorkspaceRole.MEMBER)
 
     with pytest.raises(AppException):
@@ -178,7 +186,7 @@ async def test_update_workspace_requires_manage_permission():
 
 
 @pytest.mark.asyncio
-async def test_delete_workspace_requires_owner_role():
+async def test_delete_workspace_raises_on_non_owner_role() -> None:
     service, access_repo, workspace, _, _ = make_service(role=WorkspaceRole.ADMIN)
 
     with pytest.raises(AppException):
@@ -191,7 +199,7 @@ async def test_delete_workspace_requires_owner_role():
 
 
 @pytest.mark.asyncio
-async def test_superuser_can_delete_workspace_without_owner_role():
+async def test_superuser_can_delete_workspace_without_owner_role_succeeds() -> None:
     service, access_repo, workspace, _, _ = make_service(role=None)
 
     await service.delete_workspace(
@@ -202,14 +210,14 @@ async def test_superuser_can_delete_workspace_without_owner_role():
     access_repo.soft_delete_workspace.assert_awaited_once_with(workspace)
 
 
-def test_workspace_member_create_defaults_to_member_role():
+def test_workspace_member_create_defaults_to_member_role_returns_member() -> None:
     member_in = WorkspaceMemberCreate(user_id=uuid.uuid4())
 
     assert member_in.role == WorkspaceRole.MEMBER
 
 
 @pytest.mark.asyncio
-async def test_add_workspace_member_uses_default_member_role():
+async def test_add_workspace_member_uses_default_member_role_returns_member() -> None:
     service, access_repo, workspace, member_user, _ = make_service(
         role=WorkspaceRole.ADMIN
     )
@@ -231,7 +239,7 @@ async def test_add_workspace_member_uses_default_member_role():
 
 
 @pytest.mark.asyncio
-async def test_admin_cannot_appoint_owner():
+async def test_admin_appoint_owner_raises_permission_denied() -> None:
     service, access_repo, workspace, member_user, _ = make_service(
         role=WorkspaceRole.ADMIN
     )
@@ -251,7 +259,7 @@ async def test_admin_cannot_appoint_owner():
 
 
 @pytest.mark.asyncio
-async def test_cannot_downgrade_last_owner():
+async def test_downgrade_last_owner_raises_permission_denied() -> None:
     service, access_repo, workspace, member_user, member_role = make_service(
         role=WorkspaceRole.OWNER,
     )
@@ -270,7 +278,7 @@ async def test_cannot_downgrade_last_owner():
 
 
 @pytest.mark.asyncio
-async def test_cannot_remove_last_owner():
+async def test_remove_last_owner_raises_permission_denied() -> None:
     service, access_repo, workspace, member_user, member_role = make_service(
         role=WorkspaceRole.OWNER,
     )

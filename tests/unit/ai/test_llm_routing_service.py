@@ -1,3 +1,10 @@
+"""LLM routing service unit tests.
+
+职责：验证多候选 LLM 生成和流式生成的 fallback 行为；边界：使用 stub LLM service，不访问真实模型服务；副作用：无。
+"""
+
+from __future__ import annotations
+
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -10,6 +17,8 @@ from backend.ai.providers.llm.routing_service import (
 from backend.contracts.interfaces import AbstractLLMService
 from backend.core.exceptions import app_service_error
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
+
+pytestmark = pytest.mark.asyncio
 
 
 def make_query() -> LLMQueryDTO:
@@ -44,8 +53,7 @@ class SuccessfulLLMService(AbstractLLMService):
         return LLMResultDTO(content="fallback answer", latency_ms=12)
 
 
-@pytest.mark.asyncio
-async def test_generate_response_falls_back_to_next_candidate():
+async def test_generate_response_falls_back_to_next_candidate() -> None:
     service = LLMRoutingService(
         [
             LLMRouteCandidate("primary", FailingLLMService()),
@@ -59,8 +67,7 @@ async def test_generate_response_falls_back_to_next_candidate():
     assert result.success is True
 
 
-@pytest.mark.asyncio
-async def test_stream_response_falls_back_before_first_chunk():
+async def test_stream_response_falls_back_before_first_chunk() -> None:
     service = LLMRoutingService(
         [
             LLMRouteCandidate("primary", FailingLLMService()),

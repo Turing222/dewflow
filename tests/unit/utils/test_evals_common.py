@@ -1,3 +1,8 @@
+"""Evals common loader unit tests.
+
+职责：验证 evals.common.load_samples 的 JSONL 解析和校验行为；边界：使用 tmp_path 本地文件，不访问真实存储；副作用：无。
+"""
+
 from pathlib import Path
 
 import pytest
@@ -5,7 +10,7 @@ import pytest
 from evals.common import load_samples
 
 
-def test_load_samples_supports_v1_fields(tmp_path: Path):
+def test_load_samples_supports_v1_fields_returns_samples(tmp_path: Path) -> None:
     dataset = tmp_path / "dataset.jsonl"
     dataset.write_text(
         (
@@ -32,7 +37,7 @@ def test_load_samples_supports_v1_fields(tmp_path: Path):
     assert sample.notes == "note"
 
 
-def test_load_samples_rejects_invalid_retrieval_mode(tmp_path: Path):
+def test_load_samples_raises_on_invalid_retrieval_mode(tmp_path: Path) -> None:
     dataset = tmp_path / "dataset.jsonl"
     dataset.write_text(
         '{"query":"hello","retrieval_mode":"bm25"}\n',

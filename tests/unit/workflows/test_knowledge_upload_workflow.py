@@ -1,3 +1,9 @@
+"""Knowledge upload workflow tests — file submission, deduplication, and task dispatch.
+
+职责：验证 KnowledgeUploadWorkflow 的文件提交（显式/默认 kb）、去重重用和任务派发；
+边界：不启动 HTTP stack、不连接真实数据库或 Redis；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -10,18 +16,13 @@ from fastapi import UploadFile
 from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflow
 from backend.models.orm.knowledge import FileStatus
 from backend.services.knowledge_service import SavedKnowledgeFile
+from tests.unit.workflows.conftest import FakeAsyncUow
 
-
-class DummyUoW:
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.mark.asyncio
-async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypatch):
+async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypatch) -> None:
     file_id = uuid.uuid4()
     task_id = uuid.uuid4()
     kb_id = uuid.uuid4()
@@ -29,7 +30,7 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
     upload_file = MagicMock(spec=UploadFile)
 
     knowledge_service = SimpleNamespace(
-        uow=DummyUoW(),
+        uow=FakeAsyncUow(),
         save_upload_file_for_ingestion=AsyncMock(
             return_value=SavedKnowledgeFile(
                 file=SimpleNamespace(
@@ -44,7 +45,7 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
         ),
     )
     task_service = SimpleNamespace(
-        uow=DummyUoW(),
+        uow=FakeAsyncUow(),
         create_kb_ingestion_task=AsyncMock(
             return_value=SimpleNamespace(id=task_id, status="pending")
         ),
@@ -85,8 +86,7 @@ async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypat
     assert result.deduplicated is False
 
 
-@pytest.mark.asyncio
-async def test_submit_reuses_ready_duplicate_without_dispatching_job():
+async def test_submit_reuses_ready_duplicate_without_dispatching_job() -> None:
     file_id = uuid.uuid4()
     task_id = uuid.uuid4()
     kb_id = uuid.uuid4()
@@ -94,7 +94,7 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job():
     upload_file = MagicMock(spec=UploadFile)
 
     knowledge_service = SimpleNamespace(
-        uow=DummyUoW(),
+        uow=FakeAsyncUow(),
         save_upload_file_for_ingestion=AsyncMock(
             return_value=SavedKnowledgeFile(
                 file=SimpleNamespace(
@@ -109,7 +109,7 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job():
         ),
     )
     task_service = SimpleNamespace(
-        uow=DummyUoW(),
+        uow=FakeAsyncUow(),
         create_completed_kb_ingestion_task=AsyncMock(
             return_value=SimpleNamespace(id=task_id, status="completed")
         ),
@@ -143,8 +143,7 @@ async def test_submit_reuses_ready_duplicate_without_dispatching_job():
     assert result.deduplicated is True
 
 
-@pytest.mark.asyncio
-async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job():
+async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job() -> None:
     file_id = uuid.uuid4()
     task_id = uuid.uuid4()
     kb_id = uuid.uuid4()
@@ -152,7 +151,7 @@ async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job():
     upload_file = MagicMock(spec=UploadFile)
 
     knowledge_service = SimpleNamespace(
-        uow=DummyUoW(),
+        uow=FakeAsyncUow(),
         get_or_create_default_kb=AsyncMock(return_value=SimpleNamespace(id=kb_id)),
         save_upload_file_for_ingestion=AsyncMock(
             return_value=SavedKnowledgeFile(
@@ -168,7 +167,7 @@ async def test_submit_without_kb_id_uses_default_kb_and_dispatches_job():
         ),
     )
     task_service = SimpleNamespace(
-        uow=DummyUoW(),
+        uow=FakeAsyncUow(),
         create_kb_ingestion_task=AsyncMock(
             return_value=SimpleNamespace(id=task_id, status="pending")
         ),

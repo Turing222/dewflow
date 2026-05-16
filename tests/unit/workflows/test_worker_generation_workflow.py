@@ -1,7 +1,14 @@
+"""Worker generation workflow tests — streaming, non-streaming, guardrails, RAG, rerank.
+
+职责：验证 LLMGenerationWorkerWorkflow 的流式/非流式生成、guardrail 拦截、RAG 检索与拒绝、
+rerank 流程、concurrency slot 记录、Redis 连接轮换和幂等锁管理；
+边界：不启动 HTTP stack、不连接真实 Redis/LLM/S3；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,18 +26,9 @@ from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.services.chat_safety_metadata import GuardrailDecision
 from backend.services.rag_planning_service import RAGExecutionPlan
+from tests.unit.workflows.conftest import FakeChatUow, make_rag_hit
 
-
-class DummyUoW:
-    def __init__(self) -> None:
-        self.chat_repo = AsyncMock()
-        self.user_repo = AsyncMock()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
+pytestmark = pytest.mark.asyncio
 
 
 class FakeRedis:
@@ -52,7 +50,7 @@ class FakeRedis:
 class FakeRedisClient:
     def __init__(self, *connections: FakeRedis) -> None:
         self.connections = list(connections)
-        self.init_calls = 0
+        self.init_calls: int = 0
 
     async def init(self) -> FakeRedis:
         self.init_calls += 1
@@ -76,7 +74,7 @@ class RecordingConcurrencySlot:
 def install_llm_slot_recorder(monkeypatch) -> list[dict]:
     calls: list[dict] = []
 
-    def fake_llm_concurrency_slot(attributes: dict | None = None):
+    def fake_llm_concurrency_slot(attributes: dict | None = None) -> RecordingConcurrencySlot:
         return RecordingConcurrencySlot(calls, attributes)
 
     monkeypatch.setattr(
@@ -124,10 +122,6 @@ class NonStreamingLLM:
     def __init__(self, result: LLMResultDTO) -> None:
         self.generate_response = AsyncMock(return_value=result)
 
-    async def stream_response(self, query: LLMQueryDTO) -> AsyncIterator[str]:
-        if False:
-            yield query.query_text
-
 
 class RecordingRAGService:
     def __init__(self, hits: list[dict]) -> None:
@@ -156,27 +150,39 @@ class RecordingRAGPlanner:
         return self.response_plan
 
 
-def make_rag_hit(content: str = "worker-side context") -> dict:
-    return {
-        "id": str(uuid.uuid4()),
-        "content": content,
-        "source_type": "file",
-        "file_id": str(uuid.uuid4()),
-        "message_id": None,
-        "filename": "ctx.md",
-        "chunk_index": 0,
-        "meta_info": {},
-        "distance": 0.1,
-        "score": 0.9,
-    }
+def make_rerank_impl(
+    llm_service: StreamingLLM,
+) -> Callable[[str, list[dict], int | None], Awaitable[list[dict]]]:
+    """Wire rerank through RAGService public helpers so LLM response affects chunk survival."""
+
+    async def _rerank_impl(query_text: str, candidates: list[dict], top_k: int | None = None) -> list[dict]:
+        from backend.services.rag_service import RAGService
+
+        prompt = RAGService.build_rerank_prompt(query_text=query_text, candidates=candidates)
+        result = await llm_service.generate_response(
+            type(
+                "LLMDTO",
+                (),
+                {
+                    "session_id": uuid.uuid4(),
+                    "query_text": prompt,
+                    "conversation_history": [],
+                },
+            )()
+        )
+        if not result.success:
+            raise ValueError(result.error_message or "LLM rerank failed")
+        rankings = RAGService.parse_rerank_response(result.content)
+        return RAGService.apply_rankings(candidates=candidates, rankings=rankings, limit=top_k or 4)
+
+    return _rerank_impl
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_persists_success_and_publishes_done(monkeypatch):
+async def test_worker_generation_persists_success_and_publishes_done(monkeypatch) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     assistant_message_id = uuid.uuid4()
     user_id = uuid.uuid4()
     updated_message = object()
@@ -233,15 +239,14 @@ async def test_worker_generation_persists_success_and_publishes_done(monkeypatch
     ]
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_fetches_current_redis_connection(monkeypatch):
+async def test_worker_generation_fetches_current_redis_connection(monkeypatch) -> None:
     old_redis = FakeRedis()
     current_redis = FakeRedis()
     redis_client = FakeRedisClient(old_redis, current_redis)
     install_llm_slot_recorder(monkeypatch)
 
     workflow = LLMGenerationWorkerWorkflow(
-        uow=DummyUoW(),
+        uow=FakeChatUow(),
         redis_client=redis_client,
         llm_service=StreamingLLM(["hello"]),
     )
@@ -260,12 +265,11 @@ async def test_worker_generation_fetches_current_redis_connection(monkeypatch):
     assert redis_client.init_calls >= 2
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch):
+async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     assistant_message_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
 
@@ -301,14 +305,13 @@ async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch):
     assert update_kwargs["message_metadata"]["response_outcome"] == "failed"
 
 
-@pytest.mark.asyncio
 async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     monkeypatch,
-):
+) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     assistant_message_id = uuid.uuid4()
     user_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
@@ -357,12 +360,11 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     ]
 
 
-@pytest.mark.asyncio
-async def test_worker_input_guardrail_blocks_before_rag_or_llm(monkeypatch):
+async def test_worker_input_guardrail_blocks_before_rag_or_llm(monkeypatch) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     llm_service = NonStreamingLLM(LLMResultDTO(content="should not run"))
     rag_service = RecordingRAGService([make_rag_hit()])
@@ -395,12 +397,11 @@ async def test_worker_input_guardrail_blocks_before_rag_or_llm(monkeypatch):
     assert metadata["badcase"]["is_badcase"] is False
 
 
-@pytest.mark.asyncio
-async def test_worker_output_guardrail_replaces_and_marks_p0(monkeypatch):
+async def test_worker_output_guardrail_replaces_and_marks_p0(monkeypatch) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     unsafe_output = "用户密码是 123456"
     workflow = LLMGenerationWorkerWorkflow(
@@ -429,12 +430,11 @@ async def test_worker_output_guardrail_replaces_and_marks_p0(monkeypatch):
     assert metadata["badcase"]["reason"] == "should_refuse_but_answered"
 
 
-@pytest.mark.asyncio
-async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(monkeypatch):
+async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(monkeypatch) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     unsafe_output = "token 是 secret-value"
     workflow = LLMGenerationWorkerWorkflow(
@@ -465,8 +465,7 @@ async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(monkey
     assert metadata["guardrail"]["output"]["original_unsafe_output"] == unsafe_output
 
 
-@pytest.mark.asyncio
-async def test_worker_stream_persists_stream_guardrail_decision(monkeypatch):
+async def test_worker_stream_persists_stream_guardrail_decision(monkeypatch) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
 
@@ -483,7 +482,7 @@ async def test_worker_stream_persists_stream_guardrail_decision(monkeypatch):
         fake_output_guardrail,
     )
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -511,12 +510,11 @@ async def test_worker_stream_persists_stream_guardrail_decision(monkeypatch):
     assert decisions == [GuardrailDecision(False)]
 
 
-@pytest.mark.asyncio
-async def test_worker_nonstream_refuses_when_rag_has_no_hits(monkeypatch):
+async def test_worker_nonstream_refuses_when_rag_has_no_hits(monkeypatch) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     assistant_message_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
     llm_service = NonStreamingLLM(LLMResultDTO(content="should not run"))
@@ -557,12 +555,11 @@ async def test_worker_nonstream_refuses_when_rag_has_no_hits(monkeypatch):
     assert redis.set_calls == [("idempotency:test", str(assistant_message_id), 3600)]
 
 
-@pytest.mark.asyncio
-async def test_worker_stream_refuses_when_rag_has_no_hits(monkeypatch):
+async def test_worker_stream_refuses_when_rag_has_no_hits(monkeypatch) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     assistant_message_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
     llm_service = StreamingLLM(["should not stream"])
@@ -601,32 +598,19 @@ async def test_worker_stream_refuses_when_rag_has_no_hits(monkeypatch):
     )
 
 
-@pytest.mark.asyncio
 async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
     monkeypatch,
-):
+) -> None:
     redis = FakeRedis()
-    pass
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         False,
     )
 
-    rag_hit = {
-        "id": str(uuid.uuid4()),
-        "content": "worker-side context",
-        "source_type": "file",
-        "file_id": str(uuid.uuid4()),
-        "message_id": None,
-        "filename": "ctx.md",
-        "chunk_index": 0,
-        "meta_info": {},
-        "distance": 0.1,
-        "score": 0.9,
-    }
+    rag_hit = make_rag_hit()
     rag_service = RecordingRAGService([rag_hit])
     llm_service = NonStreamingLLM(LLMResultDTO(content="answer"))
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -655,15 +639,12 @@ async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
     assert "worker-side context" in query.conversation_history[0]["content"]
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_refuses_low_vector_score(monkeypatch):
+async def test_worker_generation_refuses_low_vector_score(monkeypatch) -> None:
     redis = FakeRedis()
 
-    low_hit = make_rag_hit("weak context")
-    low_hit["score"] = 0.1
-    low_hit["distance"] = 0.9
+    low_hit = make_rag_hit(content="weak context", score=0.1, distance=0.9)
     llm_service = NonStreamingLLM(LLMResultDTO(content="should not run"))
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -690,17 +671,15 @@ async def test_worker_generation_refuses_low_vector_score(monkeypatch):
     assert result.search_context["best_score"] == 0.1
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(monkeypatch):
+async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(monkeypatch) -> None:
     redis = FakeRedis()
-    pass
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
         False,
     )
 
     llm_service = NonStreamingLLM(LLMResultDTO(content="fallback answer"))
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -723,10 +702,8 @@ async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(monkey
     llm_service.generate_response.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_skips_rag_when_planner_declines(monkeypatch):
+async def test_worker_generation_skips_rag_when_planner_declines(monkeypatch) -> None:
     redis = FakeRedis()
-    pass
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
@@ -741,7 +718,7 @@ async def test_worker_generation_skips_rag_when_planner_declines(monkeypatch):
             reason="无需知识库",
         )
     )
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -767,13 +744,12 @@ async def test_worker_generation_skips_rag_when_planner_declines(monkeypatch):
     rag_service.retrieve_hybrid.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_does_not_plan_without_kb(monkeypatch):
+async def test_worker_generation_does_not_plan_without_kb(monkeypatch) -> None:
     redis = FakeRedis()
 
     rag_service = RecordingRAGService([make_rag_hit()])
     planner = RecordingRAGPlanner(error=AssertionError("planner should not run"))
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -797,12 +773,11 @@ async def test_worker_generation_does_not_plan_without_kb(monkeypatch):
     rag_service.retrieve.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_skips_planner_when_candidates_exist(monkeypatch):
+async def test_worker_generation_skips_planner_when_candidates_exist(monkeypatch) -> None:
     redis = FakeRedis()
 
     planner = RecordingRAGPlanner(error=AssertionError("planner should not run"))
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -816,7 +791,7 @@ async def test_worker_generation_skips_planner_when_candidates_exist(monkeypatch
         query_text="hi",
         conversation_history=[],
         kb_id=uuid.uuid4(),
-        rag_candidates=[make_rag_hit("preloaded context")],
+        rag_candidates=[make_rag_hit(content="preloaded context")],
     )
 
     await workflow.generate_nonstream(
@@ -826,16 +801,14 @@ async def test_worker_generation_skips_planner_when_candidates_exist(monkeypatch
     assert planner.plan_calls == []
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_uses_fulltext_plan(monkeypatch):
+async def test_worker_generation_uses_fulltext_plan(monkeypatch) -> None:
     redis = FakeRedis()
-    pass
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
     )
 
-    rag_service = RecordingRAGService([make_rag_hit("fulltext context")])
+    rag_service = RecordingRAGService([make_rag_hit(content="fulltext context", index=1)])
     planner = RecordingRAGPlanner(
         RAGExecutionPlan(
             should_use_rag=True,
@@ -844,7 +817,7 @@ async def test_worker_generation_uses_fulltext_plan(monkeypatch):
             reason="关键词检索",
         )
     )
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -873,13 +846,11 @@ async def test_worker_generation_uses_fulltext_plan(monkeypatch):
     rag_service.retrieve_hybrid.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_worker_generation_reranks_candidates_when_enabled(
     monkeypatch,
-):
+) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
-    pass
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         True,
@@ -889,7 +860,7 @@ async def test_worker_generation_reranks_candidates_when_enabled(
         1,
     )
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     llm_service = StreamingLLM(
         ["answer"],
@@ -897,33 +868,7 @@ async def test_worker_generation_reranks_candidates_when_enabled(
     )
     rag_service = RecordingRAGService([])
 
-    # Wire rerank to call through RAGService public helpers so the LLM
-    # rerank response actually affects which chunks survive.
-    async def _rerank_impl(query_text, candidates, top_k=None):
-        from backend.services.rag_service import RAGService
-
-        prompt = RAGService.build_rerank_prompt(
-            query_text=query_text, candidates=candidates
-        )
-        result = await llm_service.generate_response(
-            type(
-                "LLMDTO",
-                (),
-                {
-                    "session_id": uuid.uuid4(),
-                    "query_text": prompt,
-                    "conversation_history": [],
-                },
-            )()
-        )
-        if not result.success:
-            raise ValueError(result.error_message or "LLM rerank failed")
-        rankings = RAGService.parse_rerank_response(result.content)
-        return RAGService.apply_rankings(
-            candidates=candidates, rankings=rankings, limit=top_k or 4
-        )
-
-    rag_service.rerank = AsyncMock(side_effect=_rerank_impl)
+    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl(llm_service))
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
         redis_client=FakeRedisClient(redis),
@@ -974,7 +919,7 @@ async def test_worker_generation_reranks_candidates_when_enabled(
     stream_query = llm_service.stream_queries[0]
     system_message = stream_query.conversation_history[0]
     assert "high" in system_message["content"]
-    # "a.md" 是 "low" 内容 chunk 的来源文件，rerank 后应被过滤
+    # rerank 后 "a.md" (low content) 应被过滤
     assert "a.md" not in system_message["content"]
     assert slot_calls == [
         {
@@ -990,50 +935,23 @@ async def test_worker_generation_reranks_candidates_when_enabled(
     ]
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_refuses_low_rerank_score(monkeypatch):
+async def test_worker_generation_refuses_low_rerank_score(monkeypatch) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
-    pass
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         True,
     )
 
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     llm_service = StreamingLLM(
         ["should not stream"],
         rerank_content='{"rankings": [{"index": 1, "score": 2}]}',
     )
-    rag_service = RecordingRAGService([make_rag_hit("weak rerank context")])
+    rag_service = RecordingRAGService([make_rag_hit(content="weak rerank context")])
 
-    # Wire rerank to call through RAGService public helpers.
-    async def _rerank_impl(query_text, candidates, top_k=None):
-        from backend.services.rag_service import RAGService
-
-        prompt = RAGService.build_rerank_prompt(
-            query_text=query_text, candidates=candidates
-        )
-        result = await llm_service.generate_response(
-            type(
-                "LLMDTO",
-                (),
-                {
-                    "session_id": uuid.uuid4(),
-                    "query_text": prompt,
-                    "conversation_history": [],
-                },
-            )()
-        )
-        if not result.success:
-            raise ValueError(result.error_message or "LLM rerank failed")
-        rankings = RAGService.parse_rerank_response(result.content)
-        return RAGService.apply_rankings(
-            candidates=candidates, rankings=rankings, limit=top_k or 4
-        )
-
-    rag_service.rerank = AsyncMock(side_effect=_rerank_impl)
+    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl(llm_service))
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
         redis_client=FakeRedisClient(redis),
@@ -1061,17 +979,15 @@ async def test_worker_generation_refuses_low_rerank_score(monkeypatch):
     assert update_kwargs["search_context"]["best_rerank_score"] == 2.0
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch):
+async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
-    pass
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
     )
 
-    rag_service = RecordingRAGService([make_rag_hit("low"), make_rag_hit("high")])
+    rag_service = RecordingRAGService([make_rag_hit(content="low", index=0), make_rag_hit(content="high", index=1)])
     planner = RecordingRAGPlanner(
         RAGExecutionPlan(
             should_use_rag=True,
@@ -1088,33 +1004,8 @@ async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch):
         rerank_content='{"rankings": [{"index": 2, "score": 9}]}',
     )
 
-    # Wire rerank to call through RAGService public helpers.
-    async def _rerank_impl(query_text, candidates, top_k=None):
-        from backend.services.rag_service import RAGService
-
-        prompt = RAGService.build_rerank_prompt(
-            query_text=query_text, candidates=candidates
-        )
-        result = await llm_service.generate_response(
-            type(
-                "LLMDTO",
-                (),
-                {
-                    "session_id": uuid.uuid4(),
-                    "query_text": prompt,
-                    "conversation_history": [],
-                },
-            )()
-        )
-        if not result.success:
-            raise ValueError(result.error_message or "LLM rerank failed")
-        rankings = RAGService.parse_rerank_response(result.content)
-        return RAGService.apply_rankings(
-            candidates=candidates, rankings=rankings, limit=top_k or 4
-        )
-
-    rag_service.rerank = AsyncMock(side_effect=_rerank_impl)
-    uow = DummyUoW()
+    rag_service.rerank = AsyncMock(side_effect=make_rerank_impl(llm_service))
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -1145,10 +1036,8 @@ async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch):
     assert "rag.rerank" in slot_calls[0]
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_uses_planner_fallback_plan(monkeypatch):
+async def test_worker_generation_uses_planner_fallback_plan(monkeypatch) -> None:
     redis = FakeRedis()
-    pass
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
@@ -1166,7 +1055,7 @@ async def test_worker_generation_uses_planner_fallback_plan(monkeypatch):
             reason="RAG planner 降级为默认计划",
         )
     )
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -1193,10 +1082,8 @@ async def test_worker_generation_uses_planner_fallback_plan(monkeypatch):
     )
 
 
-@pytest.mark.asyncio
-async def test_worker_generation_uses_planner_fallback_on_exception(monkeypatch):
+async def test_worker_generation_uses_planner_fallback_on_exception(monkeypatch) -> None:
     redis = FakeRedis()
-    pass
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         True,
@@ -1208,7 +1095,7 @@ async def test_worker_generation_uses_planner_fallback_on_exception(monkeypatch)
 
     rag_service = RecordingRAGService([make_rag_hit()])
     planner = RecordingRAGPlanner(error=ValueError("LLM API failed"))
-    uow = DummyUoW()
+    uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,

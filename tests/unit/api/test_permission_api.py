@@ -1,3 +1,10 @@
+"""Permission API unit tests.
+
+职责：验证权限元数据 endpoint 的公开响应映射；边界：直接调用 endpoint 函数，不启动 HTTP stack 或真实权限存储；副作用：无。
+"""
+
+from __future__ import annotations
+
 import uuid
 from types import SimpleNamespace
 
@@ -7,8 +14,10 @@ from backend.api.v1.endpoint import permission_api
 from backend.models.orm.access import WorkspaceRole
 from backend.services.permission_service import Permission
 
+pytestmark = pytest.mark.asyncio
 
-def make_user(**overrides):
+
+def make_user(**overrides: object) -> SimpleNamespace:
     data = {
         "id": uuid.uuid4(),
         "username": "tester",
@@ -20,8 +29,7 @@ def make_user(**overrides):
     return SimpleNamespace(**data)
 
 
-@pytest.mark.asyncio
-async def test_permission_policy_metadata_expands_owner_wildcard():
+async def test_permission_policy_metadata_expands_owner_wildcard() -> None:
     result = await permission_api.get_permission_policy_metadata(make_user())
 
     assert WorkspaceRole.OWNER in result.roles

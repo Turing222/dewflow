@@ -1,3 +1,8 @@
+"""Chat context builder unit tests.
+
+职责：验证聊天上下文构建、RAG fallback 和 context state 注入；边界：使用 fake prompt/RAG 服务，不调用真实 LLM 或向量检索；副作用：无。
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -16,7 +21,7 @@ from backend.models.schemas.chat.context_state import ContextState
 
 
 @pytest.mark.asyncio
-async def test_build_uses_rag_prompt_and_search_context_when_chunks_found():
+async def test_build_uses_rag_prompt_and_search_context_when_chunks_found() -> None:
     kb_id = uuid.uuid4()
     chunk_id = uuid.uuid4()
     chunk_id_2 = uuid.uuid4()
@@ -112,7 +117,7 @@ async def test_build_uses_rag_prompt_and_search_context_when_chunks_found():
 
 
 @pytest.mark.asyncio
-async def test_build_falls_back_to_plain_prompt_without_rag_chunks():
+async def test_build_falls_back_to_plain_prompt_without_rag_chunks() -> None:
     kb_id = uuid.uuid4()
     rag_service = SimpleNamespace(retrieve=AsyncMock(return_value=[]))
     builder = ChatContextBuilder(rag_service=rag_service)
@@ -133,7 +138,7 @@ async def test_build_falls_back_to_plain_prompt_without_rag_chunks():
 
 
 @pytest.mark.asyncio
-async def test_build_falls_back_to_plain_prompt_when_rag_errors():
+async def test_build_falls_back_to_plain_prompt_when_rag_errors() -> None:
     rag_service = SimpleNamespace(
         retrieve=AsyncMock(side_effect=RuntimeError("vector db down"))
     )
@@ -150,7 +155,7 @@ async def test_build_falls_back_to_plain_prompt_when_rag_errors():
 
 
 @pytest.mark.asyncio
-async def test_build_uses_rerank_when_enabled(monkeypatch):
+async def test_build_uses_rerank_when_enabled(monkeypatch) -> None:
     kb_id = uuid.uuid4()
     rag_service = SimpleNamespace(
         retrieve=AsyncMock(return_value=[]),
@@ -200,7 +205,7 @@ async def test_build_uses_rerank_when_enabled(monkeypatch):
     )
 
 
-def test_build_from_chunks_does_not_call_rag_service():
+def test_build_from_chunks_does_not_call_rag_service() -> None:
     kb_id = uuid.uuid4()
     rag_service = SimpleNamespace(retrieve=AsyncMock(return_value=[]))
     builder = ChatContextBuilder(rag_service=rag_service)
@@ -234,7 +239,7 @@ def test_build_from_chunks_does_not_call_rag_service():
     assert "worker provided fact" in result.assembled_prompt.messages[0]["content"]
 
 
-def test_build_from_chunks_injects_context_state_into_plain_prompt():
+def test_build_from_chunks_injects_context_state_into_plain_prompt() -> None:
     builder = ChatContextBuilder()
 
     result = builder.build_from_chunks(
@@ -259,7 +264,7 @@ def test_build_from_chunks_injects_context_state_into_plain_prompt():
     assert "偏好要点式总结" in system_content
 
 
-def test_build_from_chunks_omits_empty_context_state_block():
+def test_build_from_chunks_omits_empty_context_state_block() -> None:
     builder = ChatContextBuilder()
 
     result = builder.build_from_chunks(
@@ -273,7 +278,7 @@ def test_build_from_chunks_omits_empty_context_state_block():
     assert "--- 当前对话状态 ---" not in result.assembled_prompt.messages[0]["content"]
 
 
-def test_build_from_chunks_keeps_context_state_separate_from_rag_chunks():
+def test_build_from_chunks_keeps_context_state_separate_from_rag_chunks() -> None:
     builder = ChatContextBuilder()
 
     result = builder.build_from_chunks(
@@ -304,7 +309,7 @@ def test_build_from_chunks_keeps_context_state_separate_from_rag_chunks():
     assert "RAG evidence" in system_content
 
 
-def test_build_from_chunks_trims_rag_chunks_to_budget():
+def test_build_from_chunks_trims_rag_chunks_to_budget() -> None:
     retained_content = "A" * 20
     builder = ChatContextBuilder(
         rag_prompt_manager=PromptManager(
@@ -358,7 +363,7 @@ def test_build_from_chunks_trims_rag_chunks_to_budget():
     assert len(result.assembled_prompt.messages[0]["content"]) < 8000
 
 
-def test_build_from_chunks_raises_when_final_context_exceeds_budget():
+def test_build_from_chunks_raises_when_final_context_exceeds_budget() -> None:
     builder = ChatContextBuilder(
         prompt_manager=PromptManager(
             system_template=Template("S" * 2000),
