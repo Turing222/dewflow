@@ -77,7 +77,9 @@ tests/
 ├── unit/                        # 单元测试
 ├── integration/                 # 集成测试
 ├── smoke/                       # HTTP 冒烟测试
-└── performance/                 # Locust 性能测试
+└── performance/                 # Locust 人工探索压测
+
+perf/                            # 标准化 HTTP 性能压测、profiles、reports
 ```
 
 ## 4. 快速开始
@@ -339,7 +341,8 @@ make check       # lint + typecheck 组合
 # 测试
 make test                          # 单元 + 集成（排除 performance）
 uv run pytest -m smoke             # HTTP 冒烟测试
-uv run pytest -m performance       # Locust 性能测试
+make qa-perf-chat                  # 标准化 HTTP 性能压测
+make qa-perf-chat-locust           # Locust 人工探索压测
 
 # 诊断
 uv run python scripts/diagnostics/check_ai_env.py

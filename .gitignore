@@ -72,6 +72,7 @@ test_demo.py
 
 # 测试快照归档（不提交到仓库）
 snapshots/*.json
+perf/reports/
 # 工具目录
 tools/
 test-debug-agent/

@@ -19,6 +19,8 @@ EVAL_RETRIEVAL_OUTPUT ?= evals/reports/retrieval_report.json
 PERF_USERS ?= 5
 PERF_SPAWN_RATE ?= 1
 PERF_RUN_TIME ?= 1m
+PERF_PROFILE ?= perf/profiles/enterprise_smoke.json
+PERF_OUTPUT ?= perf/reports/chat_api_load_report.json
 PYTEST_ARGS ?=
 
 export DOCKER_IMAGE_NAME_WEB DOCKER_IMAGE_NAME_AI
@@ -30,12 +32,12 @@ export SMOKE_BASE_URL
 export SMOKE_LIVE_PATH
 export SMOKE_READY_PATH
 export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
-export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME
+export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-agent-flow \
+	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	image-build \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
@@ -64,7 +66,8 @@ help:
 		'  qa-test-all          Run all pytest suites except excluded markers' \
 		'  qa-eval-rag          Run opt-in RAG retrieval and answer evals' \
 		'  qa-eval-api          Run opt-in RAG answer eval through HTTP API' \
-		'  qa-perf-chat         Run opt-in chat load test with Locust' \
+		'  qa-perf-chat         Run opt-in chat load profile with HTTP runner' \
+		'  qa-perf-chat-locust  Run exploratory chat load test with Locust' \
 		'  qa-agent-flow        Reserved entrypoint for agent/C2C flow tests' \
 		'  qa-checks            Run lint and typecheck via scripts' \
 		'  image-build          Build the backend Docker image' \
@@ -140,6 +143,9 @@ qa-eval-api:
 	uv run python -m evals.eval_api_answer --dataset "$(EVAL_DATASET)" --output "$(EVAL_API_OUTPUT)" --base-url "$(SMOKE_BASE_URL)" $(ARGS)
 
 qa-perf-chat:
+	uv run python -m perf.chat_api_load --profile "$(PERF_PROFILE)" --output "$(PERF_OUTPUT)" --base-url "$(SMOKE_BASE_URL)" $(ARGS)
+
+qa-perf-chat-locust:
 	uv run locust -f tests/performance/locustfile.py --host "$(SMOKE_BASE_URL)" --headless -u "$(PERF_USERS)" -r "$(PERF_SPAWN_RATE)" -t "$(PERF_RUN_TIME)" $(ARGS)
 
 qa-agent-flow:

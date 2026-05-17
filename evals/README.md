@@ -7,6 +7,8 @@ RAG 链路评测分三层，各层独立打分，最后通过 snapshot 对比观
 - **回答评测**（`eval_answer.py` / `eval_api_answer.py`）：评估最终答案质量，使用 Ragas LLM-as-Judge
 
 Ragas 只用于回答后的离线批量评测，不挂主请求链路，也不直接评估 planner 决策。
+性能压测不放在 `evals/`；标准化压测入口在 `perf/`，避免 Ragas 或
+LLM-as-Judge 污染延迟、吞吐和错误率指标。
 
 ## 1. 数据集格式（JSONL）
 
@@ -157,4 +159,5 @@ uv run python -m evals.compare_reports \
 - **没有 reference_answer 能跑吗？** 可以，Faithfulness 和 AnswerRelevancy 不需要参考答案，AnswerCorrectness 会自动跳过。
 - **检索评测需要 LLM 吗？** 不需要，检索评测只测检索质量，不涉及 LLM 调用。
 - **Planner 评测和 Ragas 是一回事吗？** 不是。Planner 评策略决策，Ragas 评最终答案质量。
+- **性能压测放在哪里？** 放在 `perf/`。`evals/` 只负责效果评测和 snapshot 对比。
 - **产物目录**：报告输出到 `evals/reports/`，该目录会被 `.gitignore` 忽略。

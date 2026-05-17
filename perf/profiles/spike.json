@@ -1,0 +1,67 @@
+{
+  "name": "spike",
+  "duration_sec": 60,
+  "arrival_rate_rps": 8,
+  "concurrency_limit": 64,
+  "timeout_sec": 60,
+  "dataset": {
+    "path": "evals/dataset.sample.jsonl"
+  },
+  "auth": {
+    "auto_register": true,
+    "password": "Password123"
+  },
+  "scenarios": [
+    {
+      "name": "single_turn_rag",
+      "kind": "chat",
+      "weight": 65,
+      "query_source": "dataset",
+      "turns": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "name": "multi_turn_rag",
+      "kind": "chat",
+      "weight": 15,
+      "query_source": "dataset",
+      "turns": {
+        "min": 2,
+        "max": 4
+      }
+    },
+    {
+      "name": "long_query",
+      "kind": "chat",
+      "weight": 10,
+      "query_source": "inline",
+      "queries": [
+        "请基于知识库内容，系统性总结当前平台支持的工作流、适用场景、限制条件和推荐使用方式，并按重要程度排序。"
+      ],
+      "turns": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "name": "empty_retrieval",
+      "kind": "chat",
+      "weight": 5,
+      "query_source": "inline",
+      "queries": [
+        "请解释一个知识库中不应存在的内部代号 zxqv-000-empty-retrieval 的上线策略。"
+      ],
+      "turns": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "name": "health_check",
+      "kind": "health",
+      "weight": 5
+    }
+  ]
+}
