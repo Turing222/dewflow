@@ -6,14 +6,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
+import subprocess
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 VALID_RETRIEVAL_MODES = frozenset({"vector", "fulltext", "hybrid"})
+PLAN_BOOL_KEYS = frozenset({"should_use_rag", "use_rerank"})
+
+logger = logging.getLogger(__name__)
 
 RetrievalMode = Literal["vector", "fulltext", "hybrid"]
 
@@ -28,6 +35,7 @@ class EvalSample:
     reference_answer: str | None = None
     category: str = "general"
     retrieval_mode: RetrievalMode | None = None
+    expected_plan: dict[str, Any] | None = None
     must_refuse: bool = False
     notes: str | None = None
 
@@ -63,6 +71,10 @@ def load_samples(dataset_path: Path) -> list[EvalSample]:
             notes = payload.get("notes")
             if notes is not None:
                 notes = str(notes)
+            expected_plan = payload.get("expected_plan")
+            if expected_plan is not None and not isinstance(expected_plan, dict):
+                raise ValueError(f"Line {line_no}: expected_plan 必须是 object 或 null")
+            _validate_expected_plan(expected_plan, line_no=line_no)
 
             sample = EvalSample(
                 id=str(payload.get("id") or f"line-{line_no}"),
@@ -77,6 +89,7 @@ def load_samples(dataset_path: Path) -> list[EvalSample]:
                 reference_answer=reference_answer,
                 category=category,
                 retrieval_mode=retrieval_mode,
+                expected_plan=expected_plan,
                 must_refuse=bool(payload.get("must_refuse", False)),
                 notes=notes,
             )
@@ -86,8 +99,104 @@ def load_samples(dataset_path: Path) -> list[EvalSample]:
     return samples
 
 
+def _validate_expected_plan(
+    expected_plan: dict[str, Any] | None,
+    *,
+    line_no: int,
+) -> None:
+    if expected_plan is None:
+        return
+    for key in PLAN_BOOL_KEYS:
+        if key in expected_plan and not isinstance(expected_plan[key], bool):
+            raise ValueError(f"Line {line_no}: expected_plan.{key} 必须是 bool")
+    retrieval_mode = expected_plan.get("retrieval_mode")
+    if retrieval_mode is not None and retrieval_mode not in VALID_RETRIEVAL_MODES:
+        raise ValueError(
+            f"Line {line_no}: expected_plan.retrieval_mode 必须是 "
+            f"{sorted(VALID_RETRIEVAL_MODES)} 之一"
+        )
+
+
 def ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def dataset_hash(dataset_path: Path) -> str:
+    digest = hashlib.sha256()
+    with dataset_path.open("rb") as dataset_file:
+        for chunk in iter(lambda: dataset_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("Unable to resolve git commit for eval snapshot: %s", exc)
+        return None
+    commit = result.stdout.strip()
+    return commit or None
+
+
+def build_run_metadata(
+    *,
+    kind: str,
+    dataset_path: Path,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    created_at = datetime.now(UTC).replace(microsecond=0)
+    suffix = uuid.uuid4().hex[:8]
+    return {
+        "id": f"{created_at.strftime('%Y%m%dT%H%M%SZ')}-{kind}-{suffix}",
+        "kind": kind,
+        "created_at": created_at.isoformat().replace("+00:00", "Z"),
+        "dataset_path": str(dataset_path),
+        "dataset_hash": dataset_hash(dataset_path),
+        "git_commit": git_commit(),
+        "config": config,
+    }
+
+
+def write_eval_report(output: Path, report: dict[str, Any]) -> None:
+    ensure_parent_dir(output)
+    output.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def create_rag_planner(provider: str | None = None) -> Any:
+    from backend.services.rag_planning_service import RAGPlanningService
+
+    return RAGPlanningService(provider=provider)
+
+
+def build_rag_service(
+    *,
+    embedder: Any,
+    vector_index_service: Any,
+    top_k: int,
+    llm_service: Any | None,
+    rerank_candidate_count: int,
+    rerank_top_k: int,
+) -> Any:
+    from backend.services.rag_service import RAGService
+
+    return RAGService(
+        embedder=embedder,
+        vector_index_service=vector_index_service,
+        top_k=top_k,
+        llm_service=llm_service,
+        rerank_candidate_count=rerank_candidate_count,
+        rerank_top_k=rerank_top_k,
+    )
 
 
 def safe_div(a: float, b: float) -> float:

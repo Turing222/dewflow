@@ -36,23 +36,32 @@ from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.infra.database import create_db_assets
 from backend.models.schemas.chat.dto import LLMQueryDTO
-from backend.services.rag_service import RAGService
+from backend.services.rag_planning_service import (
+    RAG_PLANNER_FALLBACK_REASON,
+)
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.vector_index_service import VectorIndexService
 from evals.common import (
     VALID_RETRIEVAL_MODES,
-    ensure_parent_dir,
+    build_rag_service,
+    build_run_metadata,
+    create_rag_planner,
     load_samples,
     retrieve_chunks,
     safe_div,
     serialize_retrieved_chunks,
     summarize_by_category,
+    write_eval_report,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate RAG answer quality with Ragas")
-    parser.add_argument("--dataset", type=Path, required=True, help="Path to JSONL dataset")
+    parser = argparse.ArgumentParser(
+        description="Evaluate RAG answer quality with Ragas"
+    )
+    parser.add_argument(
+        "--dataset", type=Path, required=True, help="Path to JSONL dataset"
+    )
     parser.add_argument(
         "--top-k",
         type=int,
@@ -79,6 +88,16 @@ def parse_args() -> argparse.Namespace:
         "--rerank-top-k",
         type=int,
         default=ai_settings.RAG_RERANK_TOP_K,
+    )
+    parser.add_argument(
+        "--use-planner",
+        action="store_true",
+        help="Use RAG planner output instead of dataset/CLI retrieval mode",
+    )
+    parser.add_argument(
+        "--planner-provider",
+        default=None,
+        help="Optional planner LLM provider override",
     )
     parser.add_argument(
         "--output",
@@ -137,13 +156,16 @@ async def run(args: argparse.Namespace) -> None:
         vector_index_service = VectorIndexService(uow=uow, embedder=embedder)
 
         llm_service = LLMProviderFactory.create()
-        rag_service = RAGService(
+        rag_service = build_rag_service(
             embedder=embedder,
             vector_index_service=vector_index_service,
             top_k=args.top_k,
-            llm_service=llm_service if args.rerank else None,
+            llm_service=llm_service if args.rerank or args.use_planner else None,
             rerank_candidate_count=args.candidate_count,
             rerank_top_k=args.rerank_top_k,
+        )
+        planner = (
+            create_rag_planner(args.planner_provider) if args.use_planner else None
         )
         chat_context_builder = ChatContextBuilder()
 
@@ -155,24 +177,61 @@ async def run(args: argparse.Namespace) -> None:
         completion_tokens_total = 0.0
         error_count = 0
         ragas_samples: list[Any] = []
+        eval_model: str | None = None
 
         for sample in samples:
             sample_mode = sample.retrieval_mode or args.retrieval_mode
+            sample_top_k = args.top_k
+            sample_use_rerank = args.rerank
+            sample_candidate_count = args.candidate_count
+            sample_rerank_top_k = args.rerank_top_k
+            plan_payload: dict[str, Any] | None = None
+            planner_used = False
+            planner_fallback = False
+            planner_latency_ms: int | None = None
             t0 = time.perf_counter()
             error_message: str | None = None
 
+            if planner is not None:
+                planner_started_at = time.perf_counter()
+                try:
+                    plan = await planner.plan(
+                        query_text=sample.query,
+                        conversation_history=[],
+                        kb_id=sample.kb_id,
+                    )
+                    planner_latency_ms = int(
+                        (time.perf_counter() - planner_started_at) * 1000
+                    )
+                    planner_used = True
+                    planner_fallback = plan.reason == RAG_PLANNER_FALLBACK_REASON
+                    plan_payload = plan.model_dump()
+                    sample_mode = plan.retrieval_mode
+                    sample_top_k = plan.top_k
+                    sample_use_rerank = plan.use_rerank
+                    sample_candidate_count = plan.candidate_count
+                    sample_rerank_top_k = plan.rerank_top_k
+                except Exception as exc:
+                    error_message = str(exc)
+                    error_count += 1
+
             # 检索
             try:
-                chunks = await retrieve_chunks(
-                    rag_service=rag_service,
-                    query_text=sample.query,
-                    kb_id=sample.kb_id,
-                    top_k=args.top_k,
-                    retrieval_mode=sample_mode,
-                    use_rerank=args.rerank,
-                    candidate_count=args.candidate_count,
-                    rerank_top_k=args.rerank_top_k,
-                )
+                if plan_payload is not None and not plan_payload.get(
+                    "should_use_rag", True
+                ):
+                    chunks = []
+                else:
+                    chunks = await retrieve_chunks(
+                        rag_service=rag_service,
+                        query_text=sample.query,
+                        kb_id=sample.kb_id,
+                        top_k=sample_top_k,
+                        retrieval_mode=sample_mode,
+                        use_rerank=sample_use_rerank,
+                        candidate_count=sample_candidate_count,
+                        rerank_top_k=sample_rerank_top_k,
+                    )
             except Exception as exc:
                 chunks = []
                 error_message = str(exc)
@@ -255,7 +314,11 @@ async def run(args: argparse.Namespace) -> None:
                     "query": sample.query,
                     "kb_id": str(sample.kb_id) if sample.kb_id else None,
                     "retrieval_mode": sample_mode,
-                    "has_rerank": args.rerank,
+                    "has_rerank": sample_use_rerank,
+                    "planner_used": planner_used,
+                    "planner_fallback": planner_fallback,
+                    "planner_latency_ms": planner_latency_ms,
+                    "plan": plan_payload,
                     "must_refuse": sample.must_refuse,
                     "notes": sample.notes,
                     "answer": answer,
@@ -287,13 +350,15 @@ async def run(args: argparse.Namespace) -> None:
                 Faithfulness,
             )
 
-            eval_llm, _eval_model = _create_eval_llm()
+            eval_llm, eval_model = _create_eval_llm()
 
             metrics = [
                 Faithfulness(),
                 AnswerRelevancy(),
             ]
-            has_reference = any(s.reference_answer for s in samples if s.reference_answer)
+            has_reference = any(
+                s.reference_answer for s in samples if s.reference_answer
+            )
             if has_reference:
                 metrics.append(AnswerCorrectness())
 
@@ -308,7 +373,8 @@ async def run(args: argparse.Namespace) -> None:
                 ragas_scores = {
                     col: float(ragas_df[col].mean())
                     for col in ragas_df.columns
-                    if col not in ("user_input", "retrieved_contexts", "response", "reference")
+                    if col
+                    not in ("user_input", "retrieved_contexts", "response", "reference")
                 }
                 # 逐样本详情
                 for _, srow in ragas_df.iterrows():
@@ -355,12 +421,17 @@ async def run(args: argparse.Namespace) -> None:
                     for key, val in ragas_details[ri].items():
                         row[f"ragas_{key}"] = val
 
-        report = {"summary": summary, "details": rows}
+        report = {
+            "run": build_run_metadata(
+                kind="answer",
+                dataset_path=args.dataset,
+                config=_run_config(args, embedding_profile, eval_model),
+            ),
+            "summary": summary,
+            "details": rows,
+        }
 
-        ensure_parent_dir(args.output)
-        args.output.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        write_eval_report(args.output, report)
 
         print("\nAnswer Eval Done")
         print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -369,9 +440,46 @@ async def run(args: argparse.Namespace) -> None:
         await engine.dispose()
 
 
+def _run_config(
+    args: argparse.Namespace,
+    embedding_profile: Any,
+    eval_model: str | None,
+) -> dict[str, Any]:
+    generation_profile = get_llm_model_config().resolve_profile()
+    return {
+        "cli_args": {
+            "top_k": args.top_k,
+            "retrieval_mode": args.retrieval_mode,
+            "rerank": args.rerank,
+            "candidate_count": args.candidate_count,
+            "rerank_top_k": args.rerank_top_k,
+            "use_planner": args.use_planner,
+            "planner_provider": args.planner_provider,
+            "output": str(args.output),
+        },
+        "models": {
+            "generation_provider": generation_profile.provider,
+            "generation_model": generation_profile.model,
+            "generation_base_url_configured": bool(
+                generation_profile.resolve_base_url()
+            ),
+            "embedding_provider": embedding_profile.provider,
+            "embedding_model": embedding_profile.model,
+            "embedding_base_url_configured": bool(embedding_profile.resolve_base_url()),
+            "eval_model": eval_model or os.getenv("EVAL_LLM_MODEL", "gpt-4o"),
+            "planner_provider": args.planner_provider,
+        },
+        "rag": {
+            "planner_enabled": args.use_planner,
+            "config_rerank_enabled": ai_settings.RAG_RERANK_ENABLED,
+        },
+    }
+
+
 def _has_ragas() -> bool:
     try:
         import ragas  # noqa: F401
+
         return True
     except ImportError:
         return False

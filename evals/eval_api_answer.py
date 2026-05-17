@@ -20,21 +20,27 @@ import httpx
 
 from evals.common import (
     build_ragas_samples,
-    ensure_parent_dir,
+    build_run_metadata,
     load_samples,
     safe_div,
     summarize_by_category,
+    write_eval_report,
 )
 from evals.eval_answer import _create_eval_llm, _has_ragas
 
 REGISTER_PATH = "/api/v1/auth/register"
 LOGIN_PATH = "/api/v1/auth/login"
 QUERY_SENT_PATH = "/api/v1/chat/query_sent"
+DEFAULT_EVAL_API_PASSWORD = "Password123"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate RAG answers through HTTP API")
-    parser.add_argument("--dataset", type=Path, required=True, help="Path to JSONL dataset")
+    parser = argparse.ArgumentParser(
+        description="Evaluate RAG answers through HTTP API"
+    )
+    parser.add_argument(
+        "--dataset", type=Path, required=True, help="Path to JSONL dataset"
+    )
     parser.add_argument(
         "--base-url",
         default=os.getenv("SMOKE_BASE_URL", "http://localhost:8000"),
@@ -46,7 +52,9 @@ def parse_args() -> argparse.Namespace:
         default=Path("evals/reports/api_answer_report.json"),
         help="Output report path",
     )
-    parser.add_argument("--timeout", type=float, default=60.0, help="HTTP timeout seconds")
+    parser.add_argument(
+        "--timeout", type=float, default=60.0, help="HTTP timeout seconds"
+    )
     parser.add_argument(
         "--concurrency",
         type=int,
@@ -59,7 +67,7 @@ def parse_args() -> argparse.Namespace:
 async def create_eval_headers(client: httpx.AsyncClient) -> dict[str, str]:
     suffix = uuid.uuid4().hex[:12]
     username = f"api_eval_{suffix}"
-    password = "Password123"
+    password = os.getenv("EVAL_API_PASSWORD", DEFAULT_EVAL_API_PASSWORD)
     register_response = await client.post(
         REGISTER_PATH,
         json={
@@ -104,6 +112,31 @@ async def query_api_answer(
     return answer, body, latency_ms
 
 
+async def query_api_answer_with_refresh(
+    client: httpx.AsyncClient,
+    *,
+    headers_ref: dict[str, dict[str, str]],
+    headers_lock: asyncio.Lock,
+    sample: Any,
+) -> tuple[str, dict[str, Any], int]:
+    try:
+        return await query_api_answer(
+            client,
+            headers=headers_ref["headers"],
+            sample=sample,
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 401:
+            raise
+        async with headers_lock:
+            headers_ref["headers"] = await create_eval_headers(client)
+        return await query_api_answer(
+            client,
+            headers=headers_ref["headers"],
+            sample=sample,
+        )
+
+
 def context_texts(api_body: dict[str, Any]) -> list[str]:
     answer_payload = api_body.get("answer") or {}
     search_context = answer_payload.get("search_context") or {}
@@ -113,7 +146,7 @@ def context_texts(api_body: dict[str, Any]) -> list[str]:
 
 async def run_ragas(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows or not _has_ragas():
-        return {}
+        return {"scores": {}, "details": []}
 
     from ragas import EvaluationDataset, evaluate
     from ragas.metrics.collections import (
@@ -126,7 +159,7 @@ async def run_ragas(rows: list[dict[str, Any]]) -> dict[str, Any]:
         row for row in rows if row["answer"].strip() and row["retrieved_contexts"]
     ]
     if not ragas_rows:
-        return {}
+        return {"scores": {}, "details": []}
 
     metrics = [Faithfulness(), AnswerRelevancy()]
     if any(row.get("reference_answer") for row in ragas_rows):
@@ -139,11 +172,24 @@ async def run_ragas(rows: list[dict[str, Any]]) -> dict[str, Any]:
         llm=eval_llm,
     )
     frame = result.to_pandas()
-    return {
+    if len(frame) != len(ragas_rows):
+        raise RuntimeError(
+            f"Ragas returned {len(frame)} rows for {len(ragas_rows)} eval samples"
+        )
+    scores = {
         col: float(frame[col].mean())
         for col in frame.columns
         if col not in ("user_input", "retrieved_contexts", "response", "reference")
     }
+    details: list[dict[str, Any]] = []
+    for row, (_, frame_row) in zip(ragas_rows, frame.iterrows(), strict=True):
+        detail: dict[str, Any] = {"id": row["id"]}
+        for col in frame.columns:
+            val = frame_row[col]
+            if isinstance(val, (int, float, str, bool)) or val is None:
+                detail[col] = val
+        details.append(detail)
+    return {"scores": scores, "details": details}
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -157,7 +203,8 @@ async def run(args: argparse.Namespace) -> None:
         timeout=args.timeout,
         trust_env=False,
     ) as client:
-        headers = await create_eval_headers(client)
+        headers_ref = {"headers": await create_eval_headers(client)}
+        headers_lock = asyncio.Lock()
 
         async def evaluate_sample(sample: Any) -> dict[str, Any]:
             error_message: str | None = None
@@ -166,24 +213,12 @@ async def run(args: argparse.Namespace) -> None:
             latency_ms = 0
             async with semaphore:
                 try:
-                    answer, api_body, latency_ms = await query_api_answer(
+                    answer, api_body, latency_ms = await query_api_answer_with_refresh(
                         client,
-                        headers=headers,
+                        headers_ref=headers_ref,
+                        headers_lock=headers_lock,
                         sample=sample,
                     )
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code == 401:
-                        refreshed_headers = await create_eval_headers(client)
-                        try:
-                            answer, api_body, latency_ms = await query_api_answer(
-                                client,
-                                headers=refreshed_headers,
-                                sample=sample,
-                            )
-                        except Exception as retry_exc:
-                            error_message = str(retry_exc)
-                    else:
-                        error_message = str(exc)
                 except Exception as exc:
                     error_message = str(exc)
 
@@ -206,7 +241,12 @@ async def run(args: argparse.Namespace) -> None:
 
     latency_total = sum(float(row["total_latency_ms"]) for row in rows)
     error_count = sum(1 for row in rows if row["error_message"])
-    ragas_scores = await run_ragas(rows)
+    try:
+        ragas_result = await run_ragas(rows)
+    except Exception as exc:
+        ragas_result = {"scores": {"ragas_error": str(exc)}, "details": []}
+    ragas_scores = ragas_result["scores"]
+    _merge_ragas_details(rows, ragas_result["details"])
     summary = {
         "samples": len(samples),
         "base_url": args.base_url,
@@ -219,14 +259,51 @@ async def run(args: argparse.Namespace) -> None:
             ["total_latency_ms", "retrieved_count"],
         ),
     }
-    ensure_parent_dir(args.output)
-    args.output.write_text(
-        json.dumps({"summary": summary, "details": rows}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    report = {
+        "run": build_run_metadata(
+            kind="api_answer",
+            dataset_path=args.dataset,
+            config=_run_config(args),
+        ),
+        "summary": summary,
+        "details": rows,
+    }
+    write_eval_report(args.output, report)
     print("\nAPI Answer Eval Done")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"Report saved to: {args.output}")
+
+
+def _merge_ragas_details(
+    rows: list[dict[str, Any]],
+    ragas_details: list[dict[str, Any]],
+) -> None:
+    details_by_id = {detail["id"]: detail for detail in ragas_details}
+    for row in rows:
+        detail = details_by_id.get(row["id"])
+        if not detail:
+            continue
+        for key, value in detail.items():
+            if key != "id":
+                row[f"ragas_{key}"] = value
+
+
+def _run_config(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "cli_args": {
+            "base_url": args.base_url,
+            "timeout": args.timeout,
+            "concurrency": args.concurrency,
+            "output": str(args.output),
+        },
+        "models": {
+            "eval_model": os.getenv("EVAL_LLM_MODEL", "gpt-4o"),
+        },
+        "target": {
+            "base_url": args.base_url,
+            "query_path": QUERY_SENT_PATH,
+        },
+    }
 
 
 def main() -> None:
