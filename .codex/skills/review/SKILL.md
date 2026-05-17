@@ -1,11 +1,11 @@
 ---
 name: review
-description: Multi-angle code review against project conventions in AGENTS.md. Covers architecture, logic, naming, and style as separate passes with different context depths. Triggers on: review, code review, review my code, check this, pre-commit check, /review.
+description: "Multi-angle code review against Dewflow project skill conventions. Covers architecture, logic, naming, and style as separate passes with different context depths. Triggers on review, code review, review my code, check this, pre-commit check, /review."
 ---
 
 # Code Review
 
-Review staged or specified changes against project conventions defined in AGENTS.md.
+Review staged or specified changes against project conventions in `.codex/skills/project/references/`.
 
 ## Review Strategy
 
@@ -15,7 +15,7 @@ Run reviews by dimension, from shallowest to deepest context. Shallower dimensio
 
 Read the diff. Do NOT expand references or trace call chains.
 
-Check against AGENTS.md conventions:
+Check against `.codex/skills/project/references/coding.md` conventions:
 
 - **Naming**: banned short names (`res`, `ret`, `tmp`, `obj`, `conn`, `rid`), boolean prefix (`is_`, `has_`, `should_`, `can_`), allowed abbreviations
 - **Type annotations**: public methods, endpoints, `__init__ -> None` all annotated
@@ -80,7 +80,7 @@ Good template:
 - Only report actual problems.
 - When a pass has **no findings**: write `未发现问题。` only. Do NOT list verified items or "all changes align" commentary — a clean pass speaks for itself.
 - When a pass has **findings**: use numbered text. One numbered item per finding.
-- Do NOT re-state AGENTS.md rules in findings — reference them by name (e.g. "violates naming: banned short name `res`")
+- Do NOT re-state project rules in findings — reference them by name (e.g. "violates naming: banned short name `res`")
 - When a finding spans multiple lines, reference the first line
 - Architecture violations are always `必须修复`
 - Never combine unrelated issues into one finding

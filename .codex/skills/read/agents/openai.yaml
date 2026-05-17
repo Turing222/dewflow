@@ -1,0 +1,4 @@
+interface:
+  display_name: "Read"
+  short_description: "Read-only repo investigation"
+  default_prompt: "Inspect the repository context without modifying files."

@@ -1,6 +1,6 @@
 ---
 name: debug
-description: SRE-style backend troubleshooting. Enforces read-only investigation, structured hypotheses, AGENTS.md boundary checks, and explicit human approval before code changes. Triggers on: debug, fix bug, investigate, 报错, 排查, 修 bug, 线上问题.
+description: "SRE-style backend troubleshooting. Enforces read-only investigation, structured hypotheses, project boundary checks, and explicit human approval before code changes. Triggers on debug, fix bug, investigate, 报错, 排查, 修 bug, 线上问题."
 ---
 
 # Backend Debugging Protocol
@@ -54,14 +54,14 @@ Every root-cause hypothesis must reference at least one of:
 - Failing test output
 - Relevant source file and line
 - Runtime configuration
-- `AGENTS.md` constraints
+- `.codex/skills/project/references/` constraints
 - Architecture boundary rules
 
 If evidence is missing, say so explicitly and propose the next read-only inspection step.
 
 ### FAILURE CONDITION 3: Respect architecture boundaries
 
-Before proposing a fix, inspect applicable `AGENTS.md` files when present.
+Before proposing a fix, inspect `.codex/skills/project/SKILL.md` and the applicable project references.
 
 The proposed fix must not violate:
 
@@ -70,9 +70,9 @@ The proposed fix must not violate:
 - Web / Worker separation
 - Database transaction boundaries
 - Dependency direction rules
-- Any project-specific constraints in `AGENTS.md`
+- Any project-specific constraints in `.codex/skills/project/references/`
 
-If `AGENTS.md` is missing or unavailable, state that no project-specific boundary file was found and proceed cautiously.
+If project references are missing or unavailable, state that no project-specific boundary reference was found and proceed cautiously.
 
 ## Allowed Read-Only Actions Before Approval
 
@@ -83,7 +83,7 @@ You may perform read-only investigation, including:
 - Inspecting tests without modifying them
 - Running tests if they do not intentionally rewrite files
 - Running type checks or linters only if they are non-mutating
-- Inspecting `AGENTS.md`
+- Inspecting `.codex/skills/project/SKILL.md` and relevant project references
 - Inspecting configs, routes, schemas, migrations, and worker definitions
 
 If a command may modify files, do not run it before approval.
@@ -94,13 +94,13 @@ If a command may modify files, do not run it before approval.
 
 Before forming a fix plan:
 
-1. Look for relevant `AGENTS.md` files.
-2. Extract architecture, testing, and modification rules.
+1. Read `.codex/skills/project/SKILL.md`.
+2. Extract architecture, testing, and modification rules from relevant project references.
 3. Identify which layer is allowed to own the fix.
 
-If no `AGENTS.md` is found, say:
+If no project reference is found, say:
 
-> 未发现可用的 `AGENTS.md` 约束；以下判断仅基于代码结构和错误证据。
+> 未发现可用的 project skill 约束；以下判断仅基于代码结构和错误证据。
 
 ### Step 1: Context Gathering / 只读现场收集
 
@@ -145,7 +145,7 @@ For the most likely hypothesis, explain:
 
 - Files likely needing changes
 - Exact logical change
-- Why this respects `AGENTS.md`
+- Why this respects the project skill references
 - Risk of the change
 - Verification command
 
@@ -180,9 +180,9 @@ Before approval, always answer in Chinese using this format:
 - **现象**: 简述报错、异常行为或失败命令
 - **已检查证据**:
   - `日志 / trace / 文件 / 命令输出`
-- **AGENTS.md 约束**:
+- **Project skill 约束**:
   - `列出相关约束`
-  - 如果没有发现：`未发现可用的 AGENTS.md 约束`
+  - 如果没有发现：`未发现可用的 project skill 约束`
 
 ### 2. 根因假设
 - **假设 A（高/中/低概率）**: 具体假设
