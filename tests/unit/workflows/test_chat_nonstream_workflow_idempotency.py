@@ -101,6 +101,7 @@ async def test_idempotency_replay_with_non_success_message_does_not_prepare_requ
     user_id = uuid.uuid4()
     client_req_id = "test-req-failed"
     mock_redis = AsyncMock()
+    # Redis SET NX returns False when replaying a previously recorded request.
     mock_redis.set.return_value = False
     mock_redis.get.return_value = "completed:test-uuid"
     workflow = _build_workflow(uow=uow, redis_client=mock_redis)
@@ -127,6 +128,62 @@ async def test_idempotency_replay_with_non_success_message_does_not_prepare_requ
             )
         )
 
+    prepare_request.assert_not_awaited()
+
+
+async def test_idempotency_replay_with_success_message_returns_cached_answer() -> None:
+    uow = MagicMock()
+    user_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    client_req_id = "test-req-success"
+    now = datetime.now(UTC)
+    mock_redis = AsyncMock()
+    # Redis SET NX returns False when replaying a previously recorded request.
+    mock_redis.set.return_value = False
+    mock_redis.get.return_value = str(uuid.uuid4())
+    workflow = _build_workflow(uow=uow, redis_client=mock_redis)
+
+    success_msg = MagicMock(
+        id=uuid.uuid4(),
+        session_id=session_id,
+        role="assistant",
+        content="cached answer",
+        status=MessageStatus.SUCCESS,
+        latency_ms=123,
+        search_context={"hits": []},
+        created_at=now,
+        updated_at=now,
+    )
+    session = MagicMock(id=session_id, title="Cached Session")
+    uow.chat_repo = AsyncMock()
+    uow.chat_repo.get_message_by_client_request_id = AsyncMock(
+        return_value=success_msg
+    )
+    uow.chat_repo.get_session = AsyncMock(return_value=session)
+    uow.read_context.return_value = uow
+    uow.__aenter__.return_value = uow
+
+    with patch(
+        "backend.application.chat.session_orchestrator.ChatSessionOrchestrator.prepare_request",
+        AsyncMock(),
+    ) as prepare_request:
+        result = await workflow.handle_query(
+            ChatQueryCommand(
+                user_id=user_id,
+                query_text="hello",
+                client_request_id=client_req_id,
+            )
+        )
+
+    assert result.session_id == session_id
+    assert result.session_title == "Cached Session"
+    assert result.answer.id == success_msg.id
+    assert result.answer.content == "cached answer"
+    uow.chat_repo.get_message_by_client_request_id.assert_awaited_once_with(
+        client_req_id,
+        user_id,
+    )
+    uow.chat_repo.get_session.assert_awaited_once_with(session_id)
     prepare_request.assert_not_awaited()
 
 

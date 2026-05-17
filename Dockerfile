@@ -41,7 +41,6 @@ FROM builder-base AS builder-web
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --extra web
 
-RUN uv run --no-dev --extra web python -c "import fastapi; print('✅ FastAPI is ready')"
 
 # ──────────────────────────────────────────
 # Stage 2b: Worker builder —— 装 ai + worker extras
@@ -51,7 +50,6 @@ FROM builder-base AS builder-worker
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --extra ai --extra worker
 
-RUN uv run --no-dev --extra ai --extra worker python -c "import pypdfium2; print('✅ pypdfium2 is ready')"
 
 # ──────────────────────────────────────────
 # Stage 3a: Web Runtime (api + migrator)

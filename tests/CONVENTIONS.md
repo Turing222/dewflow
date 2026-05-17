@@ -169,6 +169,13 @@ def test_ci_contract_is_enabled():
 - 不为 local/ci 复制整套配置；只通过 `TEST_*` 覆盖少量真实依赖。
 - 需要在测试或 fixture 中读取环境变量时，优先使用 `tests.helpers.env.require_env()` 或 `optional_env()`。
 
+## Layered Environment Rules
+
+- L1 (`make check` / `flow-static`) 不启动 Docker、不访问 localhost、不读取 `.env.smoke`。
+- L2 (`flow-runtime` / smoke pytest) 只通过 `SMOKE_*` 访问运行中的 HTTP stack。
+- L3 (`qa-eval-rag` / `qa-perf-chat` / agent flow) 复用 L2 环境，只叠加 `EVAL_*`、`PERF_*`、`AGENT_*`。
+- `tests/manual/*.http` 是人工调试入口；长期契约必须在 pytest smoke 中有对应断言。
+
 ## Async 规则
 
 - 只有测试体内需要 `await` 时才使用 async test。

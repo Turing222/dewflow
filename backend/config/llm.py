@@ -203,12 +203,32 @@ def get_llm_model_config() -> LLMModelConfig:
 def validate_llm_configs() -> None:
     """启动时校验 prompt 和模型配置能被加载。"""
     get_prompt_config()
-    get_llm_model_config()
-    s = _get_settings()
-    if s.LLM_PROVIDER.strip().lower() != "mock" and not s.LLM_API_KEY:
-        raise ValueError(
-            f"LLM_PROVIDER='{s.LLM_PROVIDER}' 要求设置 LLM_API_KEY，当前为空。"
+    config = get_llm_model_config()
+    settings = _get_settings()
+    profiles = config.resolve_route(settings.LLM_PROVIDER)
+    if all(profile.provider.strip().lower() == "mock" for profile in profiles):
+        return
+
+    missing_key_profiles = tuple(
+        profile
+        for profile in profiles
+        if profile.provider.strip().lower() != "mock" and not profile.resolve_api_key()
+    )
+    if not missing_key_profiles:
+        return
+
+    # Resilient routes are validated as fully ready so fallback paths fail at boot.
+    required_envs = tuple(
+        dict.fromkeys(
+            env_name
+            for profile in missing_key_profiles
+            for env_name in profile.api_key_envs
         )
+    )
+    env_hint = "/".join(required_envs) if required_envs else "有效 API Key"
+    raise ValueError(
+        f"LLM_PROVIDER='{settings.LLM_PROVIDER}' 要求设置 {env_hint}，当前为空。"
+    )
 
 
 def _provider_default_base_url(provider: str) -> str | None:

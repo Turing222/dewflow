@@ -5,13 +5,27 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from backend.config.llm import load_llm_model_config
+from backend.config.llm import (
+    get_llm_model_config,
+    load_llm_model_config,
+    validate_llm_configs,
+)
 from backend.config.loader import ConfigurationError
-from backend.config.prompts import load_prompt_config
+from backend.config.prompts import get_prompt_config, load_prompt_config
+
+
+@pytest.fixture(autouse=True)
+def clear_cached_configs() -> Iterator[None]:
+    get_llm_model_config.cache_clear()
+    get_prompt_config.cache_clear()
+    yield
+    get_llm_model_config.cache_clear()
+    get_prompt_config.cache_clear()
 
 
 def test_load_prompt_config_reads_yaml_templates() -> None:
@@ -33,7 +47,7 @@ def test_load_llm_model_config_resolves_aliases() -> None:
         "deepseek-v4-flash",
         "gemini-2.5-flash",
     ]
-    assert config.resolve_embedding_profile("google").model == "gemini-embedding-001"
+    assert config.resolve_embedding_profile("google").model == "gemini-embedding-2"
     assert config.resolve_embedding_profile("google").dimensions == 768
     qwen3_embedding = config.resolve_embedding_profile("qwen3-embedding")
     assert qwen3_embedding.provider == "openai-compatible"
@@ -101,6 +115,47 @@ def test_llm_profile_resolves_multiple_api_keys(
         "key-b",
         "key-c",
     )
+
+
+def test_validate_llm_configs_accepts_provider_specific_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backend.config.settings.settings.LLM_PROVIDER", "gemini")
+    monkeypatch.setattr("backend.config.settings.settings.LLM_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+    validate_llm_configs()
+
+
+def test_validate_llm_configs_reports_profile_key_envs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backend.config.settings.settings.LLM_PROVIDER", "gemini")
+    monkeypatch.setattr("backend.config.settings.settings.LLM_API_KEY", "")
+    monkeypatch.setattr("backend.config.settings.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("backend.config.settings.settings.GOOGLE_API_KEY", None)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="GEMINI_API_KEY/GOOGLE_API_KEY"):
+        validate_llm_configs()
+
+
+def test_validate_llm_configs_reports_missing_route_profile_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backend.config.settings.settings.LLM_PROVIDER", "auto")
+    monkeypatch.setattr("backend.config.settings.settings.LLM_API_KEY", "")
+    monkeypatch.setattr("backend.config.settings.settings.DEEPSEEK_API_KEY", None)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr("backend.config.settings.settings.GEMINI_API_KEY", None)
+    monkeypatch.setattr("backend.config.settings.settings.GOOGLE_API_KEY", None)
+
+    with pytest.raises(ValueError, match="GEMINI_API_KEY/GOOGLE_API_KEY"):
+        validate_llm_configs()
 
 
 def test_invalid_models_config_rejects_duplicate_alias(tmp_path: Path) -> None:

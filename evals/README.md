@@ -3,7 +3,8 @@
 RAG 链路评测，分两档：
 
 - **检索评测**（`eval_retrieval.py`）：hit@k / recall@k / MRR，离线可跑，无需 LLM
-- **回答评测**（`eval_answer.py`）：端到端 + Ragas LLM-as-Judge（Faithfulness, AnswerRelevancy, AnswerCorrectness）
+- **回答评测**（`eval_answer.py`）：service-level 端到端 + Ragas LLM-as-Judge
+- **API 回答评测**（`eval_api_answer.py`）：通过真实 HTTP API 采样回答后交给 Ragas
 
 ## 1. 数据集格式（JSONL）
 
@@ -80,7 +81,19 @@ Ragas 指标：
 
 工程指标：`retrieval_hit_rate`, `avg_llm_latency_ms`, `avg_completion_tokens`, `per_category`
 
-## 4. 常见问题
+## 4. API 回答评测
+
+API 评测复用同一份 JSONL 数据集，但通过运行中的 smoke HTTP stack 调用
+`/api/v1/chat/query_sent`：
+
+```bash
+make qa-eval-api EVAL_DATASET=evals/dataset.sample.jsonl
+```
+
+可用 `SMOKE_BASE_URL` 覆盖目标环境。该入口属于 L3，不进入 `make check` 或
+smoke pytest。
+
+## 5. 常见问题
 
 - **评估 LLM 和生成 LLM 要分开吗？** 建议用不同的模型：生成用项目配置的 LLM，评估用 GPT-4o 或同级模型（更稳定）。
 - **没有 reference_answer 能跑吗？** 可以，Faithfulness 和 AnswerRelevancy 不需要参考答案，AnswerCorrectness 会自动跳过。

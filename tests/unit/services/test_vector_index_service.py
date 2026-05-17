@@ -194,8 +194,52 @@ async def test_fulltext_search_normalizes_query_before_repo_call() -> None:
     call_kwargs = repo.search_chunks_for_kb_fulltext.await_args.kwargs
     assert call_kwargs["kb_id"] == kb_id
     assert call_kwargs["limit"] == 5
-    assert call_kwargs["normalized_query"].startswith("数据库 max_connections")
+    assert call_kwargs["normalized_query"].splitlines() == [
+        "数据库 max_connections",
+        "数据库",
+        "max_connections",
+    ]
     assert "query_text" not in call_kwargs
+
+
+async def test_hybrid_search_returns_vector_hits_when_fulltext_empty() -> None:
+    kb_id = uuid.uuid4()
+    chunk_a = SimpleNamespace(id=uuid.uuid4())
+    chunk_b = SimpleNamespace(id=uuid.uuid4())
+    repo = SimpleNamespace(
+        search_chunks_for_kb=AsyncMock(return_value=[(chunk_a, 0.1), (chunk_b, 0.2)]),
+        search_chunks_for_kb_fulltext=AsyncMock(return_value=[]),
+    )
+    uow = SimpleNamespace(knowledge_repo=repo)
+    embedder = SimpleNamespace(encode_query=AsyncMock(return_value=[0.1, 0.2, 0.3]))
+    service = VectorIndexService(uow=uow, embedder=embedder)
+
+    result = await service.search_chunks_for_kb_hybrid(
+        query_text="数据库 max_connections",
+        kb_id=kb_id,
+        limit=2,
+        candidate_multiplier=3,
+    )
+
+    assert [chunk.id for chunk, _ in result] == [chunk_a.id, chunk_b.id]
+    distances = [distance for _, distance in result]
+    assert all(0.0 <= distance <= 1.0 for distance in distances)
+    assert distances[0] < distances[1]
+    embedder.encode_query.assert_awaited_once_with("数据库 max_connections")
+    repo.search_chunks_for_kb.assert_awaited_once_with(
+        query_vector=[0.1, 0.2, 0.3],
+        kb_id=kb_id,
+        limit=6,
+    )
+    repo.search_chunks_for_kb_fulltext.assert_awaited_once()
+    fulltext_kwargs = repo.search_chunks_for_kb_fulltext.await_args.kwargs
+    assert fulltext_kwargs["kb_id"] == kb_id
+    assert fulltext_kwargs["limit"] == 6
+    assert fulltext_kwargs["normalized_query"].splitlines() == [
+        "数据库 max_connections",
+        "数据库",
+        "max_connections",
+    ]
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestWarning")

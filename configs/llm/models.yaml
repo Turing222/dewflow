@@ -88,7 +88,8 @@ embeddings:
 
     google:
       provider: google
-      model: gemini-embedding-001
+      model: gemini-embedding-2
+      # Keep 768 for the existing pgvector column; Gemini truncates via output_dimensionality.
       dimensions: 768
       api_key_envs:
         - RAG_EMBED_API_KEY

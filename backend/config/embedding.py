@@ -74,7 +74,7 @@ def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProf
             "google": EmbeddingProfile(
                 name="google",
                 provider="google",
-                model="gemini-embedding-001",
+                model="gemini-embedding-2",
                 base_url=None,
                 api_key_envs=(
                     "RAG_EMBED_API_KEY",

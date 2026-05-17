@@ -12,6 +12,13 @@ SMOKE_READY_PATH ?= /api/v1/health_check/db_ready
 UNIT_TARGETS ?= tests/unit
 COMPONENT_TARGETS ?= tests/component
 INTEGRATION_TARGETS ?= tests/integration
+EVAL_DATASET ?= evals/dataset.sample.jsonl
+EVAL_OUTPUT ?= evals/reports/answer_report.json
+EVAL_API_OUTPUT ?= evals/reports/api_answer_report.json
+EVAL_RETRIEVAL_OUTPUT ?= evals/reports/retrieval_report.json
+PERF_USERS ?= 5
+PERF_SPAWN_RATE ?= 1
+PERF_RUN_TIME ?= 1m
 PYTEST_ARGS ?=
 
 export DOCKER_IMAGE_NAME_WEB DOCKER_IMAGE_NAME_AI
@@ -22,11 +29,13 @@ export SMOKE_ENV_TEMPLATE
 export SMOKE_BASE_URL
 export SMOKE_LIVE_PATH
 export SMOKE_READY_PATH
+export EVAL_DATASET EVAL_OUTPUT EVAL_API_OUTPUT EVAL_RETRIEVAL_OUTPUT
+export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME
 
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks \
+	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-agent-flow \
 	image-build \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
@@ -53,6 +62,10 @@ help:
 		'  qa-test-ci           Run CI-safe pytest profile' \
 		'  qa-test-external     Run tests that need external dependencies' \
 		'  qa-test-all          Run all pytest suites except excluded markers' \
+		'  qa-eval-rag          Run opt-in RAG retrieval and answer evals' \
+		'  qa-eval-api          Run opt-in RAG answer eval through HTTP API' \
+		'  qa-perf-chat         Run opt-in chat load test with Locust' \
+		'  qa-agent-flow        Reserved entrypoint for agent/C2C flow tests' \
 		'  qa-checks            Run lint and typecheck via scripts' \
 		'  image-build          Build the backend Docker image' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
@@ -64,12 +77,12 @@ help:
 		'  env-debug-down       Stop Docker debug dependencies' \
 		'  env-debug-logs       Show recent Docker debug dependency logs' \
 		'  env-debug-services   List services enabled by the debug compose stack' \
-		'  set-llm              Set API key securely (Usage: make set-llm PROVIDER=gemini)' \
+		'  set-llm              Set API key securely (Usage: make set-llm PROVIDER=gemini [EMBED_PROVIDER=google])' \
 		'  seed-dev             Seed fixed local data for admin/permission testing' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
 		'  env-smoke-down       Stop the smoke environment' \
 		'  env-smoke-logs       Show recent smoke logs' \
-		'  flow-static          Run static checks (lint+boundaries+typecheck+alembic+config+tests)' \
+		'  flow-static          Run L1 static checks and deterministic tests' \
 		'  flow-runtime         Run runtime checks (build+smoke up+smoke tests+smoke down)' \
 		'  flow-dev-check       Run the full dev verification flow (static + runtime)' \
 		'  flow-ci              Alias for the dev verification flow'
@@ -119,6 +132,19 @@ qa-test-external:
 qa-test-all:
 	uv run pytest $(PYTEST_ARGS)
 
+qa-eval-rag:
+	uv run python -m evals.eval_retrieval --dataset "$(EVAL_DATASET)" --output "$(EVAL_RETRIEVAL_OUTPUT)" $(ARGS)
+	uv run python -m evals.eval_answer --dataset "$(EVAL_DATASET)" --output "$(EVAL_OUTPUT)" $(ARGS)
+
+qa-eval-api:
+	uv run python -m evals.eval_api_answer --dataset "$(EVAL_DATASET)" --output "$(EVAL_API_OUTPUT)" --base-url "$(SMOKE_BASE_URL)" $(ARGS)
+
+qa-perf-chat:
+	uv run locust -f tests/performance/locustfile.py --host "$(SMOKE_BASE_URL)" --headless -u "$(PERF_USERS)" -r "$(PERF_SPAWN_RATE)" -t "$(PERF_RUN_TIME)" $(ARGS)
+
+qa-agent-flow:
+	@printf '%s\n' 'Agent/C2C flow tests are reserved for L3 and should reuse tests/smoke helpers.'
+
 qa-checks:
 	bash scripts/qa/run_checks.sh
 
@@ -141,7 +167,7 @@ env-smoke-create-kb:
 	bash scripts/smoke/create_kb.sh $(ARGS)
 
 set-llm:
-	@bash scripts/smoke/set_llm.sh "$(PROVIDER)"
+	@bash scripts/smoke/set_llm.sh "$(PROVIDER)" "$(or $(EMBED_PROVIDER),)"
 
 seed-dev:
 	uv run python scripts/seed/dev_seed.py $(ARGS)
@@ -175,7 +201,8 @@ flow-static:
 	$(MAKE) qa-layer-deps
 	$(MAKE) qa-alembic-check
 	$(MAKE) qa-config-check
-	$(MAKE) qa-test-all
+	$(MAKE) qa-test-unit
+	$(MAKE) qa-test-component
 
 flow-runtime:
 	bash scripts/flow/runtime_check.sh

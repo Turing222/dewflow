@@ -1,9 +1,13 @@
+"""Knowledge HTTP smoke tests.
+
+职责：验证真实 smoke 环境中的知识库上传、任务完成、文件状态和 chunk 入库。
+边界：允许读取 smoke DB 做索引校验，不承担 RAG 回答质量评估。
+"""
+
 from __future__ import annotations
 
-import asyncio
 import os
 import uuid
-from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -16,14 +20,10 @@ from backend.models.orm.knowledge import KnowledgeBase
 from tests.smoke import _http_smoke_helpers as smoke_helpers
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
-SMOKE_READY_PATH = smoke_helpers.SMOKE_READY_PATH
 create_auth_headers = smoke_helpers.create_auth_headers
 smoke_client = smoke_helpers.smoke_client
 
 USERS_ME_PATH = "/api/v1/users/me"
-UPLOAD_PATH_TEMPLATE = "/api/v1/knowledge/bases/{kb_id}/upload"
-TASK_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/tasks/{task_id}"
-FILE_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/files/{file_id}"
 
 
 def _project_root() -> Path:
@@ -142,34 +142,6 @@ async def _resolve_or_create_kb_id(
     return str(kb.id)
 
 
-async def _poll_json(
-    client: httpx.AsyncClient,
-    path: str,
-    *,
-    headers: dict[str, str],
-    is_ready: Callable[[dict], bool] | None = None,
-    timeout_seconds: float = 90.0,
-    interval_seconds: float = 1.0,
-) -> dict:
-    last_response: httpx.Response | None = None
-    last_body: dict | None = None
-    attempts = max(1, int(timeout_seconds / interval_seconds))
-
-    for _ in range(attempts):
-        last_response = await client.get(path, headers=headers)
-        if last_response.status_code == 200:
-            last_body = last_response.json()
-            if is_ready is None or is_ready(last_body):
-                return last_body
-        await asyncio.sleep(interval_seconds)
-
-    assert last_response is not None
-    raise AssertionError(
-        f"Timed out waiting for {path}. Last response: "
-        f"{last_response.status_code} {last_body or last_response.text}"
-    )
-
-
 def _build_chunking_probe_document(suffix: str) -> str:
     paragraphs = []
     for index in range(1, 6):
@@ -219,9 +191,7 @@ async def _fetch_file_chunks(file_id: str) -> list[dict]:
 async def test_knowledge_upload_over_http_reaches_ready_state(
     smoke_client: httpx.AsyncClient,
 ):
-    ready_response = await smoke_client.get(SMOKE_READY_PATH)
-    assert ready_response.status_code == 200, ready_response.text
-    assert ready_response.json()["status"] == "ready"
+    await smoke_helpers.ensure_ready_environment(smoke_client)
 
     headers, suffix = await create_auth_headers(smoke_client)
     kb_id = await _resolve_or_create_kb_id(
@@ -231,21 +201,14 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
     )
 
     probe_document = _build_chunking_probe_document(suffix)
-    upload_response = await smoke_client.post(
-        UPLOAD_PATH_TEMPLATE.format(kb_id=kb_id),
+    upload_body = await smoke_helpers.upload_knowledge_file_to_kb(
+        smoke_client,
         headers=headers,
-        files={
-            "file": (
-                f"smoke_{suffix}.md",
-                probe_document.encode(),
-                "text/markdown",
-            )
-        },
-        timeout=30.0,
+        kb_id=kb_id,
+        filename=f"smoke_{suffix}.md",
+        content=probe_document,
     )
 
-    assert upload_response.status_code == 202, upload_response.text
-    upload_body = upload_response.json()
     assert upload_body["task_id"]
     assert upload_body["file_id"]
     assert upload_body["file_status"] == "uploaded"
@@ -254,30 +217,19 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
     task_id = upload_body["task_id"]
     file_id = upload_body["file_id"]
 
-    task_body = None
-    for _ in range(90):
-        task_response = await smoke_client.get(
-            TASK_STATUS_PATH_TEMPLATE.format(task_id=task_id),
-            headers=headers,
-        )
-        assert task_response.status_code == 200, task_response.text
-        task_body = task_response.json()
-        if task_body["status"] in {"completed", "failed"}:
-            break
-        await asyncio.sleep(1.0)
-
-    assert task_body is not None
-    assert task_body["status"] == "completed", task_body
+    task_body = await smoke_helpers.poll_task_completed(
+        smoke_client,
+        headers=headers,
+        task_id=task_id,
+    )
     assert task_body["progress"] == 100, task_body
 
-    file_body = await _poll_json(
+    file_body = await smoke_helpers.poll_file_ready(
         smoke_client,
-        FILE_STATUS_PATH_TEMPLATE.format(file_id=file_id),
         headers=headers,
-        is_ready=lambda body: body.get("status") == "ready",
+        file_id=file_id,
     )
     assert file_body["kb_id"] == kb_id
-    assert file_body["status"] == "ready", file_body
     assert file_body["filename"].endswith(".md")
     assert file_body["file_size"] > 0
 

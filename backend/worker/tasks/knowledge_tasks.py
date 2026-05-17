@@ -39,7 +39,7 @@ from backend.worker.dependencies import (
 logger = logging.getLogger(__name__)
 
 
-async def _safe_mark_failed(
+async def safe_mark_failed(
     *,
     uow: SQLAlchemyUnitOfWork,
     task_service: TaskService,
@@ -152,7 +152,7 @@ async def _ingest_knowledge_file_task(
             file_id,
             task_id,
         )
-        await _safe_mark_failed(
+        await safe_mark_failed(
             uow=uow,
             task_service=task_service,
             task_id=task_uuid,
@@ -163,7 +163,7 @@ async def _ingest_knowledge_file_task(
             code="KNOWLEDGE_TASK_INVALID_ARGUMENT",
         ) from exc
     except AppException as exc:
-        await _safe_mark_failed(
+        await safe_mark_failed(
             uow=uow,
             task_service=task_service,
             task_id=task_uuid,
@@ -177,7 +177,7 @@ async def _ingest_knowledge_file_task(
         )
         raise
     except Exception as exc:
-        await _safe_mark_failed(
+        await safe_mark_failed(
             uow=uow,
             task_service=task_service,
             task_id=task_uuid,

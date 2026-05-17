@@ -16,6 +16,12 @@
 
 ## 推荐命令
 
+- L1 静态与本地确定性检查：
+
+```bash
+make check
+```
+
 - 单元测试：
 
 ```bash
@@ -76,6 +82,25 @@ uv run pytest -m smoke
 uv run pytest -m performance
 ```
 
+- L2 真实 HTTP smoke：
+
+```bash
+make flow-runtime
+```
+
+- L3 RAG 评测：
+
+```bash
+make qa-eval-rag
+make qa-eval-api
+```
+
+- L3 Chat 压测：
+
+```bash
+make qa-perf-chat
+```
+
 - 跑 unit + component + integration：
 
 ```bash
@@ -86,6 +111,7 @@ uv run pytest tests/unit tests/component tests/integration
 
 - 测试 profile 通过 `DEWFLOW_TEST_PROFILE` 控制，允许值为 `unit|local|ci|external`。
 - 真实依赖通过 `TEST_*` 变量覆盖，例如 `TEST_DATABASE_URL`、`TEST_REDIS_URL`。
+- L1 不读取 `.env.smoke`；L2 使用 `SMOKE_*`；L3 复用 L2 环境并只叠加 `EVAL_*` / `PERF_*` / `AGENT_*`。
 - `evals/` 已迁移到项目根目录，不再属于 `pytest` 测试集。
 - 诊断脚本放在 `scripts/diagnostics/`。
 - Locust 脚本位置：`tests/performance/locustfile.py`。

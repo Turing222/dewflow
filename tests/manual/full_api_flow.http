@@ -1,0 +1,598 @@
+### ============================================================
+### Dewflow Backend — 完整 API 本地真实测试
+### ============================================================
+###
+### 前置准备（按顺序执行）：
+###   1. make env-smoke-prepare       — 生成 .env.smoke + secrets
+###   2. make set-llm PROVIDER=mock   — 设为 mock（无需真实 LLM key）
+###      或 make set-llm PROVIDER=gemini — 设为 Gemini（需输入 API key）
+###   3. make image-build              — 构建 Docker 镜像
+###   4. make env-smoke-up             — 启动完整栈
+###   5. make env-smoke-wait           — 等待就绪
+###   6. make seed-dev                 — 灌入种子数据
+###
+### 使用方式：
+###   在 VS Code REST Client 中从上到下依次执行请求
+###   依赖前序请求的响应变量（token、id 等）
+###
+### 验证要点：
+###   - 每个 ### 块旁标注了期望状态码和关键字段
+###   - "应该失败" 的请求明确标注期望的 4xx 状态码
+### ============================================================
+
+@baseUrl = http://localhost:8000
+@seedPassword = SeedPass123!
+@adminUsername = seed_admin
+@memberUsername = seed_member
+@viewerUsername = seed_viewer
+@inactiveUsername = seed_inactive
+@workspaceAdminUsername = seed_workspace_admin
+
+
+### ----------------------------------------------------------
+### 0. 健康检查 — 无需认证
+### 期望: 200 + {"status": "alive"}
+### ----------------------------------------------------------
+
+GET {{baseUrl}}/api/v1/health_check/live
+Accept: application/json
+
+### 健康检查 — DB 就绪
+### 期望: 200 + {"status": "ready", "latency_ms": <number>}
+GET {{baseUrl}}/api/v1/health_check/db_ready
+Accept: application/json
+
+
+### ----------------------------------------------------------
+### 1. 认证 — 注册 & 登录
+### ----------------------------------------------------------
+
+### 1.1 注册新用户
+### 期望: 200 + UserResponse（含 id, username, is_active=true, is_superuser=false）
+# @name registerNewUser
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "test_rest_user",
+  "email": "test_rest_user@example.com",
+  "password": "TestPass123!",
+  "confirm_password": "TestPass123!"
+}
+
+### 1.2 重复注册同用户名 — 应该失败
+### 期望: 400 或 409（用户已存在）
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "test_rest_user",
+  "email": "test_rest_user@example.com",
+  "password": "TestPass123!",
+  "confirm_password": "TestPass123!"
+}
+
+### 1.3 注册短用户名 — 应该失败（< 3 chars）
+### 期望: 422（验证错误）
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "ab",
+  "email": "ab@example.com",
+  "password": "TestPass123!",
+  "confirm_password": "TestPass123!"
+}
+
+### 1.4 Admin 登录
+### 期望: 200 + {"access_token": "...", "token_type": "bearer"}
+# @name adminLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{adminUsername}}&password={{seedPassword}}
+
+### 1.5 Member 登录
+# @name memberLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{memberUsername}}&password={{seedPassword}}
+
+### 1.6 Viewer 登录
+# @name viewerLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{viewerUsername}}&password={{seedPassword}}
+
+### 1.7 Workspace Admin 登录
+# @name wsAdminLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{workspaceAdminUsername}}&password={{seedPassword}}
+
+### 1.8 Inactive 用户登录 — 应该失败
+### 期望: 400（用户未激活）
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{inactiveUsername}}&password={{seedPassword}}
+
+### 1.9 错误密码登录 — 应该失败
+### 期望: 401 或 403
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{adminUsername}}&password=WrongPassword123!
+
+
+### ----------------------------------------------------------
+### 2. 用户管理
+### ----------------------------------------------------------
+
+### 2.1 Admin 查看当前用户
+### 期望: 200 + UserResponse（is_superuser=true）
+# @name adminMe
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 2.2 Member 查看当前用户
+### 期望: 200 + UserResponse（is_superuser=false）
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 2.3 Admin 按用户名查询用户
+### 期望: 200 + UserResponse
+# @name memberLookup
+GET {{baseUrl}}/api/v1/users?username={{memberUsername}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 2.4 Admin 按邮箱查询用户
+### 期望: 200 + UserResponse
+GET {{baseUrl}}/api/v1/users?email=seed_member@example.com
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 2.5 Admin 修改用户 — 修改 max_tokens
+### 期望: 200 + UserResponse（max_tokens=90000）
+PATCH {{baseUrl}}/api/v1/users/{{memberLookup.response.body.$.id}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "max_tokens": 90000
+}
+
+### 2.6 Admin 创建用户
+### 期望: 200 + UserResponse
+# @name adminCreateUser
+POST {{baseUrl}}/api/v1/users
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "username": "admin_created_user1",
+  "email": "admin_created1@example.com",
+  "password": "AdminCreated123!",
+  "confirm_password": "AdminCreated123!"
+}
+
+### 2.7 Member 查询用户列表 — 应该失败
+### 期望: 403（非 superuser 无权查询）
+GET {{baseUrl}}/api/v1/users?username={{adminUsername}}
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 2.8 无 token 访问 /users/me — 应该失败
+### 期望: 401 或 403
+GET {{baseUrl}}/api/v1/users/me
+Accept: application/json
+
+### 2.9 无效 token 访问 — 应该失败
+### 期望: 403
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer invalid.jwt.token
+Accept: application/json
+
+
+### ----------------------------------------------------------
+### 3. 工作空间
+### ----------------------------------------------------------
+
+### 3.1 Admin 创建工作空间（用于后续成员管理测试）
+### 期望: 201 + WorkspaceResponse
+### 后续第 4 节成员管理全部引用此工作空间的 id
+# @name createWorkspace
+POST {{baseUrl}}/api/v1/workspaces
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "name": "REST 测试工作空间",
+  "slug": "rest-test-workspace"
+}
+
+### 3.2 列出工作空间
+### 期望: 200 + WorkspaceListResponse
+# @name listWorkspaces
+GET {{baseUrl}}/api/v1/workspaces?skip=0&limit=20
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 3.3 获取单个工作空间
+### 期望: 200 + WorkspaceResponse
+# @name getWorkspace
+GET {{baseUrl}}/api/v1/workspaces/{{createWorkspace.response.body.$.id}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 3.4 更新工作空间
+### 期望: 200 + WorkspaceResponse（name 已更新）
+PATCH {{baseUrl}}/api/v1/workspaces/{{createWorkspace.response.body.$.id}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "name": "REST 测试工作空间-已更新"
+}
+
+### 3.5 查看种子工作空间列表
+### 期望: 200 + WorkspaceListResponse
+GET {{baseUrl}}/api/v1/workspaces?skip=0&limit=50
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+
+### ----------------------------------------------------------
+### 4. 工作空间成员管理
+### （使用 3.1 创建的工作空间，admin 是 owner）
+### ----------------------------------------------------------
+
+### 4.1 查看工作空间成员
+### 期望: 200 + WorkspaceMemberListResponse
+# @name listMembers
+GET {{baseUrl}}/api/v1/workspaces/{{createWorkspace.response.body.$.id}}/members?skip=0&limit=20
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 4.2 添加 Member 到工作空间
+### 期望: 201 + WorkspaceMemberResponse（role=member）
+# @name addMember
+POST {{baseUrl}}/api/v1/workspaces/{{createWorkspace.response.body.$.id}}/members
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "user_id": "{{memberLookup.response.body.$.id}}",
+  "role": "member"
+}
+
+### 4.3 修改成员角色
+### 期望: 200 + WorkspaceMemberResponse（role=admin）
+PATCH {{baseUrl}}/api/v1/workspaces/{{createWorkspace.response.body.$.id}}/members/{{memberLookup.response.body.$.id}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "role": "admin"
+}
+
+### 4.4 Viewer 尝试管理成员 — 应该失败（权限不足）
+### 期望: 403
+POST {{baseUrl}}/api/v1/workspaces/{{createWorkspace.response.body.$.id}}/members
+Authorization: Bearer {{viewerLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "user_id": "{{memberLookup.response.body.$.id}}",
+  "role": "viewer"
+}
+
+### 4.5 移除成员
+### 期望: 204
+DELETE {{baseUrl}}/api/v1/workspaces/{{createWorkspace.response.body.$.id}}/members/{{memberLookup.response.body.$.id}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+
+
+### ----------------------------------------------------------
+### 5. Chat — 对话
+### ----------------------------------------------------------
+
+### 5.1 非流式对话（新建 session）
+### 期望: 200 + ChatQueryResponse（含 session_id, answer）
+# @name chatQuery
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "你好，这是一条 REST Client 测试消息，请回复确认。",
+  "client_request_id": "rest-client-test-001"
+}
+
+### 5.2 非流式对话（续接 session）
+### 期望: 200 + 同一个 session_id
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "请确认你记住了上一轮对话的内容。",
+  "session_id": "{{chatQuery.response.body.$.session_id}}",
+  "client_request_id": "rest-client-test-002"
+}
+
+### 5.3 幂等性测试 — 相同 client_request_id 重复发送
+### 期望: 200（应返回相同的逻辑响应）
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "你好，这是一条 REST Client 测试消息，请回复确认。",
+  "client_request_id": "rest-client-test-001"
+}
+
+### 5.4 流式对话
+### 期望: 200 + SSE text/event-stream
+### 注意: REST Client 对 SSE 的支持有限，建议用 curl 验证：
+###   curl -N -H "Authorization: Bearer <token>" \
+###     -H "Content-Type: application/json" \
+###     -d '{"query":"流式测试"}' \
+###     http://localhost:8000/api/v1/chat/query_stream
+# @name chatStream
+POST {{baseUrl}}/api/v1/chat/query_stream
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "请用流式方式回复：这是一条流式测试。",
+  "session_id": "{{chatQuery.response.body.$.session_id}}"
+}
+
+### 5.5 列出对话 session
+### 期望: 200 + SessionListResponse
+GET {{baseUrl}}/api/v1/chat/sessions?skip=0&limit=20
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 5.6 查看 session 详情
+### 期望: 200 + SessionDetailResponse（含 messages 列表）
+GET {{baseUrl}}/api/v1/chat/sessions/{{chatQuery.response.body.$.session_id}}?skip=0&limit=20
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 5.7 带 thinking 配置的对话
+### 期望: 200 + ChatQueryResponse
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "请展示 thinking 模式。",
+  "extra_body": {
+    "thinking": {
+      "type": "enabled"
+    }
+  }
+}
+
+
+### ----------------------------------------------------------
+### 6. 知识库 & 文件上传
+### ----------------------------------------------------------
+
+### 6.1 上传文件到默认知识库
+### 期望: 202 + KnowledgeUploadResponse（含 task_id, file_id）
+# @name uploadDefault
+POST {{baseUrl}}/api/v1/knowledge/default/upload
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: multipart/form-data; boundary=RestClientBoundary
+
+--RestClientBoundary
+Content-Disposition: form-data; name="file"; filename="test_knowledge1.md"
+Content-Type: text/markdown
+
+# 测试知识文档test2
+
+测试知识文档test2这是一个用于 REST Client 测试的知识文档。
+包含 Dewflow 后端 API 的测试用例。
+
+## 功能列表
+- 用户认证
+- 工作空间管理
+- 对话系统
+- 知识库上传
+--RestClientBoundary--
+
+### 6.2 上传文件到指定知识库
+### 使用 6.1 默认知识库上传返回的 kb_id，避免依赖本地历史 ID
+
+### 期望: 202 + KnowledgeUploadResponse
+# @name uploadToKb
+POST {{baseUrl}}/api/v1/knowledge/bases/{{uploadDefault.response.body.$.kb_id}}/upload
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: multipart/form-data; boundary=KbUploadBoundary
+
+--KbUploadBoundary
+Content-Disposition: form-data; name="file"; filename="kb_test_doc.txt"
+Content-Type: text/plain
+
+知识库专属测试文档内容。
+--KbUploadBoundary--
+
+### 6.3 查询上传任务状态
+### 期望: 200 + TaskResponse（含 status, progress）
+GET {{baseUrl}}/api/v1/knowledge/tasks/{{uploadDefault.response.body.$.task_id}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 6.4 查询文件状态
+### 期望: 200 + KnowledgeFileResponse（含 filename, status）
+GET {{baseUrl}}/api/v1/knowledge/files/{{uploadDefault.response.body.$.file_id}}
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 6.5 上传超大文件 — 超过 KNOWLEDGE_MAX_UPLOAD_SIZE_MB (默认 20MB)
+### REST Client 无法构造超大 body，建议用 curl 验证：
+###   dd if=/dev/zero bs=1M count=21 | curl -X POST \
+###     -H "Authorization: Bearer <token>" \
+###     -F "file=@-;filename=huge.bin" \
+###     http://localhost:8000/api/v1/knowledge/default/upload
+
+### 6.6 验证 RAG 命中刚上传的知识库
+# @name ragHitQuery
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "根据刚上传的知识文档，Dewflow 后端 API 的功能列表有哪些？只列出文档中的条目。",
+  "kb_id": "{{uploadDefault.response.body.$.kb_id}}",
+  "client_request_id": "rag-hit-001"
+}
+### ----------------------------------------------------------
+### 7. 审计日志
+### ----------------------------------------------------------
+
+### 7.1 Admin 查询审计事件
+### 期望: 200 + AuditEventListResponse
+GET {{baseUrl}}/api/v1/audit/events?skip=0&limit=20
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 7.2 按 action 过滤
+### 期望: 200 + 过滤后的结果
+GET {{baseUrl}}/api/v1/audit/events?action=workspace.seed&skip=0&limit=20
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 7.3 按 outcome 过滤
+### 期望: 200 + 只有 denied 结果
+GET {{baseUrl}}/api/v1/audit/events?outcome=denied&skip=0&limit=20
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 7.4 按 request_id 过滤
+### 期望: 200 + 0 或 1 条结果
+GET {{baseUrl}}/api/v1/audit/events?request_id=seed-audit-001
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 7.5 按 workspace_id 过滤
+### 期望: 200
+GET {{baseUrl}}/api/v1/audit/events?workspace_id={{createWorkspace.response.body.$.id}}&skip=0&limit=20
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 7.6 Member 查询审计 — 应该失败（无 audit:read 权限）
+### 期望: 403
+GET {{baseUrl}}/api/v1/audit/events?skip=0&limit=5
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Accept: application/json
+
+
+### ----------------------------------------------------------
+### 8. 权限策略
+### ----------------------------------------------------------
+
+### 8.1 查看权限策略
+### 期望: 200 + PermissionPolicyResponse（含 permissions, roles, role_permissions）
+# @name permissionPolicy
+GET {{baseUrl}}/api/v1/permissions/policy
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 8.2 未认证访问权限策略 — 应该失败
+### 期望: 401 或 403
+GET {{baseUrl}}/api/v1/permissions/policy
+Accept: application/json
+
+
+### ----------------------------------------------------------
+### 9. 用户 CSV 导入（Superuser only）
+### ----------------------------------------------------------
+
+### 9.1 Admin 上传 CSV 导入用户
+### 期望: 200 + UserImportResponse（含 total_rows, imported_rows）
+POST {{baseUrl}}/api/v1/users/csv_upload
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: multipart/form-data; boundary=CsvBoundary
+
+--CsvBoundary
+Content-Disposition: form-data; name="file"; filename="users.csv"
+Content-Type: text/csv
+
+username,email,password
+csv_user1,csv_user1@example.com,CsvPass123!
+csv_user2,csv_user2@example.com,CsvPass123!
+--CsvBoundary--
+
+### 9.2 Member 上传 CSV — 应该失败
+### 期望: 403
+POST {{baseUrl}}/api/v1/users/csv_upload
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: multipart/form-data; boundary=CsvBoundary2
+
+--CsvBoundary2
+Content-Disposition: form-data; name="file"; filename="users.csv"
+Content-Type: text/csv
+
+username,email,password
+csv_user3,csv_user3@example.com,CsvPass123!
+--CsvBoundary2--
+
+
+### ----------------------------------------------------------
+### 10. 边界 & 错误场景汇总
+### ----------------------------------------------------------
+
+### 10.1 无效 UUID 路径参数
+### 期望: 422
+GET {{baseUrl}}/api/v1/workspaces/not-a-uuid
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 10.2 不存在的资源
+### 期望: 404
+GET {{baseUrl}}/api/v1/workspaces/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Accept: application/json
+
+### 10.3 空查询字符串
+### 期望: 422（query 最少 1 字符）
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{memberLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "   "
+}
+
+### 10.4 slug 格式不合法
+### 期望: 422
+POST {{baseUrl}}/api/v1/workspaces
+Authorization: Bearer {{adminLogin.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "name": "Bad Slug Test",
+  "slug": "invalid slug!"
+}
+
+### 10.5 密码不匹配
+### 期望: 422
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "pwd_mismatch_user",
+  "email": "pwd_mismatch@example.com",
+  "password": "Password123!",
+  "confirm_password": "DifferentPassword!"
+}

@@ -10,7 +10,7 @@
 @username = smoke_manual
 @email = smoke_manual@example.com
 @password = Password123
-@kbId = 019dbade-5aec-1204-03db-8d58f3ca621e
+@kbId = replace-with-created-kb-id
 
 
 ### Health - live
@@ -72,13 +72,13 @@ Content-Type: application/json
 }
 
 
-### Knowledge - upload stream
+### Knowledge - upload to KB
 ### Note: replace `@kbId` with a real knowledge base ID before running.
 ### If you do not have one yet, create/seed one first, or use the smoke pytest
 ### that seeds a KB automatically.
 ###
-# @name uploadStream
-POST {{baseUrl}}/api/v1/knowledge/bases/{{kbId}}/upload-stream
+# @name uploadToKb
+POST {{baseUrl}}/api/v1/knowledge/bases/{{kbId}}/upload
 Authorization: Bearer {{login.response.body.$.access_token}}
 Content-Type: multipart/form-data; boundary=SmokeBoundary
 
@@ -94,12 +94,12 @@ this file is for manual smoke verification
 
 
 ### Knowledge - task status
-GET {{baseUrl}}/api/v1/knowledge/tasks/{{uploadStream.response.body.$.task_id}}
+GET {{baseUrl}}/api/v1/knowledge/tasks/{{uploadToKb.response.body.$.task_id}}
 Authorization: Bearer {{login.response.body.$.access_token}}
 Accept: application/json
 
 
 ### Knowledge - file status
-GET {{baseUrl}}/api/v1/knowledge/files/{{uploadStream.response.body.$.file_id}}
+GET {{baseUrl}}/api/v1/knowledge/files/{{uploadToKb.response.body.$.file_id}}
 Authorization: Bearer {{login.response.body.$.access_token}}
 Accept: application/json
