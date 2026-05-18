@@ -35,3 +35,16 @@ class GenerationResult(BaseModel):
     search_context: dict | None = None
     latency_ms: int | None = None
     error: str | None = None
+
+
+class LLMTaskPayload(BaseModel):
+    """Unified LLM generation TaskIQ payload (v2 wire format)."""
+
+    generation_payload: dict[str, Any]
+    channel: str | None = None
+    trace_context: dict[str, str] | None = None
+    assistant_message_id: str | None = None
+    user_id: str | None = None
+    idempotency_lock_key: str | None = None
+
+    model_config = {"extra": "forbid"}

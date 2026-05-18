@@ -24,7 +24,11 @@ from backend.models.schemas.chat.dto import (
     MessageStatusEnum,
 )
 from backend.models.schemas.chat.params import LLMExtraBody, LLMThinkingConfig
-from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
+from backend.models.schemas.chat.payloads import (
+    GenerationPayload,
+    GenerationResult,
+    LLMTaskPayload,
+)
 
 __all__ = [
     "ChatMessageRole",
@@ -34,6 +38,7 @@ __all__ = [
     "ContextState",
     "GenerationPayload",
     "GenerationResult",
+    "LLMTaskPayload",
     "LLMExtraBody",
     "LLMQueryDTO",
     "LLMResultDTO",

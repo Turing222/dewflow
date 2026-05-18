@@ -12,7 +12,11 @@ from backend.application.chat.worker_generation_workflow import (
 )
 from backend.infra.redis import redis_client
 from backend.infra.task_broker import broker
-from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
+from backend.models.schemas.chat.payloads import (
+    GenerationPayload,
+    GenerationResult,
+    LLMTaskPayload,
+)
 from backend.observability.langfuse_utils import (
     langfuse_generation,
     set_langfuse_trace_metadata,
@@ -46,19 +50,73 @@ def _build_usage_details(result: GenerationResult) -> dict[str, int]:
     return details
 
 
+def _unpack_stream_args(
+    args: tuple[object, ...],
+) -> tuple[dict, str, dict[str, str] | None, str | None, str | None, str | None]:
+    """Unpack old-style positional args for stream task."""
+    generation_payload: dict = args[0]  # type: ignore[assignment]
+    channel: str = args[1]  # type: ignore[assignment]
+    trace_context: dict[str, str] | None = args[2] if len(args) > 2 else None  # type: ignore[assignment]
+    assistant_message_id: str | None = args[3] if len(args) > 3 else None  # type: ignore[assignment]
+    user_id: str | None = args[4] if len(args) > 4 else None  # type: ignore[assignment]
+    idempotency_lock_key: str | None = args[5] if len(args) > 5 else None  # type: ignore[assignment]
+    return (
+        generation_payload,
+        channel,
+        trace_context,
+        assistant_message_id,
+        user_id,
+        idempotency_lock_key,
+    )
+
+
+def _unpack_nonstream_args(
+    args: tuple[object, ...],
+) -> tuple[dict, dict[str, str] | None, str | None, str | None, str | None]:
+    """Unpack old-style positional args for non-stream task."""
+    generation_payload: dict = args[0]  # type: ignore[assignment]
+    trace_context: dict[str, str] | None = args[1] if len(args) > 1 else None  # type: ignore[assignment]
+    assistant_message_id: str | None = args[2] if len(args) > 2 else None  # type: ignore[assignment]
+    user_id: str | None = args[3] if len(args) > 3 else None  # type: ignore[assignment]
+    idempotency_lock_key: str | None = args[4] if len(args) > 4 else None  # type: ignore[assignment]
+    return (
+        generation_payload,
+        trace_context,
+        assistant_message_id,
+        user_id,
+        idempotency_lock_key,
+    )
+
+
 # ── Streaming ──────────────────────────────────────────────────────
 
 
 @broker.task(task_name="generate_llm_stream")
-async def generate_llm_stream_task(
-    generation_payload: dict,
-    channel: str,
-    trace_context: dict[str, str] | None = None,
-    assistant_message_id: str | None = None,
-    user_id: str | None = None,
-    idempotency_lock_key: str | None = None,
-) -> None:
-    """TaskIQ 入口：恢复 trace context 后执行流式生成。"""
+async def generate_llm_stream_task(*args: object) -> None:
+    """TaskIQ 入口：恢复 trace context 后执行流式生成。
+
+    Backward-compatible: accepts old positional args (len > 1)
+    or new single LLMTaskPayload dict (len == 1).
+    """
+    if len(args) > 1:
+        (
+            generation_payload,
+            channel,
+            trace_context,
+            assistant_message_id,
+            user_id,
+            idempotency_lock_key,
+        ) = _unpack_stream_args(args)
+    else:
+        task_payload = LLMTaskPayload.model_validate(args[0])
+        generation_payload = task_payload.generation_payload
+        channel = task_payload.channel
+        trace_context = task_payload.trace_context
+        assistant_message_id = task_payload.assistant_message_id
+        user_id = task_payload.user_id
+        idempotency_lock_key = task_payload.idempotency_lock_key
+
+    assert channel is not None, "stream task requires a channel"
     with use_trace_context(trace_context):
         payload = GenerationPayload(**generation_payload)
         with set_langfuse_trace_metadata(
@@ -126,14 +184,28 @@ async def _generate_llm_stream_task(
 
 
 @broker.task(task_name="generate_llm_nonstream")
-async def generate_llm_nonstream_task(
-    generation_payload: dict,
-    trace_context: dict[str, str] | None = None,
-    assistant_message_id: str | None = None,
-    user_id: str | None = None,
-    idempotency_lock_key: str | None = None,
-) -> GenerationResult:
-    """TaskIQ 入口：恢复 trace context 后执行非流式生成，返回结果 dict。"""
+async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
+    """TaskIQ 入口：恢复 trace context 后执行非流式生成，返回结果 dict。
+
+    Backward-compatible: accepts old positional args (len > 1)
+    or new single LLMTaskPayload dict (len == 1).
+    """
+    if len(args) > 1:
+        (
+            generation_payload,
+            trace_context,
+            assistant_message_id,
+            user_id,
+            idempotency_lock_key,
+        ) = _unpack_nonstream_args(args)
+    else:
+        task_payload = LLMTaskPayload.model_validate(args[0])
+        generation_payload = task_payload.generation_payload
+        trace_context = task_payload.trace_context
+        assistant_message_id = task_payload.assistant_message_id
+        user_id = task_payload.user_id
+        idempotency_lock_key = task_payload.idempotency_lock_key
+
     with use_trace_context(trace_context):
         payload = GenerationPayload(**generation_payload)
         with set_langfuse_trace_metadata(

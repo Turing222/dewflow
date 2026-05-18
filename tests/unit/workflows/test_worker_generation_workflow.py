@@ -305,6 +305,44 @@ async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -
     assert update_kwargs["message_metadata"]["response_outcome"] == "failed"
 
 
+async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+
+    uow = FakeChatUow()
+    assistant_message_id = uuid.uuid4()
+    uow.chat_repo.update_message_status.return_value = object()
+
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=StreamingLLM([], error=RuntimeError("internal secret")),
+    )
+
+    error = await workflow.generate_stream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            conversation_history=[],
+        ),
+        channel="stream:test",
+        assistant_message_id=assistant_message_id,
+        idempotency_lock_key="idempotency:test",
+    )
+
+    assert error == "服务暂时不可用，请稍后重试"
+    assert redis.published == [
+        ("stream:test", encode_error_event("服务暂时不可用，请稍后重试")),
+        ("stream:test", encode_done_event()),
+    ]
+    assert redis.deleted == ["idempotency:test"]
+    uow.chat_repo.update_message_status.assert_awaited_once()
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["message_id"] == assistant_message_id
+    assert update_kwargs["content"] == "服务暂时不可用，请稍后重试"
+    assert update_kwargs["message_metadata"]["response_outcome"] == "failed"
+
+
 async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     monkeypatch,
 ) -> None:

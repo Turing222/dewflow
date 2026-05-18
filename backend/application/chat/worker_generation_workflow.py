@@ -8,6 +8,7 @@
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 
 import redis.asyncio as redis
 
@@ -51,6 +52,13 @@ from backend.services.rag_evidence_policy import RAGEvidencePolicy
 from backend.services.rag_planning_service import RAGPlanningService
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _RAGRefusalSignal(Exception):
+    """Signal from _prepare_generation when RAG refuses to answer."""
+
+    search_context: dict | None
 
 
 class LLMGenerationWorkerWorkflow:
@@ -103,6 +111,148 @@ class LLMGenerationWorkerWorkflow:
             ex=3600,
         )
 
+    # ── Shared Internal Helpers ───────────────────────────────────
+
+    async def _prepare_generation(
+        self,
+        payload: GenerationPayload,
+    ) -> tuple[LLMQueryDTO, int, dict | None]:
+        """RAG context -> LLMQueryDTO + tokens_input + search_context.
+
+        Raises _RAGRefusalSignal when RAG refuses to answer.
+        Raises RuntimeError when assembled prompt is missing.
+        """
+        prepared_context = await self.rag_orchestrator.prepare_context(payload)
+        if prepared_context.refusal_decision is not None:
+            raise _RAGRefusalSignal(search_context=prepared_context.search_context)
+        assembled = prepared_context.assembled_prompt
+        if assembled is None:
+            raise RuntimeError("生成上下文缺少 Prompt")
+        search_context = prepared_context.search_context
+        tokens_input = assembled.total_tokens
+        llm_query = LLMQueryDTO(
+            session_id=payload.session_id,
+            query_text=payload.query_text,
+            conversation_history=assembled.messages,
+            extra_body=payload.extra_body,
+        )
+        return llm_query, tokens_input, search_context
+
+    async def _on_success(
+        self,
+        *,
+        assistant_message_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        content: str,
+        tokens_input: int,
+        tokens_output: int,
+        search_context: dict | None,
+        start_time: float,
+        message_metadata: dict[str, object],
+        idempotency_lock_key: str | None,
+    ) -> None:
+        """Orchestrate persist_success + idempotency lock write."""
+        await self.persistence_handler.persist_success(
+            assistant_message_id=assistant_message_id,
+            user_id=user_id,
+            content=content,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
+            search_context=search_context,
+            start_time=start_time,
+            message_metadata=message_metadata,
+        )
+        if idempotency_lock_key is not None and assistant_message_id is not None:
+            await self._set_idempotency_message(
+                idempotency_lock_key=idempotency_lock_key,
+                assistant_message_id=assistant_message_id,
+            )
+
+    async def _persist_refusal(
+        self,
+        *,
+        assistant_message_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        content: str,
+        tokens_input: int,
+        tokens_output: int,
+        search_context: dict | None,
+        start_time: float,
+        message_metadata: dict[str, object],
+        idempotency_lock_key: str | None,
+    ) -> None:
+        """Shared refusal/block persistence + idempotency lock write."""
+        await self.persistence_handler.persist_success(
+            assistant_message_id=assistant_message_id,
+            user_id=user_id,
+            content=content,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
+            search_context=search_context,
+            start_time=start_time,
+            message_metadata=message_metadata,
+        )
+        if idempotency_lock_key is not None and assistant_message_id is not None:
+            await self._set_idempotency_message(
+                idempotency_lock_key=idempotency_lock_key,
+                assistant_message_id=assistant_message_id,
+            )
+
+    async def _handle_generation_error(
+        self,
+        exc: Exception,
+        *,
+        assistant_message_id: uuid.UUID | None,
+        idempotency_lock_key: str | None,
+        channel: str | None = None,
+    ) -> GenerationResult:
+        """Common error handling: persist failure, optionally publish, return result."""
+        if isinstance(exc, AppException):
+            logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
+            error_content = str(exc)
+        else:
+            logger.exception("TaskIQ 调用 LLM 系统异常")
+            error_content = "服务暂时不可用，请稍后重试"
+
+        await self.persistence_handler.persist_failure(
+            assistant_message_id=assistant_message_id,
+            error_content=error_content,
+            idempotency_lock_key=idempotency_lock_key,
+        )
+
+        if channel is not None:
+            await self._publish(channel, encode_error_event(error_content))
+
+        return GenerationResult(success=False, error=error_content)
+
+    def _build_span_attributes(
+        self,
+        *,
+        stream: bool,
+        session_id: uuid.UUID,
+        assistant_message_id: uuid.UUID | None,
+        tokens_input: int,
+        search_context: dict | None,
+        channel: str | None = None,
+    ) -> dict[str, object]:
+        """Build OTel span attributes shared by stream and non-stream paths."""
+        attrs: dict[str, object] = {
+            **build_llm_span_attributes(
+                provider=getattr(self.llm_service, "provider_name", "unknown"),
+                model=getattr(self.llm_service, "model_name", "unknown"),
+                operation="generate",
+                stream=stream,
+            ),
+            "chat.session_id": session_id,
+            "chat.assistant_message_id": assistant_message_id,
+            "chat.prompt.tokens_input": tokens_input,
+            "chat.prompt.uses_rag": search_context is not None,
+            "llm.provider": getattr(self.llm_service, "provider_name", "unknown"),
+        }
+        if channel is not None:
+            attrs["redis.channel"] = channel
+        return attrs
+
     # ── Streaming ──────────────────────────────────────────────────
 
     async def generate_stream(
@@ -136,47 +286,31 @@ class LLMGenerationWorkerWorkflow:
                     idempotency_lock_key=idempotency_lock_key,
                 )
                 return
-            prepared_context = await self.rag_orchestrator.prepare_context(payload)
-            if prepared_context.refusal_decision is not None:
+            try:
+                llm_query, tokens_input, search_context = (
+                    await self._prepare_generation(payload)
+                )
+            except _RAGRefusalSignal as sig:
                 await self._handle_stream_refusal(
                     channel=channel,
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
-                    search_context=prepared_context.search_context,
+                    search_context=sig.search_context,
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
                 )
                 return
-            assembled = prepared_context.assembled_prompt
-            if assembled is None:
-                raise RuntimeError("生成上下文缺少 Prompt")
-            search_context = prepared_context.search_context
-            tokens_input = assembled.total_tokens
-            llm_query = LLMQueryDTO(
-                session_id=payload.session_id,
-                query_text=payload.query_text,
-                conversation_history=assembled.messages,
-                extra_body=payload.extra_body,
-            )
 
             with trace_span(
                 "taskiq.llm_stream.generate_and_publish",
-                {
-                    **build_llm_span_attributes(
-                        provider=getattr(self.llm_service, "provider_name", "unknown"),
-                        model=getattr(self.llm_service, "model_name", "unknown"),
-                        operation="generate",
-                        stream=True,
-                    ),
-                    "redis.channel": channel,
-                    "chat.session_id": payload.session_id,
-                    "chat.assistant_message_id": assistant_message_id,
-                    "chat.prompt.tokens_input": tokens_input,
-                    "chat.prompt.uses_rag": search_context is not None,
-                    "llm.provider": getattr(
-                        self.llm_service, "provider_name", "unknown"
-                    ),
-                },
+                self._build_span_attributes(
+                    stream=True,
+                    session_id=payload.session_id,
+                    assistant_message_id=assistant_message_id,
+                    tokens_input=tokens_input,
+                    search_context=search_context,
+                    channel=channel,
+                ),
             ) as span:
                 async with llm_concurrency_slot(
                     {
@@ -214,7 +348,7 @@ class LLMGenerationWorkerWorkflow:
                     output_decision = evaluate_output_guardrail(full_content)
                     content_to_persist = full_content
                 tokens_output = self._count_output_tokens(content_to_persist)
-                await self.persistence_handler.persist_success(
+                await self._on_success(
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
                     content=content_to_persist,
@@ -226,15 +360,8 @@ class LLMGenerationWorkerWorkflow:
                         output_decision=output_decision,
                         original_content=full_content,
                     ),
+                    idempotency_lock_key=idempotency_lock_key,
                 )
-                if (
-                    idempotency_lock_key is not None
-                    and assistant_message_id is not None
-                ):
-                    await self._set_idempotency_message(
-                        idempotency_lock_key=idempotency_lock_key,
-                        assistant_message_id=assistant_message_id,
-                    )
 
                 set_span_attributes(
                     span,
@@ -248,25 +375,14 @@ class LLMGenerationWorkerWorkflow:
                     },
                 )
             logger.info("TaskIQ Worker 成功结束流式处理: %s", channel)
-        except AppException as exc:
-            logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
-            await self.persistence_handler.persist_failure(
+        except (AppException, Exception) as exc:
+            result = await self._handle_generation_error(
+                exc,
                 assistant_message_id=assistant_message_id,
-                error_content=str(exc),
                 idempotency_lock_key=idempotency_lock_key,
+                channel=channel,
             )
-            await self._publish(channel, encode_error_event(str(exc)))
-            return str(exc)
-        except Exception:
-            logger.exception("TaskIQ 调用 LLM 系统异常")
-            msg = "服务暂时不可用，请稍后重试"
-            await self.persistence_handler.persist_failure(
-                assistant_message_id=assistant_message_id,
-                error_content=msg,
-                idempotency_lock_key=idempotency_lock_key,
-            )
-            await self._publish(channel, encode_error_event(msg))
-            return msg
+            return result.error
         finally:
             if not done_published:
                 await self._publish(channel, encode_done_event())
@@ -294,44 +410,28 @@ class LLMGenerationWorkerWorkflow:
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
                 )
-            prepared_context = await self.rag_orchestrator.prepare_context(payload)
-            if prepared_context.refusal_decision is not None:
+            try:
+                llm_query, tokens_input, search_context = (
+                    await self._prepare_generation(payload)
+                )
+            except _RAGRefusalSignal as sig:
                 return await self._handle_nonstream_refusal(
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
-                    search_context=prepared_context.search_context,
+                    search_context=sig.search_context,
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
                 )
-            assembled = prepared_context.assembled_prompt
-            if assembled is None:
-                raise RuntimeError("生成上下文缺少 Prompt")
-            search_context = prepared_context.search_context
-            tokens_input = assembled.total_tokens
-            llm_query = LLMQueryDTO(
-                session_id=payload.session_id,
-                query_text=payload.query_text,
-                conversation_history=assembled.messages,
-                extra_body=payload.extra_body,
-            )
 
             with trace_span(
                 "taskiq.llm_nonstream.generate",
-                {
-                    **build_llm_span_attributes(
-                        provider=getattr(self.llm_service, "provider_name", "unknown"),
-                        model=getattr(self.llm_service, "model_name", "unknown"),
-                        operation="generate",
-                        stream=False,
-                    ),
-                    "chat.session_id": payload.session_id,
-                    "chat.assistant_message_id": assistant_message_id,
-                    "chat.prompt.tokens_input": tokens_input,
-                    "chat.prompt.uses_rag": search_context is not None,
-                    "llm.provider": getattr(
-                        self.llm_service, "provider_name", "unknown"
-                    ),
-                },
+                self._build_span_attributes(
+                    stream=False,
+                    session_id=payload.session_id,
+                    assistant_message_id=assistant_message_id,
+                    tokens_input=tokens_input,
+                    search_context=search_context,
+                ),
             ) as span:
                 async with llm_concurrency_slot(
                     {
@@ -375,7 +475,7 @@ class LLMGenerationWorkerWorkflow:
                 else result.completion_tokens or self._count_output_tokens(full_content)
             )
 
-            await self.persistence_handler.persist_success(
+            await self._on_success(
                 assistant_message_id=assistant_message_id,
                 user_id=user_id,
                 content=full_content,
@@ -387,12 +487,8 @@ class LLMGenerationWorkerWorkflow:
                     output_decision=output_decision,
                     original_content=original_content,
                 ),
+                idempotency_lock_key=idempotency_lock_key,
             )
-            if idempotency_lock_key is not None and assistant_message_id is not None:
-                await self._set_idempotency_message(
-                    idempotency_lock_key=idempotency_lock_key,
-                    assistant_message_id=assistant_message_id,
-                )
 
             logger.info(
                 "TaskIQ Worker 成功结束非流式处理: session_id=%s, message_id=%s",
@@ -408,22 +504,12 @@ class LLMGenerationWorkerWorkflow:
                 latency_ms=result.latency_ms,
             )
 
-        except AppException as exc:
-            logger.warning("TaskIQ 调用 LLM 业务异常: %s", exc)
-            await self.persistence_handler.persist_failure(
+        except (AppException, Exception) as exc:
+            return await self._handle_generation_error(
+                exc,
                 assistant_message_id=assistant_message_id,
-                error_content=str(exc),
                 idempotency_lock_key=idempotency_lock_key,
             )
-            return GenerationResult(success=False, error=str(exc))
-        except Exception:
-            logger.exception("TaskIQ 调用 LLM 系统异常")
-            await self.persistence_handler.persist_failure(
-                assistant_message_id=assistant_message_id,
-                error_content="服务暂时不可用，请稍后重试",
-                idempotency_lock_key=idempotency_lock_key,
-            )
-            return GenerationResult(success=False, error="服务暂时不可用，请稍后重试")
 
     # ── Shared Helpers ─────────────────────────────────────────────
 
@@ -442,7 +528,7 @@ class LLMGenerationWorkerWorkflow:
             channel,
             encode_chunk_event(SAFETY_REFUSAL_MESSAGE),
         )
-        await self.persistence_handler.persist_success(
+        await self._persist_refusal(
             assistant_message_id=assistant_message_id,
             user_id=user_id,
             content=SAFETY_REFUSAL_MESSAGE,
@@ -454,12 +540,8 @@ class LLMGenerationWorkerWorkflow:
                 response_outcome=ResponseOutcome.BLOCKED,
                 input_decision=input_decision,
             ),
+            idempotency_lock_key=idempotency_lock_key,
         )
-        if idempotency_lock_key is not None and assistant_message_id is not None:
-            await self._set_idempotency_message(
-                idempotency_lock_key=idempotency_lock_key,
-                assistant_message_id=assistant_message_id,
-            )
 
     async def _handle_stream_refusal(
         self,
@@ -474,7 +556,7 @@ class LLMGenerationWorkerWorkflow:
         refusal_content = ai_settings.RAG_REFUSAL_MESSAGE
         tokens_output = self._count_output_tokens(refusal_content)
         await self._publish(channel, encode_chunk_event(refusal_content))
-        await self.persistence_handler.persist_success(
+        await self._persist_refusal(
             assistant_message_id=assistant_message_id,
             user_id=user_id,
             content=refusal_content,
@@ -483,12 +565,8 @@ class LLMGenerationWorkerWorkflow:
             search_context=search_context,
             start_time=start_time,
             message_metadata=self._build_rag_refusal_metadata(),
+            idempotency_lock_key=idempotency_lock_key,
         )
-        if idempotency_lock_key is not None and assistant_message_id is not None:
-            await self._set_idempotency_message(
-                idempotency_lock_key=idempotency_lock_key,
-                assistant_message_id=assistant_message_id,
-            )
 
     async def _handle_nonstream_input_block(
         self,
@@ -500,7 +578,7 @@ class LLMGenerationWorkerWorkflow:
         idempotency_lock_key: str | None,
     ) -> GenerationResult:
         tokens_output = self._count_output_tokens(SAFETY_REFUSAL_MESSAGE)
-        await self.persistence_handler.persist_success(
+        await self._persist_refusal(
             assistant_message_id=assistant_message_id,
             user_id=user_id,
             content=SAFETY_REFUSAL_MESSAGE,
@@ -512,12 +590,8 @@ class LLMGenerationWorkerWorkflow:
                 response_outcome=ResponseOutcome.BLOCKED,
                 input_decision=input_decision,
             ),
+            idempotency_lock_key=idempotency_lock_key,
         )
-        if idempotency_lock_key is not None and assistant_message_id is not None:
-            await self._set_idempotency_message(
-                idempotency_lock_key=idempotency_lock_key,
-                assistant_message_id=assistant_message_id,
-            )
         return GenerationResult(
             success=True,
             content=SAFETY_REFUSAL_MESSAGE,
@@ -536,7 +610,7 @@ class LLMGenerationWorkerWorkflow:
     ) -> GenerationResult:
         refusal_content = ai_settings.RAG_REFUSAL_MESSAGE
         tokens_output = self._count_output_tokens(refusal_content)
-        await self.persistence_handler.persist_success(
+        await self._persist_refusal(
             assistant_message_id=assistant_message_id,
             user_id=user_id,
             content=refusal_content,
@@ -545,12 +619,8 @@ class LLMGenerationWorkerWorkflow:
             search_context=search_context,
             start_time=start_time,
             message_metadata=self._build_rag_refusal_metadata(),
+            idempotency_lock_key=idempotency_lock_key,
         )
-        if idempotency_lock_key is not None and assistant_message_id is not None:
-            await self._set_idempotency_message(
-                idempotency_lock_key=idempotency_lock_key,
-                assistant_message_id=assistant_message_id,
-            )
         return GenerationResult(
             success=True,
             content=refusal_content,

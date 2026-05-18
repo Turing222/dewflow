@@ -53,7 +53,14 @@ async def test_enqueue_stream_passes_params_through() -> None:
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_STREAM
-    assert message["args"] == [payload, channel, trace_ctx, msg_id, user_id, lock_key]
+    args = message["args"]
+    assert len(args) == 1
+    assert args[0]["generation_payload"] == payload
+    assert args[0]["channel"] == channel
+    assert args[0]["trace_context"] == trace_ctx
+    assert args[0]["assistant_message_id"] == msg_id
+    assert args[0]["user_id"] == user_id
+    assert args[0]["idempotency_lock_key"] == lock_key
 
 
 @pytest.mark.asyncio
@@ -94,7 +101,14 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_NONSTREAM
-    assert message["args"] == [payload, trace_ctx, msg_id, user_id, lock_key]
+    args = message["args"]
+    assert len(args) == 1
+    assert args[0]["generation_payload"] == payload
+    assert args[0]["channel"] is None
+    assert args[0]["trace_context"] == trace_ctx
+    assert args[0]["assistant_message_id"] == msg_id
+    assert args[0]["user_id"] == user_id
+    assert args[0]["idempotency_lock_key"] == lock_key
     redis_client.get.assert_awaited_once_with(message["task_id"])
     assert isinstance(result, GenerationResult)
     assert result.success is True
@@ -210,3 +224,28 @@ def test_build_taskiq_message_is_loadable_by_worker_broker(
     assert parsed.labels_types == {}
     assert parsed.args == [payload, "task-id", {"traceparent": "00-test"}]
     assert parsed.kwargs == {}
+
+
+def test_build_taskiq_message_includes_version_2() -> None:
+    from backend.infra.task_dispatcher import TaskDispatcher
+
+    raw_message = TaskDispatcher._build_taskiq_message(
+        task_id="version-test",
+        task_name="test_task",
+        args=("arg1",),
+    )
+    message = json.loads(raw_message.decode())
+    assert message["version"] == 2
+
+
+def test_llm_task_payload_forbids_extra_fields() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from backend.models.schemas.chat.payloads import LLMTaskPayload
+
+    with pytest.raises(ValidationError, match="extra"):
+        LLMTaskPayload(
+            generation_payload={"session_id": "test", "query_text": "hi"},
+            unexpected_field="bad",
+        )
