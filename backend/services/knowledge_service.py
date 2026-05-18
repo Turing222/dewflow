@@ -49,10 +49,10 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
     def __init__(
         self,
         uow: AbstractUnitOfWork,
+        permission_service: PermissionService,
         storage: ObjectStorage | None = None,
         storage_root: Path | None = None,
         max_upload_size_mb: int = 20,
-        permission_service: PermissionService | None = None,
     ) -> None:
         super().__init__(uow)
         if storage is None:
@@ -62,8 +62,7 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
         self.storage = storage
         self.max_upload_size_mb = max(1, max_upload_size_mb)
         self.max_upload_size_bytes = self.max_upload_size_mb * 1024 * 1024
-        # 显式注入，避免内部隐式构造隐藏依赖关系；兜底以保持向后兼容。
-        self._permission_service = permission_service or PermissionService(uow)
+        self._permission_service = permission_service
 
     async def save_upload_file(
         self,

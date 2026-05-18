@@ -7,14 +7,12 @@
 
 import logging
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import TracebackType
 from typing import Any
-
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import AppException
@@ -22,7 +20,6 @@ from backend.models.enums import AuditOutcome
 from backend.models.orm.access import AuditEvent
 from backend.models.schemas.audit_schema import AuditEventFilters
 from backend.services.base import BaseService
-from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +85,11 @@ class AuditService(BaseService[AbstractUnitOfWork]):
         self,
         *,
         uow: AbstractUnitOfWork,
-        session_factory: async_sessionmaker | None = None,
+        independent_uow_factory: Callable[[], AbstractUnitOfWork] | None = None,
         request_context: AuditRequestContext | None = None,
     ) -> None:
         super().__init__(uow)
-        self.session_factory = session_factory
+        self.independent_uow_factory = independent_uow_factory
         self.request_context = request_context or AuditRequestContext()
 
     async def record(
@@ -147,12 +144,12 @@ class AuditService(BaseService[AbstractUnitOfWork]):
         )
 
     async def _record_independent(self, event: AuditEvent) -> None:
-        if self.session_factory is None:
-            logger.warning("Audit event skipped because session_factory is unavailable")
+        if self.independent_uow_factory is None:
+            logger.warning("Audit event skipped because independent_uow_factory is unavailable")
             return
 
         try:
-            uow = SQLAlchemyUnitOfWork(self.session_factory)
+            uow = self.independent_uow_factory()
             async with uow:
                 await uow.audit_repo.add(event)
         except Exception:

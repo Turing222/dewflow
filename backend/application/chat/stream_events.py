@@ -1,13 +1,18 @@
 """Internal stream events for Worker-to-Web Redis channels.
 
-职责：统一 worker 发布到 Redis 的流式事件格式。
-边界：这是内部通道协议；HTTP SSE 对外格式仍由 Web workflow 决定。
+职责：定义流式事件类型（内部通道 + Web SSE 共享），提供工厂与编解码函数。
+边界：HTTP wire-format 序列化（encode_sse_event）留在 api.v1.sse_events；
+      本模块只定义事件结构和内部通道编码。
 """
 
 import json
 from typing import Literal, TypedDict
 
-StreamEventType = Literal["chunk", "error", "done"]
+# ---------------------------------------------------------------------------
+# Internal Redis channel event types (Worker → Web)
+# ---------------------------------------------------------------------------
+
+StreamEventType = Literal["chunk", "error", "done", "meta"]
 
 
 class StreamEvent(TypedDict, total=False):
@@ -42,6 +47,15 @@ def encode_done_event() -> str:
     return json.dumps(stream_done_event(), ensure_ascii=False)
 
 
+def encode_meta_event(
+    *,
+    session_id: str,
+    session_title: str | None,
+    message_id: str,
+) -> str:
+    return json.dumps(meta_event(session_id=session_id, session_title=session_title, message_id=message_id), ensure_ascii=False)
+
+
 def decode_stream_event(payload: str) -> StreamEvent:
     """Decode structured events, accepting legacy raw payloads during rollout."""
     try:
@@ -68,3 +82,66 @@ def _decode_legacy_payload(payload: str) -> StreamEvent:
     if payload.startswith("[ERROR]"):
         return stream_error_event(payload[7:])
     return stream_chunk_event(payload)
+
+
+# ---------------------------------------------------------------------------
+# Web-facing SSE event types (shared by application + API layers)
+# ---------------------------------------------------------------------------
+
+
+class MetaEvent(TypedDict):
+    """Chat stream metadata event."""
+
+    type: Literal["meta"]
+    session_id: str
+    session_title: str | None
+    message_id: str
+
+
+class ChunkEvent(TypedDict):
+    """Chat stream content chunk event."""
+
+    type: Literal["chunk"]
+    content: str
+
+
+class ErrorEvent(TypedDict):
+    """Chat stream error event."""
+
+    type: Literal["error"]
+    message: str
+
+
+class DoneEvent(TypedDict):
+    """Chat stream completion marker."""
+
+    type: Literal["done"]
+
+
+SSEEvent = MetaEvent | ChunkEvent | ErrorEvent | DoneEvent
+
+
+def meta_event(
+    *,
+    session_id: str,
+    session_title: str | None,
+    message_id: str,
+) -> MetaEvent:
+    return {
+        "type": "meta",
+        "session_id": session_id,
+        "session_title": session_title,
+        "message_id": message_id,
+    }
+
+
+def chunk_event(content: str) -> ChunkEvent:
+    return {"type": "chunk", "content": content}
+
+
+def error_event(message: str) -> ErrorEvent:
+    return {"type": "error", "message": message}
+
+
+def done_event() -> DoneEvent:
+    return {"type": "done"}

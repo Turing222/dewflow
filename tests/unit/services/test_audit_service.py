@@ -23,48 +23,51 @@ from backend.services.audit_service import (
 pytestmark = pytest.mark.asyncio
 
 
-class FakeSession:
+class FakeUow:
     def __init__(self) -> None:
         self.events: list[object] = []
         self.committed = False
+        self.audit_repo = self
 
-    async def __aenter__(self) -> FakeSession:
+    async def __aenter__(self) -> FakeUow:
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool:
+        if exc_type is None:
+            self.committed = True
         return False
 
-    def add(self, event: object) -> None:
+    async def add(self, event: object) -> None:
         self.events.append(event)
 
     async def commit(self) -> None:
         self.committed = True
 
 
-class FakeSessionFactory:
+class FakeUowFactory:
     def __init__(self) -> None:
-        self.session = FakeSession()
+        self.uow = FakeUow()
 
-    def __call__(self) -> FakeSession:
-        return self.session
+    def __call__(self) -> FakeUow:
+        return self.uow
 
 
-def make_audit_service() -> tuple[AuditService, FakeSessionFactory]:
-    session_factory = FakeSessionFactory()
+def make_audit_service() -> tuple[AuditService, FakeUowFactory]:
+    uow_factory = FakeUowFactory()
     service = AuditService(
         uow=SimpleNamespace(),
-        session_factory=session_factory,
+        independent_uow_factory=uow_factory,
         request_context=AuditRequestContext(
             ip="127.0.0.1",
             user_agent="pytest",
             request_id="req-1",
         ),
     )
-    return service, session_factory
+    return service, uow_factory
 
 
 async def test_capture_records_success_event_on_allowed() -> None:
-    service, session_factory = make_audit_service()
+    service, uow_factory = make_audit_service()
     resource_id = uuid.uuid4()
 
     async with service.capture(
@@ -75,23 +78,23 @@ async def test_capture_records_success_event_on_allowed() -> None:
         audit.set_resource(resource_id=resource_id)
         audit.add_metadata(username="alice")
 
-    event = session_factory.session.events[0]
+    event = uow_factory.uow.events[0]
     assert event.action == AuditAction.USER_CREATE
     assert event.outcome == AuditOutcome.SUCCESS
     assert event.resource_id == resource_id
     assert event.event_metadata["username"] == "alice"
     assert event.ip == "127.0.0.1"
-    assert session_factory.session.committed is True
+    assert uow_factory.uow.committed is True
 
 
 async def test_capture_records_denied_event_and_reraises_original() -> None:
-    service, session_factory = make_audit_service()
+    service, uow_factory = make_audit_service()
 
     with pytest.raises(AppException):
         async with service.capture(action=AuditAction.PERMISSION_DENIED):
             raise app_forbidden("nope")
 
-    event = session_factory.session.events[0]
+    event = uow_factory.uow.events[0]
     assert event.outcome == AuditOutcome.DENIED
     assert event.event_metadata["error_type"] == "AppException"
 

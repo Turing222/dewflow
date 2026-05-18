@@ -1,69 +1,23 @@
 """HTTP Server-Sent Events for chat streaming.
 
-职责：定义 Chat HTTP SSE 层 typed event，并负责序列化为对外兼容的 wire format。
-边界：本模块只服务 HTTP 响应；Worker 到 Web 的 Redis 内部事件协议在 application.chat.stream_events。
+职责：序列化 typed event 为 HTTP SSE wire format。
+边界：事件类型定义已移至 application.chat.stream_events；
+      本模块仅保留 encode_sse_event 和向后兼容的重导出。
 """
 
 import json
-from typing import Literal, TypedDict
 
-
-class MetaEvent(TypedDict):
-    """Chat stream metadata event."""
-
-    type: Literal["meta"]
-    session_id: str
-    session_title: str | None
-    message_id: str
-
-
-class ChunkEvent(TypedDict):
-    """Chat stream content chunk event."""
-
-    type: Literal["chunk"]
-    content: str
-
-
-class ErrorEvent(TypedDict):
-    """Chat stream error event."""
-
-    type: Literal["error"]
-    message: str
-
-
-class DoneEvent(TypedDict):
-    """Chat stream completion marker."""
-
-    type: Literal["done"]
-
-
-SSEEvent = MetaEvent | ChunkEvent | ErrorEvent | DoneEvent
-
-
-def meta_event(
-    *,
-    session_id: str,
-    session_title: str | None,
-    message_id: str,
-) -> MetaEvent:
-    return {
-        "type": "meta",
-        "session_id": session_id,
-        "session_title": session_title,
-        "message_id": message_id,
-    }
-
-
-def chunk_event(content: str) -> ChunkEvent:
-    return {"type": "chunk", "content": content}
-
-
-def error_event(message: str) -> ErrorEvent:
-    return {"type": "error", "message": message}
-
-
-def done_event() -> DoneEvent:
-    return {"type": "done"}
+from backend.application.chat.stream_events import (  # noqa: F401 — backward-compat re-exports
+    ChunkEvent,
+    DoneEvent,
+    ErrorEvent,
+    MetaEvent,
+    SSEEvent,
+    chunk_event,
+    done_event,
+    error_event,
+    meta_event,
+)
 
 
 def encode_sse_event(event: SSEEvent) -> str:

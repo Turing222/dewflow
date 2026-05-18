@@ -21,6 +21,7 @@ pytestmark = pytest.mark.asyncio
 class CapturingSession:
     def __init__(self, events: list[object]) -> None:
         self.events = events
+        self.audit_repo = self
 
     async def __aenter__(self) -> CapturingSession:
         return self
@@ -35,7 +36,7 @@ class CapturingSession:
         return None
 
 
-class CapturingSessionFactory:
+class CapturingUowFactory:
     def __init__(self) -> None:
         self.events: list[object] = []
 
@@ -57,10 +58,10 @@ class TypedStreamWorkflow:
 
 
 async def test_query_stream_serializes_typed_events_and_audits_meta_resource() -> None:
-    session_factory = CapturingSessionFactory()
+    uow_factory = CapturingUowFactory()
     audit_service = AuditService(
         uow=SimpleNamespace(),
-        session_factory=session_factory,
+        independent_uow_factory=uow_factory,
     )
     request = SimpleNamespace(
         query="hello",
@@ -83,6 +84,6 @@ async def test_query_stream_serializes_typed_events_and_audits_meta_resource() -
     assert chunks[0].startswith('data: {"type": "meta"')
     assert chunks[1] == 'data: {"type": "chunk", "content": "hello"}\n\n'
     assert chunks[2] == "data: [DONE]\n\n"
-    assert len(session_factory.events) == 1
-    assert session_factory.events[0].resource_type == "chat_session"
-    assert session_factory.events[0].resource_id is not None
+    assert len(uow_factory.events) == 1
+    assert uow_factory.events[0].resource_type == "chat_session"
+    assert uow_factory.events[0].resource_id is not None

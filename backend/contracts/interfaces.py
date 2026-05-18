@@ -6,26 +6,25 @@ from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from backend.contracts.repository_protocols import (
+    AccessRepositoryProtocol,
+    AuditRepositoryProtocol,
+    ChatRepositoryProtocol,
+    KnowledgeRepositoryProtocol,
+    TaskRepositoryProtocol,
+    UserRepositoryProtocol,
+)
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationResult
-from backend.repositories.access_repo import AccessRepository
-from backend.repositories.audit_repo import AuditRepository
-from backend.repositories.chat_repo import ChatRepository
-from backend.repositories.knowledge_repo import KnowledgeRepository
-from backend.repositories.task_repo import TaskRepository
-from backend.repositories.user_repo import UserRepository
 
 
 class AbstractUnitOfWork(ABC):
-    access_repo: AccessRepository
-    audit_repo: AuditRepository
-    user_repo: UserRepository
-    chat_repo: ChatRepository
-    knowledge_repo: KnowledgeRepository
-    task_repo: TaskRepository
-    session: AsyncSession
+    access_repo: AccessRepositoryProtocol
+    audit_repo: AuditRepositoryProtocol
+    user_repo: UserRepositoryProtocol
+    chat_repo: ChatRepositoryProtocol
+    knowledge_repo: KnowledgeRepositoryProtocol
+    task_repo: TaskRepositoryProtocol
 
     async def __aenter__(self) -> "AbstractUnitOfWork":
         return self

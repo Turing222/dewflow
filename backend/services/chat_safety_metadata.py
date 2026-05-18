@@ -158,3 +158,27 @@ def evaluate_output_guardrail(content: str) -> GuardrailDecision:
     ):
         return GuardrailDecision(True, GuardrailReason.UNSAFE_OUTPUT.value)
     return GuardrailDecision(False)
+
+
+def build_rag_refusal_metadata() -> dict[str, object]:
+    return build_safety_metadata(
+        response_outcome=ResponseOutcome.REFUSED,
+        badcase_severity=BadcaseSeverity.P1,
+        badcase_reason=BadcaseReason.EMPTY_RETRIEVAL_REFUSAL,
+    )
+
+
+def build_guardrail_success_metadata(
+    *,
+    output_decision: GuardrailDecision,
+    original_content: str,
+) -> dict[str, object]:
+    if not output_decision.triggered:
+        return build_safety_metadata(response_outcome=ResponseOutcome.ANSWERED)
+    return build_safety_metadata(
+        response_outcome=ResponseOutcome.REFUSED,
+        output_decision=output_decision,
+        original_unsafe_output=original_content,
+        badcase_severity=BadcaseSeverity.P0,
+        badcase_reason=BadcaseReason.SHOULD_REFUSE_BUT_ANSWERED,
+    )

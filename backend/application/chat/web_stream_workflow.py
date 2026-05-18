@@ -12,15 +12,15 @@ from collections.abc import AsyncGenerator
 
 import redis.asyncio as redis
 
-from backend.api.v1.sse_events import (
+from backend.application.chat.session_orchestrator import ChatSessionOrchestrator
+from backend.application.chat.stream_events import (
     SSEEvent,
     chunk_event,
+    decode_stream_event,
     done_event,
     error_event,
     meta_event,
 )
-from backend.application.chat.session_orchestrator import ChatSessionOrchestrator
-from backend.application.chat.stream_events import decode_stream_event
 from backend.config.settings import settings
 from backend.contracts.interfaces import (
     AbstractTaskDispatcher,

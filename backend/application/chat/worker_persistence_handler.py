@@ -32,6 +32,19 @@ class WorkerPersistenceHandler:
     async def _redis(self) -> redis.Redis:
         return await self._redis_client.init()
 
+    async def write_idempotency_message(
+        self,
+        *,
+        idempotency_lock_key: str,
+        assistant_message_id: uuid.UUID,
+    ) -> None:
+        redis_connection = await self._redis()
+        await redis_connection.set(
+            idempotency_lock_key,
+            str(assistant_message_id),
+            ex=3600,
+        )
+
     async def persist_success(
         self,
         *,

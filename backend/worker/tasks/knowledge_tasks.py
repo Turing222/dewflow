@@ -27,6 +27,7 @@ from backend.services.knowledge_ingestion_recovery_service import (
     KnowledgeIngestionRecoveryService,
 )
 from backend.services.knowledge_service import KnowledgeService
+from backend.services.permission_service import PermissionService
 from backend.services.task_service import TaskService
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.services.vector_index_service import VectorIndexService
@@ -124,6 +125,7 @@ async def _ingest_knowledge_file_task(
             uow=uow,
             storage=get_worker_object_storage(),
             max_upload_size_mb=ai_settings.KNOWLEDGE_MAX_UPLOAD_SIZE_MB,
+            permission_service=PermissionService(uow),
         )
         workflow = KnowledgeRAGWorkflow(
             knowledge_service=knowledge_service,
