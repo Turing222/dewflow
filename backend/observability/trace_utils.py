@@ -46,6 +46,24 @@ def set_current_span_attributes(attributes: Mapping[str, Any]) -> None:
     set_span_attributes(trace.get_current_span(), attributes)
 
 
+def build_llm_span_attributes(
+    *,
+    provider: str,
+    model: str,
+    operation: str,
+    stream: bool | None = None,
+) -> dict[str, Any]:
+    """构建 OTel GenAI 语义约定属性，供 trace_span() 合并使用。"""
+    attrs: dict[str, Any] = {
+        "gen_ai.system": provider,
+        "gen_ai.operation.name": operation,
+        "gen_ai.request.model": model,
+    }
+    if stream is not None:
+        attrs["gen_ai.request.stream"] = stream
+    return attrs
+
+
 def current_trace_id(fallback: str | None = None) -> str:
     """返回当前 trace_id；缺失时使用 fallback 或生成随机 id。"""
     span_ctx = trace.get_current_span().get_span_context()

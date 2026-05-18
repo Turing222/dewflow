@@ -15,7 +15,11 @@ from google.genai import types
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractRAGEmbedder
 from backend.core.exceptions import AppException, app_service_error
-from backend.observability.trace_utils import set_span_attributes, trace_span
+from backend.observability.trace_utils import (
+    build_llm_span_attributes,
+    set_span_attributes,
+    trace_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +89,11 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
             with trace_span(
                 "embedding.openai_compatible.encode",
                 {
-                    "gen_ai.system": "openai-compatible",
-                    "gen_ai.operation.name": "embeddings",
-                    "gen_ai.request.model": self.model_name,
+                    **build_llm_span_attributes(
+                        provider="openai-compatible",
+                        model=self.model_name,
+                        operation="embeddings",
+                    ),
                     "embedding.base_url": self.base_url,
                     "embedding.input.count": len(payloads),
                     "embedding.input.char_count": sum(
@@ -201,9 +207,11 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
             with trace_span(
                 "embedding.google_genai.encode",
                 {
-                    "gen_ai.system": "google-genai",
-                    "gen_ai.operation.name": "embeddings",
-                    "gen_ai.request.model": self.model_name,
+                    **build_llm_span_attributes(
+                        provider="google-genai",
+                        model=self.model_name,
+                        operation="embeddings",
+                    ),
                     "embedding.task_type": task_type,
                     "embedding.input.char_count": len(payload),
                     "embedding.expected_dim": self.dimensions,
@@ -267,9 +275,11 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
             with trace_span(
                 "embedding.google_genai.encode_batch",
                 {
-                    "gen_ai.system": "google-genai",
-                    "gen_ai.operation.name": "embeddings",
-                    "gen_ai.request.model": self.model_name,
+                    **build_llm_span_attributes(
+                        provider="google-genai",
+                        model=self.model_name,
+                        operation="embeddings",
+                    ),
                     "embedding.task_type": "RETRIEVAL_DOCUMENT",
                     "embedding.input.count": len(payloads),
                     "embedding.input.char_count": sum(

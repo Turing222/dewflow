@@ -39,17 +39,70 @@ def set_langfuse_trace_metadata(
         yield
 
 
+class _LangfuseGenerationRecorder:
+    """Langfuse generation 后置更新包装器。
+
+    调用方通过 record() 延迟写入 output / usage / metadata / model / error，
+    上下文退出时 Langfuse SDK 自动调用 generation.end()。
+    """
+
+    __slots__ = ("_generation",)
+
+    def __init__(self, generation: Any) -> None:
+        self._generation = generation
+
+    def record(
+        self,
+        *,
+        output: Any | None = None,
+        usage: dict[str, int] | None = None,
+        metadata: Any | None = None,
+        model: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        update_kwargs: dict[str, Any] = {}
+        if output is not None:
+            update_kwargs["output"] = output
+        if usage is not None:
+            update_kwargs["usage_details"] = usage
+        if metadata is not None:
+            update_kwargs["metadata"] = metadata
+        if model is not None:
+            update_kwargs["model"] = model
+        if error is not None:
+            update_kwargs["status_message"] = error
+            update_kwargs["level"] = "ERROR"
+        if update_kwargs:
+            self._generation.update(**update_kwargs)
+
+
 @contextmanager
 def langfuse_generation(
     *,
     name: str,
     input_payload: Any | None = None,
-) -> Iterator[None]:
-    """创建 Langfuse generation observation。"""
+    model: str | None = None,
+    metadata: Any | None = None,
+) -> Iterator[_LangfuseGenerationRecorder]:
+    """创建 Langfuse generation observation，返回 recorder 供后置更新。
+
+    正常退出时 Langfuse SDK 自动调用 generation.end()；
+    异常时 recorder 自动记录 error 后重新抛出。
+    """
     from langfuse import get_client
 
-    with get_client().start_as_current_generation(
-        name=name,
-        input=input_payload,
-    ):
-        yield
+    create_kwargs: dict[str, Any] = {"name": name}
+    if input_payload is not None:
+        create_kwargs["input"] = input_payload
+    if model is not None:
+        create_kwargs["model"] = model
+    if metadata is not None:
+        create_kwargs["metadata"] = metadata
+
+    with get_client().start_as_current_generation(**create_kwargs) as generation:
+        recorder = _LangfuseGenerationRecorder(generation)
+        try:
+            yield recorder
+        except Exception as exc:
+            recorder.record(error=str(exc))
+            raise

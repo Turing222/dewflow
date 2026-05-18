@@ -22,7 +22,11 @@ from backend.models.schemas.chat.dto import (
     LLMQueryDTO,
     LLMResultDTO,
 )
-from backend.observability.trace_utils import set_span_attributes, trace_span
+from backend.observability.trace_utils import (
+    build_llm_span_attributes,
+    set_span_attributes,
+    trace_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +97,12 @@ class PydanticAILLMService(AbstractLLMService):
             with trace_span(
                 "llm.pydantic_ai.stream",
                 {
+                    **build_llm_span_attributes(
+                        provider=self.provider_name,
+                        model=self.model_name,
+                        operation="generate",
+                        stream=True,
+                    ),
                     "chat.session_id": query.session_id,
                     "llm.stream": True,
                     "llm.prompt.char_count": len(prompt),
@@ -153,6 +163,12 @@ class PydanticAILLMService(AbstractLLMService):
             with trace_span(
                 "llm.pydantic_ai.generate",
                 {
+                    **build_llm_span_attributes(
+                        provider=self.provider_name,
+                        model=self.model_name,
+                        operation="generate",
+                        stream=False,
+                    ),
                     "chat.session_id": query.session_id,
                     "llm.stream": False,
                     "llm.prompt.char_count": len(prompt),
@@ -168,6 +184,22 @@ class PydanticAILLMService(AbstractLLMService):
                     ),
                 )
                 await self._circuit.on_success()
+
+                content = str(getattr(result, "output", ""))
+                latency_ms = int((time.perf_counter() - start) * 1000)
+                prompt_tokens, completion_tokens = _usage_tokens(result)
+                completion_tokens = completion_tokens or count_tokens(content, self.model_name)
+                set_span_attributes(
+                    span,
+                    {
+                        "llm.response.char_count": len(content),
+                        "llm.response.prompt_tokens": prompt_tokens,
+                        "llm.response.completion_tokens": completion_tokens,
+                        "llm.latency_ms": latency_ms,
+                        "gen_ai.usage.input_tokens": prompt_tokens,
+                        "gen_ai.usage.output_tokens": completion_tokens,
+                    },
+                )
         except AppException:
             raise
         except Exception as exc:
@@ -183,20 +215,6 @@ class PydanticAILLMService(AbstractLLMService):
                 code="LLM_SERVICE_ERROR",
                 details={"session_id": str(query.session_id), "error": str(exc)},
             ) from exc
-
-        content = str(getattr(result, "output", ""))
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        prompt_tokens, completion_tokens = _usage_tokens(result)
-        completion_tokens = completion_tokens or count_tokens(content, self.model_name)
-        set_span_attributes(
-            span,
-            {
-                "llm.response.char_count": len(content),
-                "llm.response.prompt_tokens": prompt_tokens,
-                "llm.response.completion_tokens": completion_tokens,
-                "llm.latency_ms": latency_ms,
-            },
-        )
 
         return LLMResultDTO(
             content=content,

@@ -32,7 +32,11 @@ from backend.core.exceptions import AppException
 from backend.infra.redis import RedisClient
 from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
-from backend.observability.trace_utils import set_span_attributes, trace_span
+from backend.observability.trace_utils import (
+    build_llm_span_attributes,
+    set_span_attributes,
+    trace_span,
+)
 from backend.services.chat_safety_metadata import (
     SAFETY_REFUSAL_MESSAGE,
     BadcaseReason,
@@ -109,8 +113,11 @@ class LLMGenerationWorkerWorkflow:
         assistant_message_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
         idempotency_lock_key: str | None = None,
-    ) -> None:
-        """Generate a streaming answer, publish chunks, and persist final state."""
+    ) -> str | None:
+        """Generate a streaming answer, publish chunks, and persist final state.
+
+        Returns an error string on failure, or None on success / guardrail block.
+        """
         accumulated_content: list[str] = []
         done_published: bool = False
         output_decision: GuardrailDecision | None = None
@@ -155,6 +162,12 @@ class LLMGenerationWorkerWorkflow:
             with trace_span(
                 "taskiq.llm_stream.generate_and_publish",
                 {
+                    **build_llm_span_attributes(
+                        provider=getattr(self.llm_service, "provider_name", "unknown"),
+                        model=getattr(self.llm_service, "model_name", "unknown"),
+                        operation="generate",
+                        stream=True,
+                    ),
                     "redis.channel": channel,
                     "chat.session_id": payload.session_id,
                     "chat.assistant_message_id": assistant_message_id,
@@ -230,6 +243,8 @@ class LLMGenerationWorkerWorkflow:
                         "llm.response.char_count": len(full_content),
                         "chat.tokens_input": tokens_input,
                         "chat.tokens_output": tokens_output,
+                        "gen_ai.usage.input_tokens": tokens_input,
+                        "gen_ai.usage.output_tokens": tokens_output,
                     },
                 )
             logger.info("TaskIQ Worker 成功结束流式处理: %s", channel)
@@ -241,17 +256,17 @@ class LLMGenerationWorkerWorkflow:
                 idempotency_lock_key=idempotency_lock_key,
             )
             await self._publish(channel, encode_error_event(str(exc)))
+            return str(exc)
         except Exception:
             logger.exception("TaskIQ 调用 LLM 系统异常")
+            msg = "服务暂时不可用，请稍后重试"
             await self.persistence_handler.persist_failure(
                 assistant_message_id=assistant_message_id,
-                error_content="服务暂时不可用，请稍后重试",
+                error_content=msg,
                 idempotency_lock_key=idempotency_lock_key,
             )
-            await self._publish(
-                channel,
-                encode_error_event("服务暂时不可用，请稍后重试"),
-            )
+            await self._publish(channel, encode_error_event(msg))
+            return msg
         finally:
             if not done_published:
                 await self._publish(channel, encode_done_event())
@@ -303,6 +318,12 @@ class LLMGenerationWorkerWorkflow:
             with trace_span(
                 "taskiq.llm_nonstream.generate",
                 {
+                    **build_llm_span_attributes(
+                        provider=getattr(self.llm_service, "provider_name", "unknown"),
+                        model=getattr(self.llm_service, "model_name", "unknown"),
+                        operation="generate",
+                        stream=False,
+                    ),
                     "chat.session_id": payload.session_id,
                     "chat.assistant_message_id": assistant_message_id,
                     "chat.prompt.tokens_input": tokens_input,
@@ -327,6 +348,8 @@ class LLMGenerationWorkerWorkflow:
                         "llm.latency_ms": result.latency_ms,
                         "llm.response.completion_tokens": result.completion_tokens,
                         "llm.response.char_count": len(result.content),
+                        "gen_ai.usage.input_tokens": result.prompt_tokens,
+                        "gen_ai.usage.output_tokens": result.completion_tokens,
                     },
                 )
 

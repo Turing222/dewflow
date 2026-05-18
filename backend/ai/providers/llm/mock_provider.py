@@ -10,7 +10,11 @@ from collections.abc import AsyncGenerator
 
 from backend.contracts.interfaces import AbstractLLMService
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
-from backend.observability.trace_utils import set_span_attributes, trace_span
+from backend.observability.trace_utils import (
+    build_llm_span_attributes,
+    set_span_attributes,
+    trace_span,
+)
 
 
 class MockLLMService(AbstractLLMService):
@@ -23,6 +27,12 @@ class MockLLMService(AbstractLLMService):
         with trace_span(
             "llm.mock.stream",
             {
+                **build_llm_span_attributes(
+                    provider="mock",
+                    model="mock",
+                    operation="generate",
+                    stream=True,
+                ),
                 "chat.session_id": query.session_id,
                 "llm.stream": True,
             },
@@ -52,6 +62,12 @@ class MockLLMService(AbstractLLMService):
         with trace_span(
             "llm.mock.generate",
             {
+                **build_llm_span_attributes(
+                    provider="mock",
+                    model="mock",
+                    operation="generate",
+                    stream=False,
+                ),
                 "chat.session_id": query.session_id,
                 "llm.stream": False,
             },

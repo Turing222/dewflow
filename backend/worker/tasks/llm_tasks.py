@@ -32,6 +32,20 @@ from backend.worker.dependencies import (
 logger = logging.getLogger(__name__)
 
 
+def _build_usage_details(result: GenerationResult) -> dict[str, int]:
+    """从 GenerationResult 构建 Langfuse usage_details dict。"""
+    details: dict[str, int] = {}
+    if result.tokens_input is not None:
+        details["prompt_tokens"] = result.tokens_input
+    if result.tokens_output is not None:
+        details["completion_tokens"] = result.tokens_output
+    if details:
+        details["total_tokens"] = details.get("prompt_tokens", 0) + details.get(
+            "completion_tokens", 0
+        )
+    return details
+
+
 # ── Streaming ──────────────────────────────────────────────────────
 
 
@@ -55,14 +69,17 @@ async def generate_llm_stream_task(
             with langfuse_generation(
                 name="generate_llm_stream",
                 input_payload=generation_payload,
-            ):
-                await _generate_llm_stream_task(
+                metadata={"stream": True, "session_id": str(payload.session_id)},
+            ) as recorder:
+                error = await _generate_llm_stream_task(
                     payload=payload,
                     channel=channel,
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
                     idempotency_lock_key=idempotency_lock_key,
                 )
+                if error is not None:
+                    recorder.record(error=error)
 
 
 async def _generate_llm_stream_task(
@@ -72,7 +89,8 @@ async def _generate_llm_stream_task(
     assistant_message_id: str | None = None,
     user_id: str | None = None,
     idempotency_lock_key: str | None = None,
-) -> None:
+) -> str | None:
+    """执行流式生成，返回错误信息或 None。"""
     logger.info("TaskIQ Worker 开始处理流式请求: %s", channel)
 
     with trace_span(
@@ -95,7 +113,7 @@ async def _generate_llm_stream_task(
         )
         user_uuid = uuid.UUID(user_id) if user_id else None
 
-    await workflow.generate_stream(
+    return await workflow.generate_stream(
         payload=payload,
         channel=channel,
         assistant_message_id=assistant_uuid,
@@ -126,13 +144,22 @@ async def generate_llm_nonstream_task(
             with langfuse_generation(
                 name="generate_llm_nonstream",
                 input_payload=generation_payload,
-            ):
-                return await _generate_llm_nonstream_task(
+                metadata={"stream": False, "session_id": str(payload.session_id)},
+            ) as recorder:
+                result = await _generate_llm_nonstream_task(
                     payload=payload,
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
                     idempotency_lock_key=idempotency_lock_key,
                 )
+                if result.success:
+                    recorder.record(
+                        output=result.content[:500],
+                        usage=_build_usage_details(result),
+                    )
+                else:
+                    recorder.record(error=result.error or "LLM 服务返回失败")
+                return result
 
 
 async def _generate_llm_nonstream_task(
