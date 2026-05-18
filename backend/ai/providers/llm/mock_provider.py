@@ -23,9 +23,6 @@ class MockLLMService(AbstractLLMService):
         with trace_span(
             "llm.mock.stream",
             {
-                "gen_ai.system": "mock",
-                "gen_ai.operation.name": "chat",
-                "gen_ai.request.model": "mock",
                 "chat.session_id": query.session_id,
                 "llm.stream": True,
             },
@@ -55,9 +52,6 @@ class MockLLMService(AbstractLLMService):
         with trace_span(
             "llm.mock.generate",
             {
-                "gen_ai.system": "mock",
-                "gen_ai.operation.name": "chat",
-                "gen_ai.request.model": "mock",
                 "chat.session_id": query.session_id,
                 "llm.stream": False,
             },

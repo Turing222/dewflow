@@ -11,7 +11,6 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import redis.asyncio as redis
-from langfuse import get_client, observe
 
 from backend.api.v1.sse_events import (
     SSEEvent,
@@ -30,6 +29,7 @@ from backend.contracts.interfaces import (
 from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_service_error
 from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.observability.langfuse_utils import set_langfuse_trace_metadata
 from backend.observability.trace_utils import (
     inject_trace_context,
     set_span_attributes,
@@ -56,23 +56,28 @@ class ChatWorkflow:
         self.redis = redis_client
         self.permission_service = permission_service
 
-    @observe()
     async def handle_query_stream(
         self,
         command: ChatQueryCommand,
     ) -> AsyncGenerator[SSEEvent, None]:
         """处理 SSE 流式查询请求。"""
+        with set_langfuse_trace_metadata(
+            user_id=command.user_id,
+            session_id=command.session_id,
+            tags=["chat_api", "stream"],
+        ):
+            async for event in self._handle_query_stream(command):
+                yield event
+
+    async def _handle_query_stream(
+        self,
+        command: ChatQueryCommand,
+    ) -> AsyncGenerator[SSEEvent, None]:
         user_id = command.user_id
         query_text = command.query_text
         session_id = command.session_id
         kb_id = command.kb_id
         client_request_id = command.client_request_id
-        # Langfuse trace 需要在业务入口绑定用户和会话信息。
-        get_client().update_current_trace(
-            user_id=str(user_id),
-            session_id=str(session_id) if session_id else None,
-            tags=["chat_api", "stream"],
-        )
         logger.info(
             "Workflow 流式查询开始: user_id=%s, session_id=%s, query_len=%d",
             user_id,

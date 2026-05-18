@@ -93,9 +93,6 @@ class PydanticAILLMService(AbstractLLMService):
             with trace_span(
                 "llm.pydantic_ai.stream",
                 {
-                    "gen_ai.system": self.provider_name,
-                    "gen_ai.operation.name": "chat",
-                    "gen_ai.request.model": self.model_name,
                     "chat.session_id": query.session_id,
                     "llm.stream": True,
                     "llm.prompt.char_count": len(prompt),
@@ -156,9 +153,6 @@ class PydanticAILLMService(AbstractLLMService):
             with trace_span(
                 "llm.pydantic_ai.generate",
                 {
-                    "gen_ai.system": self.provider_name,
-                    "gen_ai.operation.name": "chat",
-                    "gen_ai.request.model": self.model_name,
                     "chat.session_id": query.session_id,
                     "llm.stream": False,
                     "llm.prompt.char_count": len(prompt),

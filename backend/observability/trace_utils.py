@@ -1,7 +1,7 @@
 """Business tracing helpers.
 
 职责：封装业务 span、trace context 注入/恢复和 span attribute 类型转换。
-边界：本模块不初始化 OTel provider；provider 生命周期由 telemetry 负责。
+边界：本模块不初始化 OTel provider（由 telemetry 负责）；不依赖 Langfuse（由 langfuse_utils 负责）。
 失败处理：trace_span 会记录异常并把 span 标记为 error 后继续抛出。
 """
 

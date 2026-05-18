@@ -163,9 +163,6 @@ class LLMGenerationWorkerWorkflow:
                     "llm.provider": getattr(
                         self.llm_service, "provider_name", "unknown"
                     ),
-                    "gen_ai.request.model": getattr(
-                        self.llm_service, "model_name", "unknown"
-                    ),
                 },
             ) as span:
                 async with llm_concurrency_slot(
@@ -312,9 +309,6 @@ class LLMGenerationWorkerWorkflow:
                     "chat.prompt.uses_rag": search_context is not None,
                     "llm.provider": getattr(
                         self.llm_service, "provider_name", "unknown"
-                    ),
-                    "gen_ai.request.model": getattr(
-                        self.llm_service, "model_name", "unknown"
                     ),
                 },
             ) as span:

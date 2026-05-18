@@ -8,7 +8,6 @@
 import logging
 
 import redis.asyncio as redis
-from langfuse import get_client, observe
 
 from backend.application.chat.session_orchestrator import ChatSessionOrchestrator
 from backend.contracts.interfaces import (
@@ -26,6 +25,7 @@ from backend.models.schemas.chat.api import (
     MessageStatusEnum,
 )
 from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.observability.langfuse_utils import set_langfuse_trace_metadata
 from backend.observability.trace_utils import (
     inject_trace_context,
     trace_span,
@@ -52,8 +52,18 @@ class ChatNonStreamWorkflow:
 
     # ── Main handler ──────────────────────────────────────────────
 
-    @observe()
     async def handle_query(
+        self,
+        command: ChatQueryCommand,
+    ) -> ChatQueryResponse:
+        with set_langfuse_trace_metadata(
+            user_id=command.user_id,
+            session_id=command.session_id,
+            tags=["chat_api", "non-stream"],
+        ):
+            return await self._handle_query(command)
+
+    async def _handle_query(
         self,
         command: ChatQueryCommand,
     ) -> ChatQueryResponse:
@@ -62,11 +72,6 @@ class ChatNonStreamWorkflow:
         session_id = command.session_id
         kb_id = command.kb_id
         client_request_id = command.client_request_id
-        get_client().update_current_trace(
-            user_id=str(user_id),
-            session_id=str(session_id) if session_id else None,
-            tags=["chat_api", "non-stream"],
-        )
         logger.info(
             "Workflow 收到查询: user_id=%s, session_id=%s, query_len=%d",
             user_id,
