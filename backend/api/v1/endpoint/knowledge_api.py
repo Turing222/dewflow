@@ -105,7 +105,7 @@ async def get_task_status(
     current_user: CurrentUserDep,
     task_service: TaskServiceDep,
 ) -> TaskResponse:
-    async with task_service.uow.read_context():
+    async with task_service.read():
         task = await task_service.get_by_id(task_id=task_id)
         if not task:
             raise app_not_found("任务不存在", code="TASK_NOT_FOUND")
@@ -120,7 +120,7 @@ async def get_file_status(
     current_user: CurrentUserDep,
     service: KnowledgeServiceDep,
 ) -> KnowledgeFileResponse:
-    async with service.uow.read_context():
+    async with service.read():
         knowledge_file = await service.get_file(file_id=file_id)
         if not knowledge_file:
             raise app_not_found("文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND")

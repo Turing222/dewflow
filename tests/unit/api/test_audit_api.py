@@ -39,6 +39,9 @@ class DummyAuditService:
     def __init__(self, uow: DummyUoW | None = None) -> None:
         self.uow = uow or DummyUoW()
 
+    def read(self) -> DummyUoW:
+        return self.uow.read_context()
+
     async def list_events(self, *, filters: object, skip: int = 0, limit: int = 50):
         total = await self.uow.audit_repo.count_events(filters)
         events = await self.uow.audit_repo.list_events(filters=filters, skip=skip, limit=limit)

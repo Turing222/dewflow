@@ -1,5 +1,5 @@
 import redis.asyncio as redis
-from fastapi import Depends
+from fastapi import Depends, Request
 
 from backend.api.deps.infra import get_redis
 from backend.api.deps.permissions import get_permission_service
@@ -12,14 +12,28 @@ from backend.contracts.interfaces import (
     AbstractTaskDispatcher,
     AbstractUnitOfWork,
 )
+from backend.infra.redis import redis_client
 from backend.infra.task_dispatcher import TaskDispatcher
+from backend.services.chat_service import SessionManager
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.permission_service import PermissionService
 from backend.services.task_service import TaskService
 
 
-def get_dispatcher() -> TaskDispatcher:
-    return TaskDispatcher()
+async def get_dispatcher(request: Request) -> TaskDispatcher:
+    dispatcher = getattr(request.app.state, "_task_dispatcher", None)
+    if dispatcher is None:
+        taskiq_redis = await redis_client.get_taskiq_client()
+        dispatcher = TaskDispatcher(taskiq_redis)
+        request.app.state._task_dispatcher = dispatcher
+    return dispatcher
+
+
+def get_session_manager(
+    uow: AbstractUnitOfWork = Depends(get_uow),
+    permission_service: PermissionService = Depends(get_permission_service),
+) -> SessionManager:
+    return SessionManager(uow, permission_service)
 
 
 def get_chat_workflow(
@@ -27,8 +41,9 @@ def get_chat_workflow(
     dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
     redis_client: redis.Redis = Depends(get_redis),
     permission_service: PermissionService = Depends(get_permission_service),
+    session_manager: SessionManager = Depends(get_session_manager),
 ) -> ChatWorkflow:
-    return ChatWorkflow(uow, dispatcher, redis_client, permission_service)
+    return ChatWorkflow(uow, dispatcher, redis_client, permission_service, session_manager)
 
 
 def get_chat_nonstream_workflow(
@@ -36,8 +51,9 @@ def get_chat_nonstream_workflow(
     dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
     redis_client: redis.Redis = Depends(get_redis),
     permission_service: PermissionService = Depends(get_permission_service),
+    session_manager: SessionManager = Depends(get_session_manager),
 ) -> ChatNonStreamWorkflow:
-    return ChatNonStreamWorkflow(uow, dispatcher, redis_client, permission_service)
+    return ChatNonStreamWorkflow(uow, dispatcher, redis_client, permission_service, session_manager)
 
 
 def get_knowledge_upload_workflow(

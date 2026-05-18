@@ -64,10 +64,14 @@ class ChatSessionOrchestrator:
         uow: AbstractUnitOfWork,
         redis_client: redis.Redis,
         permission_service: PermissionService,
+        session_manager: SessionManager | None = None,
     ) -> None:
         self.uow = uow
         self.redis = redis_client
         self.permission_service = permission_service
+        self._session_manager = session_manager or SessionManager(
+            uow, permission_service
+        )
 
     async def check_idempotency(
         self,
@@ -129,10 +133,7 @@ class ChatSessionOrchestrator:
                             },
                         )
 
-                    session_manager = SessionManager(
-                        self.uow,
-                        self.permission_service,
-                    )
+                    session_manager = self._session_manager
                     resolved_kb_id = command.kb_id
                     if command.session_id is None and resolved_kb_id is None:
                         default_kb = (

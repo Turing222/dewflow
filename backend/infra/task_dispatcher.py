@@ -15,7 +15,6 @@ from uuid import uuid4
 import redis.asyncio as redis
 
 from backend.config.ai_settings import ai_settings
-from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractTaskDispatcher
 from backend.models.schemas.chat.payloads import GenerationResult, LLMTaskPayload
 
@@ -32,20 +31,13 @@ TASK_RESULT_POLL_INTERVAL_SECONDS = 0.1
 class TaskDispatcher(AbstractTaskDispatcher):
     """TaskIQ Redis wire-format 任务投递实现。"""
 
-    def __init__(self) -> None:
-        self._redis_url = settings.taskiq_redis_url
-        self._redis_client: redis.Redis | None = None
-
-    async def _get_redis(self) -> redis.Redis:
-        """Lazily create and cache the Redis connection for TaskIQ queue + result backend."""
-        if self._redis_client is None:
-            self._redis_client = redis.from_url(self._redis_url, decode_responses=False)
-        return self._redis_client
+    def __init__(self, redis_client: redis.Redis) -> None:
+        self._redis_client = redis_client
 
     async def _send_task(self, task_name: str, *args: Any) -> str:
         task_id = uuid4().hex
         message = self._build_taskiq_message(task_id=task_id, task_name=task_name, args=args)
-        redis_client = await self._get_redis()
+        redis_client = self._redis_client
         await redis_client.lpush(TASKIQ_QUEUE_NAME, message)  # type: ignore[invalid-await]  # redis-py lacks async type stubs
         return task_id
 
@@ -75,7 +67,7 @@ class TaskDispatcher(AbstractTaskDispatcher):
 
     async def _wait_result(self, task_id: str, timeout: float) -> dict[str, Any]:
         deadline = asyncio.get_running_loop().time() + timeout
-        redis_client = await self._get_redis()
+        redis_client = self._redis_client
         # NOTE: pickle.loads deserializes TaskIQ's internal TaskiqResult format
         # (is_err / return_value fields). This format is not a public API —
         # upgrading TaskIQ may change the serialization format.

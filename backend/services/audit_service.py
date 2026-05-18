@@ -14,7 +14,7 @@ from enum import StrEnum
 from types import TracebackType
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import AppException
@@ -22,6 +22,7 @@ from backend.models.enums import AuditOutcome
 from backend.models.orm.access import AuditEvent
 from backend.models.schemas.audit_schema import AuditEventFilters
 from backend.services.base import BaseService
+from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ class AuditService(BaseService[AbstractUnitOfWork]):
         self,
         *,
         uow: AbstractUnitOfWork,
-        session_factory: async_sessionmaker[AsyncSession] | None = None,
+        session_factory: async_sessionmaker | None = None,
         request_context: AuditRequestContext | None = None,
     ) -> None:
         super().__init__(uow)
@@ -123,7 +124,7 @@ class AuditService(BaseService[AbstractUnitOfWork]):
             await self._record_independent(event)
             return
 
-        self._session.add(event)
+        await self.uow.audit_repo.add(event)
 
     def capture(
         self,
@@ -151,18 +152,11 @@ class AuditService(BaseService[AbstractUnitOfWork]):
             return
 
         try:
-            async with self.session_factory() as session:
-                session.add(event)
-                await session.commit()
+            uow = SQLAlchemyUnitOfWork(self.session_factory)
+            async with uow:
+                await uow.audit_repo.add(event)
         except Exception:
             logger.exception("Failed to write audit event: action=%s", event.action)
-
-    @property
-    def _session(self) -> AsyncSession:
-        session = getattr(self.uow, "session", None)
-        if session is None:
-            raise RuntimeError("AuditService requires an active UnitOfWork session.")
-        return session
 
     async def list_events(
         self,

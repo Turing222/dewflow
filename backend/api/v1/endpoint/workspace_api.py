@@ -82,7 +82,7 @@ async def create_workspace(
         resource_type="workspace",
         metadata={"slug": workspace_in.slug},
     ) as audit:
-        async with service.uow:
+        async with service.write():
             workspace, role = await service.create_workspace(
                 current_user=current_user,
                 workspace_in=workspace_in,
@@ -98,7 +98,7 @@ async def list_workspaces(
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
 ) -> WorkspaceListResponse:
-    async with service.uow.read_context():
+    async with service.read():
         items, total = await service.list_user_workspaces(
             current_user=current_user,
             skip=skip,
@@ -118,7 +118,7 @@ async def get_workspace(
     current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
 ) -> WorkspaceResponse:
-    async with service.uow.read_context():
+    async with service.read():
         workspace, role = await service.get_workspace(
             current_user=current_user,
             workspace_id=workspace_id,
@@ -143,7 +143,7 @@ async def update_workspace(
         resource_id=workspace_id,
         metadata={"updated_fields": list(workspace_in.model_fields_set)},
     ):
-        async with service.uow:
+        async with service.write():
             workspace, role = await service.update_workspace(
                 current_user=current_user,
                 workspace_id=workspace_id,
@@ -167,7 +167,7 @@ async def delete_workspace(
         resource_type="workspace",
         resource_id=workspace_id,
     ):
-        async with service.uow:
+        async with service.write():
             await service.delete_workspace(
                 current_user=current_user,
                 workspace_id=workspace_id,
@@ -183,7 +183,7 @@ async def list_workspace_members(
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
 ) -> WorkspaceMemberListResponse:
-    async with service.uow.read_context():
+    async with service.read():
         items, total = await service.list_workspace_members(
             current_user=current_user,
             workspace_id=workspace_id,
@@ -219,7 +219,7 @@ async def add_workspace_member(
         resource_id=member_in.user_id,
         metadata={"role": member_in.role},
     ):
-        async with service.uow:
+        async with service.write():
             user_role, user = await service.add_workspace_member(
                 current_user=current_user,
                 workspace_id=workspace_id,
@@ -249,7 +249,7 @@ async def update_workspace_member(
         resource_id=user_id,
         metadata={"role": member_in.role},
     ):
-        async with service.uow:
+        async with service.write():
             user_role, user = await service.update_workspace_member(
                 current_user=current_user,
                 workspace_id=workspace_id,
@@ -278,7 +278,7 @@ async def remove_workspace_member(
         resource_type="workspace_member",
         resource_id=user_id,
     ):
-        async with service.uow:
+        async with service.write():
             await service.remove_workspace_member(
                 current_user=current_user,
                 workspace_id=workspace_id,

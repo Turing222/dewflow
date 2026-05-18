@@ -103,20 +103,19 @@ class KnowledgeRAGWorkflow:
                         file_id=file_id,
                         status=FileStatus.CHUNKING,
                     )
-                async with self.vector_index_service.uow:
                     await self.vector_index_service.replace_file_chunks(
                         file_id=file_id,
                         chunks=chunks,
                         filename=file_obj.filename,
                         file_path=file_obj.file_path,
                     )
-                async with self.knowledge_service.uow:
                     await self.knowledge_service.set_file_status(
                         file_id=file_id,
                         status=FileStatus.READY,
                     )
         except FileNotFoundError as exc:
             async with self.knowledge_service.uow:
+                await self.knowledge_service.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
                 await self.knowledge_service.set_file_status(
                     file_id=file_id,
                     status=FileStatus.FAILED,
@@ -127,6 +126,7 @@ class KnowledgeRAGWorkflow:
             ) from exc
         except AppException:
             async with self.knowledge_service.uow:
+                await self.knowledge_service.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
                 await self.knowledge_service.set_file_status(
                     file_id=file_id,
                     status=FileStatus.FAILED,
@@ -134,6 +134,7 @@ class KnowledgeRAGWorkflow:
             raise
         except Exception as exc:
             async with self.knowledge_service.uow:
+                await self.knowledge_service.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
                 await self.knowledge_service.set_file_status(
                     file_id=file_id,
                     status=FileStatus.FAILED,

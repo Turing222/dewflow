@@ -1,7 +1,7 @@
 """Redis client singleton.
 
-职责：为应用代码提供按需初始化的主 Redis 连接。
-边界：TaskIQ broker 使用独立配置，不通过本模块创建。
+职责：为应用代码提供按需初始化的 Redis 连接（主库 + TaskIQ 库）。
+边界：所有 Redis 连接由本模块统一创建和管理；外部模块不自行创建 redis.Redis。
 副作用：连接会在首次 init 时建立，应用关闭时应调用 close。
 """
 
@@ -17,6 +17,7 @@ class RedisClient:
 
     def __init__(self) -> None:
         self.client: redis.Redis | None = None
+        self._taskiq_client: redis.Redis | None = None
         self._init_lock = asyncio.Lock()
 
     async def init(self) -> redis.Redis:
@@ -31,10 +32,25 @@ class RedisClient:
             )
             return self.client
 
+    async def get_taskiq_client(self) -> redis.Redis:
+        if self._taskiq_client is not None:
+            return self._taskiq_client
+        async with self._init_lock:
+            if self._taskiq_client is not None:
+                return self._taskiq_client
+            self._taskiq_client = redis.from_url(
+                settings.taskiq_redis_url,
+                decode_responses=False,
+            )
+            return self._taskiq_client
+
     async def close(self) -> None:
         if self.client:
             await self.client.close()
             self.client = None
+        if self._taskiq_client:
+            await self._taskiq_client.close()
+            self._taskiq_client = None
 
 
 redis_client = RedisClient()

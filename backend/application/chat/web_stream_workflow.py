@@ -35,7 +35,7 @@ from backend.observability.trace_utils import (
     set_span_attributes,
     trace_span,
 )
-from backend.services.chat_service import ChatMessageUpdater
+from backend.services.chat_service import ChatMessageUpdater, SessionManager
 from backend.services.permission_service import PermissionService
 
 logger = logging.getLogger(__name__)
@@ -50,11 +50,15 @@ class ChatWorkflow:
         dispatcher: AbstractTaskDispatcher,
         redis_client: redis.Redis,
         permission_service: PermissionService,
+        session_manager: SessionManager | None = None,
     ) -> None:
         self.uow = uow
         self.dispatcher = dispatcher
         self.redis = redis_client
         self.permission_service = permission_service
+        self._session_manager = session_manager or SessionManager(
+            uow, permission_service
+        )
 
     async def handle_query_stream(
         self,
@@ -99,6 +103,7 @@ class ChatWorkflow:
             self.uow,
             self.redis,
             self.permission_service,
+            self._session_manager,
         )
         idempotency = await orchestrator.check_idempotency(
             command=command,

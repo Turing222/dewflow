@@ -7,8 +7,6 @@
 
 import uuid
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from backend.config.permissions import get_permission_policy, get_permissions_config
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden
@@ -164,12 +162,3 @@ class PermissionService(BaseService[AbstractUnitOfWork]):
             workspace_id=workspace_id,
             permission=Permission.AUDIT_READ,
         )
-
-    @property
-    def _session(self) -> AsyncSession:
-        session = getattr(self.uow, "session", None)
-        if session is None:
-            raise RuntimeError(
-                "PermissionService requires an active SQLAlchemy UnitOfWork session."
-            )
-        return session

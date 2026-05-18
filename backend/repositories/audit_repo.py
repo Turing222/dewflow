@@ -16,10 +16,14 @@ from backend.models.schemas.audit_schema import AuditEventFilters
 
 
 class AuditRepository:
-    """审计事件只读查询仓储。"""
+    """审计事件查询与写入仓储。"""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def add(self, event: AuditEvent) -> None:
+        self.session.add(event)
+        await self.session.flush()
 
     async def count_events(self, filters: AuditEventFilters) -> int:
         stmt = self._apply_filters(

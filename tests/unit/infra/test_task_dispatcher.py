@@ -29,7 +29,8 @@ def _decode_lpush_message(redis_client: FakeRedis) -> dict[str, object]:
 async def test_enqueue_stream_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
-    dispatcher = TaskDispatcher()
+    redis_client = FakeRedis()
+    dispatcher = TaskDispatcher(redis_client)
     payload = {"session_id": str(uuid.uuid4()), "query_text": "hello"}
     channel = "stream:test"
     trace_ctx = {"traceparent": "00-test"}
@@ -37,19 +38,14 @@ async def test_enqueue_stream_passes_params_through() -> None:
     user_id = str(uuid.uuid4())
     lock_key = "lock:test"
 
-    redis_client = FakeRedis()
-
-    with patch(
-        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
-    ):
-        await dispatcher.enqueue_stream(
-            generation_payload=payload,
-            channel=channel,
-            trace_context=trace_ctx,
-            assistant_message_id=msg_id,
-            user_id=user_id,
-            idempotency_lock_key=lock_key,
-        )
+    await dispatcher.enqueue_stream(
+        generation_payload=payload,
+        channel=channel,
+        trace_context=trace_ctx,
+        assistant_message_id=msg_id,
+        user_id=user_id,
+        idempotency_lock_key=lock_key,
+    )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_STREAM
@@ -68,12 +64,6 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
     from backend.models.schemas.chat.payloads import GenerationResult
 
-    dispatcher = TaskDispatcher()
-    payload = {"session_id": str(uuid.uuid4()), "query_text": "hello"}
-    trace_ctx = {"traceparent": "00-test"}
-    msg_id = str(uuid.uuid4())
-    user_id = str(uuid.uuid4())
-    lock_key = "lock:test"
     expected_result = {"success": True, "content": "answer"}
 
     raw_result = pickle.dumps(
@@ -87,17 +77,20 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
         }
     )
     redis_client = FakeRedis(result_payload=raw_result)
+    dispatcher = TaskDispatcher(redis_client)
+    payload = {"session_id": str(uuid.uuid4()), "query_text": "hello"}
+    trace_ctx = {"traceparent": "00-test"}
+    msg_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    lock_key = "lock:test"
 
-    with patch(
-        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
-    ):
-        result = await dispatcher.enqueue_nonstream(
-            generation_payload=payload,
-            trace_context=trace_ctx,
-            assistant_message_id=msg_id,
-            user_id=user_id,
-            idempotency_lock_key=lock_key,
-        )
+    result = await dispatcher.enqueue_nonstream(
+        generation_payload=payload,
+        trace_context=trace_ctx,
+        assistant_message_id=msg_id,
+        user_id=user_id,
+        idempotency_lock_key=lock_key,
+    )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_NONSTREAM
@@ -119,21 +112,17 @@ async def test_enqueue_nonstream_passes_params_and_returns_result() -> None:
 async def test_enqueue_ingestion_passes_params_through() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
-    dispatcher = TaskDispatcher()
+    redis_client = FakeRedis()
+    dispatcher = TaskDispatcher(redis_client)
     file_id = str(uuid.uuid4())
     task_id = str(uuid.uuid4())
     trace_ctx = {"traceparent": "00-test"}
 
-    redis_client = FakeRedis()
-
-    with patch(
-        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
-    ):
-        await dispatcher.enqueue_ingestion(
-            file_id=file_id,
-            task_id=task_id,
-            trace_context=trace_ctx,
-        )
+    await dispatcher.enqueue_ingestion(
+        file_id=file_id,
+        task_id=task_id,
+        trace_context=trace_ctx,
+    )
 
     message = _decode_lpush_message(redis_client)
     assert message["task_name"] == TASK_INGESTION
@@ -144,21 +133,17 @@ async def test_enqueue_ingestion_passes_params_through() -> None:
 async def test_wait_result_timeout_raises_timeout_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
-    dispatcher = TaskDispatcher()
     redis_client = FakeRedis()  # get() returns None by default
+    dispatcher = TaskDispatcher(redis_client)
 
-    with patch(
-        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
-    ):
-        with pytest.raises(TimeoutError, match="TaskIQ task result timed out"):
-            await dispatcher._wait_result("test-task-id", timeout=0.2)
+    with pytest.raises(TimeoutError, match="TaskIQ task result timed out"):
+        await dispatcher._wait_result("test-task-id", timeout=0.2)
 
 
 @pytest.mark.asyncio
 async def test_wait_result_is_err_raises_runtime_error() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
-    dispatcher = TaskDispatcher()
     raw_result = pickle.dumps(
         {
             "is_err": True,
@@ -170,27 +155,22 @@ async def test_wait_result_is_err_raises_runtime_error() -> None:
         }
     )
     redis_client = FakeRedis(result_payload=raw_result)
+    dispatcher = TaskDispatcher(redis_client)
 
-    with patch(
-        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
-    ):
-        with pytest.raises(RuntimeError, match="TaskIQ task failed"):
-            await dispatcher._wait_result("test-task-id", timeout=10)
+    with pytest.raises(RuntimeError, match="TaskIQ task failed"):
+        await dispatcher._wait_result("test-task-id", timeout=10)
 
 
 @pytest.mark.asyncio
 async def test_send_task_redis_push_error_propagates() -> None:
     from backend.infra.task_dispatcher import TaskDispatcher
 
-    dispatcher = TaskDispatcher()
     redis_client = FakeRedis()
     redis_client.lpush.side_effect = ConnectionError("Redis unreachable")
+    dispatcher = TaskDispatcher(redis_client)
 
-    with patch(
-        "backend.infra.task_dispatcher.redis.from_url", return_value=redis_client
-    ):
-        with pytest.raises(ConnectionError, match="Redis unreachable"):
-            await dispatcher._send_task("test_task", "arg1")
+    with pytest.raises(ConnectionError, match="Redis unreachable"):
+        await dispatcher._send_task("test_task", "arg1")
 
 
 @pytest.mark.asyncio

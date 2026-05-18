@@ -116,6 +116,9 @@ async def _ingest_knowledge_file_task(
             uow=uow,
             embedder=get_worker_embedder(),
             embed_batch_size=ai_settings.RAG_EMBED_BATCH_SIZE,
+            read_uow_factory=lambda: SQLAlchemyUnitOfWork(
+                get_worker_session_factory()
+            ),
         )
         knowledge_service = KnowledgeService(
             uow=uow,

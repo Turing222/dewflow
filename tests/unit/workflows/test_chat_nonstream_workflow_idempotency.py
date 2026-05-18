@@ -11,6 +11,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.application.chat.session_orchestrator import (
+    ChatIdempotencyState,
+    ChatSessionOrchestrator,
+)
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat.commands import ChatQueryCommand
@@ -27,6 +31,73 @@ def _build_workflow(uow=None, dispatcher=None, redis_client=None) -> ChatNonStre
         redis_client=redis_client or AsyncMock(),
         permission_service=MagicMock(),
     )
+
+
+async def test_orchestrator_without_injected_session_manager_uses_default() -> None:
+    uow = MagicMock()
+    user_id = uuid.uuid4()
+    session = MagicMock(id=uuid.uuid4(), title="Fallback Session", kb_id=None)
+    now = datetime.now(UTC)
+    assistant_msg = MagicMock(
+        id=uuid.uuid4(),
+        session_id=session.id,
+        created_at=now,
+        updated_at=now,
+    )
+
+    uow.user_repo = AsyncMock()
+    uow.user_repo.get_with_lock = AsyncMock(
+        return_value=MagicMock(used_tokens=0, max_tokens=1000)
+    )
+    uow.knowledge_repo = AsyncMock()
+    uow.knowledge_repo.get_kb_by_name_for_user = AsyncMock(return_value=None)
+    uow.chat_repo = AsyncMock()
+    uow.chat_repo.get_context_state = AsyncMock(return_value=ContextState())
+    uow.__aenter__.return_value = uow
+
+    orchestrator = ChatSessionOrchestrator(
+        uow,
+        AsyncMock(),
+        MagicMock(),
+    )
+
+    with (
+        patch(
+            "backend.services.chat_service.SessionManager.ensure_session",
+            AsyncMock(return_value=session),
+        ) as ensure_session,
+        patch(
+            "backend.services.chat_service.SessionManager.create_user_message",
+            AsyncMock(),
+        ),
+        patch(
+            "backend.services.chat_service.SessionManager.create_assistant_message",
+            AsyncMock(return_value=assistant_msg),
+        ),
+        patch(
+            "backend.services.chat_service.SessionManager.get_session_messages",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "backend.application.chat.session_orchestrator.history_to_conversation_messages",
+            return_value=[],
+        ),
+    ):
+        prepared = await orchestrator.prepare_request(
+            command=ChatQueryCommand(user_id=user_id, query_text="hello"),
+            idempotency=ChatIdempotencyState(
+                lock_key=None,
+                lock_token=None,
+                is_new=True,
+                value=None,
+            ),
+            trace_attrs={},
+            span_prefix="chat.test",
+        )
+
+    assert prepared.session is session
+    assert prepared.assistant_message is assistant_msg
+    ensure_session.assert_awaited_once()
 
 
 async def test_idempotency_lock_prevents_duplicate_request() -> None:

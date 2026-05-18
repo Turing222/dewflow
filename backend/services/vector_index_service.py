@@ -8,11 +8,9 @@
 import asyncio
 import hashlib
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import TypedDict
-
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.ai.core.token_counter import count_tokens
 from backend.contracts.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
@@ -59,22 +57,18 @@ class VectorIndexService(BaseService[AbstractUnitOfWork]):
         uow: AbstractUnitOfWork,
         embedder: AbstractRAGEmbedder,
         embed_batch_size: int = 32,
-        read_session_factory: async_sessionmaker | None = None,
+        read_uow_factory: Callable[[], AbstractUnitOfWork] | None = None,
     ) -> None:
         super().__init__(uow)
         self.embedder = embedder
         self.embed_batch_size = max(1, embed_batch_size)
-        self._read_session_factory = read_session_factory
+        self._read_uow_factory = read_uow_factory
 
     @asynccontextmanager
     async def _read_repo(self) -> AsyncIterator:
-        if self._read_session_factory is not None:
-            from backend.repositories.knowledge_repo import KnowledgeRepository
-
-            async with self._read_session_factory() as session:
-                yield KnowledgeRepository(session)
-        else:
-            yield self.uow.knowledge_repo
+        read_uow = self._read_uow_factory() if self._read_uow_factory else self.uow
+        async with read_uow.read_context():
+            yield read_uow.knowledge_repo
 
     async def replace_file_chunks(
         self,

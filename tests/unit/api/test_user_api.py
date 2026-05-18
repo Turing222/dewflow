@@ -57,22 +57,27 @@ def make_user(**overrides: object) -> SimpleNamespace:
 
 @pytest.fixture
 def user_service() -> SimpleNamespace:
+    uow = DummyUoW()
     service = SimpleNamespace(
-        uow=DummyUoW(),
+        uow=uow,
         get_by_username=AsyncMock(),
         get_by_email=AsyncMock(),
         user_update=AsyncMock(),
         user_register_with_personal_workspace=AsyncMock(),
     )
+    service.read = lambda: uow.read_context()
+    service.write = lambda: uow
     return service
 
 
 @pytest.fixture
 def import_service() -> SimpleNamespace:
+    uow = DummyUoW()
     service = SimpleNamespace(
-        uow=DummyUoW(),
+        uow=uow,
         import_from_upload=AsyncMock(),
     )
+    service.write = lambda: uow
     return service
 
 

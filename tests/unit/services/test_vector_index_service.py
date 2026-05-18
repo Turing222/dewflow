@@ -18,13 +18,29 @@ from backend.services.vector_index_service import CHUNKING_VERSION, VectorIndexS
 pytestmark = pytest.mark.asyncio
 
 
+class _FakeUoW:
+    """Minimal fake UoW that supports read_context() for search methods."""
+
+    def __init__(self, knowledge_repo: object) -> None:
+        self.knowledge_repo = knowledge_repo
+
+    def read_context(self) -> _FakeUoW:
+        return self
+
+    async def __aenter__(self) -> _FakeUoW:
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool:
+        return False
+
+
 async def test_replace_file_chunks_uses_batch_embedding_returns_replaced() -> None:
     file_id = uuid.uuid4()
     repo = SimpleNamespace(
         delete_chunks_for_file=AsyncMock(),
         add_chunks=AsyncMock(),
     )
-    uow = SimpleNamespace(knowledge_repo=repo)
+    uow = _FakeUoW(repo)
     embedder = SimpleNamespace(encode_documents=AsyncMock())
     embedder.encode_documents.side_effect = [
         [[0.1, 0.2], [0.3, 0.4]],
@@ -77,7 +93,7 @@ async def test_replace_file_chunks_prefers_embedding_content_for_structured_chun
         delete_chunks_for_file=AsyncMock(),
         add_chunks=AsyncMock(),
     )
-    uow = SimpleNamespace(knowledge_repo=repo)
+    uow = _FakeUoW(repo)
     embedder = SimpleNamespace(encode_documents=AsyncMock())
     embedder.encode_documents.return_value = [[0.1, 0.2]]
     service = VectorIndexService(
@@ -123,7 +139,7 @@ async def test_replace_file_chunks_raises_on_mismatched_embedding_count() -> Non
         delete_chunks_for_file=AsyncMock(),
         add_chunks=AsyncMock(),
     )
-    uow = SimpleNamespace(knowledge_repo=repo)
+    uow = _FakeUoW(repo)
     embedder = SimpleNamespace(encode_documents=AsyncMock())
     embedder.encode_documents.return_value = [[0.1, 0.2]]
     service = VectorIndexService(
@@ -150,7 +166,7 @@ async def test_prepare_chunk_records_skips_repository_write() -> None:
         delete_chunks_for_file=AsyncMock(),
         add_chunks=AsyncMock(),
     )
-    uow = SimpleNamespace(knowledge_repo=repo)
+    uow = _FakeUoW(repo)
     embedder = SimpleNamespace(encode_documents=AsyncMock(return_value=[[0.1, 0.2]]))
     service = VectorIndexService(
         uow=uow,
@@ -177,7 +193,7 @@ async def test_fulltext_search_normalizes_query_before_repo_call() -> None:
     repo = SimpleNamespace(
         search_chunks_for_kb_fulltext=AsyncMock(return_value=[]),
     )
-    uow = SimpleNamespace(knowledge_repo=repo)
+    uow = _FakeUoW(repo)
     service = VectorIndexService(
         uow=uow,
         embedder=SimpleNamespace(encode_query=AsyncMock()),
@@ -202,6 +218,42 @@ async def test_fulltext_search_normalizes_query_before_repo_call() -> None:
     assert "query_text" not in call_kwargs
 
 
+async def test_read_uow_factory_creates_fresh_uow_for_each_search() -> None:
+    kb_id = uuid.uuid4()
+    repos = [
+        SimpleNamespace(search_chunks_for_kb_fulltext=AsyncMock(return_value=[])),
+        SimpleNamespace(search_chunks_for_kb_fulltext=AsyncMock(return_value=[])),
+    ]
+    read_uows = [_FakeUoW(repo) for repo in repos]
+    created_uows: list[_FakeUoW] = []
+
+    def read_uow_factory() -> _FakeUoW:
+        uow = read_uows[len(created_uows)]
+        created_uows.append(uow)
+        return uow
+
+    service = VectorIndexService(
+        uow=_FakeUoW(SimpleNamespace()),
+        embedder=SimpleNamespace(encode_query=AsyncMock()),
+        read_uow_factory=read_uow_factory,
+    )
+
+    await service.search_chunks_for_kb_fulltext(
+        query_text="数据库 max_connections",
+        kb_id=kb_id,
+        limit=5,
+    )
+    await service.search_chunks_for_kb_fulltext(
+        query_text="数据库 max_connections",
+        kb_id=kb_id,
+        limit=5,
+    )
+
+    assert created_uows == read_uows
+    for repo in repos:
+        repo.search_chunks_for_kb_fulltext.assert_awaited_once()
+
+
 async def test_hybrid_search_returns_vector_hits_when_fulltext_empty() -> None:
     kb_id = uuid.uuid4()
     chunk_a = SimpleNamespace(id=uuid.uuid4())
@@ -210,7 +262,7 @@ async def test_hybrid_search_returns_vector_hits_when_fulltext_empty() -> None:
         search_chunks_for_kb=AsyncMock(return_value=[(chunk_a, 0.1), (chunk_b, 0.2)]),
         search_chunks_for_kb_fulltext=AsyncMock(return_value=[]),
     )
-    uow = SimpleNamespace(knowledge_repo=repo)
+    uow = _FakeUoW(repo)
     embedder = SimpleNamespace(encode_query=AsyncMock(return_value=[0.1, 0.2, 0.3]))
     service = VectorIndexService(uow=uow, embedder=embedder)
 

@@ -77,7 +77,7 @@ class WorkerContainer:
                 uow=uow,
                 embedder=embedder,
                 embed_batch_size=ai_settings.RAG_EMBED_BATCH_SIZE,
-                read_session_factory=session_factory,
+                read_uow_factory=lambda: SQLAlchemyUnitOfWork(session_factory),
             )
             self._rag_service = RAGService(
                 embedder=embedder,

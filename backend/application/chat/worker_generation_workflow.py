@@ -74,17 +74,19 @@ class LLMGenerationWorkerWorkflow:
         rag_planning_service: RAGPlanningService | None = None,
         chat_context_builder: ChatContextBuilder | None = None,
         rag_evidence_policy: RAGEvidencePolicy | None = None,
+        rag_orchestrator: WorkerRAGOrchestrator | None = None,
+        persistence_handler: WorkerPersistenceHandler | None = None,
     ) -> None:
         self._redis_client = redis_client
         self.uow = uow
         self.llm_service = llm_service
-        self.rag_orchestrator = WorkerRAGOrchestrator(
+        self.rag_orchestrator = rag_orchestrator or WorkerRAGOrchestrator(
             rag_service=rag_service,
             rag_planning_service=rag_planning_service,
             chat_context_builder=chat_context_builder,
             rag_evidence_policy=rag_evidence_policy,
         )
-        self.persistence_handler = WorkerPersistenceHandler(
+        self.persistence_handler = persistence_handler or WorkerPersistenceHandler(
             uow=uow,
             redis_client=redis_client,
         )

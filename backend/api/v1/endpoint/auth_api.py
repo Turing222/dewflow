@@ -25,7 +25,7 @@ AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 @router.post("/register", response_model=UserResponse)
 async def register(user_in: UserCreate, user_service: UserServiceDep) -> UserResponse:
-    async with user_service.uow:
+    async with user_service.write():
         user = await user_service.user_register_with_personal_workspace(user_in)
     return UserResponse.model_validate(user)
 
@@ -37,7 +37,7 @@ async def login(
     audit_service: AuditServiceDep,
 ) -> Token:
     # 1. 调用 Service 验证
-    async with user_service.uow:
+    async with user_service.write():
         user = await user_service.authenticate(login_data)
         if not user:
             await record_audit(

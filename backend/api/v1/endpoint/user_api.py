@@ -51,7 +51,7 @@ async def read_user(
     通过用户名或邮箱查询单个用户。
     DBA 视角：后端会根据参数存在与否，决定走 USERNAME 还是 EMAIL 的唯一索引。
     """
-    async with user_service.uow.read_context():
+    async with user_service.read():
         if search_params.username:
             user = await user_service.get_by_username(search_params.username)
         elif search_params.email:
@@ -86,7 +86,7 @@ async def update_user(
         resource_id=user_id,
         metadata={"updated_fields": list(user_in.model_fields_set)},
     ):
-        async with user_service.uow:
+        async with user_service.write():
             updated_user = await user_service.user_update(
                 user_id=user_id, user_in=user_in
             )
@@ -109,7 +109,7 @@ async def create_user(
         resource_type="user",
         metadata={"username": user_in.username, "email": user_in.email},
     ) as audit:
-        async with user_service.uow:
+        async with user_service.write():
             user = await user_service.user_register_with_personal_workspace(user_in)
             if not user:
                 raise app_bad_request("用户创建失败", code="USER_CREATION_FAILED")
@@ -131,7 +131,7 @@ async def csv_balk_insert_users(
         resource_type="user",
         metadata={"filename": getattr(file, "filename", None)},
     ) as audit:
-        async with import_service.uow:
+        async with import_service.write():
             result = await import_service.import_from_upload(file)
             audit.add_metadata(
                 total_rows=result.total_rows,
