@@ -12,7 +12,8 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden, app_not_found, app_validation_error
-from backend.models.orm.access import UserWorkspaceRole, Workspace, WorkspaceRole
+from backend.models.enums import WorkspaceRole
+from backend.models.orm.access import UserWorkspaceRole, Workspace
 from backend.models.orm.user import User
 from backend.models.schemas.workspace_schema import (
     WorkspaceCreate,

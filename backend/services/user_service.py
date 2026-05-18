@@ -19,7 +19,7 @@ from backend.core.exceptions import (
     app_validation_error,
 )
 from backend.core.security import get_password_hash, verify_password
-from backend.models.orm.access import WorkspaceRole
+from backend.models.enums import WorkspaceRole
 from backend.models.orm.user import User
 from backend.models.schemas.user_schema import (
     UserCreate,

@@ -92,6 +92,51 @@ async def test_require_permission_raises_permission_denied_on_missing_role() -> 
 
 
 @pytest.mark.asyncio
+async def test_ensure_audit_access_allows_superuser_without_role_lookup() -> None:
+    service = make_service_with_role(None)
+
+    await service.ensure_audit_access(
+        user=make_user(is_superuser=True),
+        workspace_id=None,
+    )
+
+    service.uow.access_repo.get_workspace_role.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ensure_audit_access_denies_global_scope_for_non_superuser() -> None:
+    service = make_service_with_role(WorkspaceRole.OWNER)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.ensure_audit_access(
+            user=make_user(),
+            workspace_id=None,
+        )
+
+    assert exc_info.value.status_code == 403
+    service.uow.access_repo.get_workspace_role.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ensure_audit_access_requires_workspace_audit_read_permission() -> None:
+    service = make_service_with_role(WorkspaceRole.ADMIN)
+    service.require_permission = AsyncMock()
+    user = make_user()
+    workspace_id = uuid.uuid4()
+
+    await service.ensure_audit_access(
+        user=user,
+        workspace_id=workspace_id,
+    )
+
+    service.require_permission.assert_awaited_once_with(
+        user=user,
+        workspace_id=workspace_id,
+        permission=Permission.AUDIT_READ,
+    )
+
+
+@pytest.mark.asyncio
 async def test_has_permission_for_user_id_loads_user_and_role_returns_result() -> None:
     service = make_service_with_role(WorkspaceRole.VIEWER)
 

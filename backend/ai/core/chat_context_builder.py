@@ -8,7 +8,7 @@
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from backend.ai.core.context_budgeter import (
     PRIORITY_HISTORY,
@@ -26,7 +26,7 @@ from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractRAGService
 from backend.core.exceptions import app_payload_too_large
 from backend.models.schemas.chat.context_state import ContextState
-from backend.models.schemas.chat.dto import ChatMessageRole, ConversationMessage
+from backend.models.schemas.chat.dto import ConversationMessage
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)
@@ -321,7 +321,7 @@ class ChatContextBuilder:
                 content = getattr(msg, "content", None)
             if role in ("user", "assistant") and content:
                 history.append(
-                    {"role": cast(ChatMessageRole, role), "content": str(content)}
+                    {"role": role, "content": str(content)}
                 )
         return history
 

@@ -18,11 +18,10 @@ from backend.core.exceptions import (
     AppException,
     app_service_error,
 )
-from backend.models.orm.chat import MessageStatus
+from backend.models.enums import MessageStatus
 from backend.models.schemas.chat.api import (
     ChatQueryResponse,
     MessageResponse,
-    MessageStatusEnum,
 )
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.observability.langfuse_utils import set_langfuse_trace_metadata
@@ -193,7 +192,7 @@ class ChatNonStreamWorkflow:
             session_id=session.id,
             role="assistant",
             content=result.content,
-            status=MessageStatusEnum.SUCCESS,
+            status=MessageStatus.SUCCESS,
             latency_ms=result.latency_ms,
             search_context=result.search_context,
             created_at=assistant_msg.created_at,

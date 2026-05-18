@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -31,17 +30,7 @@ if TYPE_CHECKING:
     from backend.models.orm.user import User
 
 
-class WorkspaceRole(StrEnum):
-    OWNER = "owner"
-    ADMIN = "admin"
-    MEMBER = "member"
-    VIEWER = "viewer"
-
-
-class AuditOutcome(StrEnum):
-    SUCCESS = "success"
-    DENIED = "denied"
-    FAILED = "failed"
+from backend.models.enums import AuditOutcome, WorkspaceRole
 
 
 class Workspace(Base, BaseIdModel, AuditMixin):

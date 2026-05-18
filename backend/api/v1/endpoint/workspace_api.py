@@ -9,7 +9,8 @@ from backend.api.dependencies import (
     get_workspace_service,
 )
 from backend.core.constants import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
-from backend.models.orm.access import Workspace, WorkspaceRole
+from backend.models.enums import WorkspaceRole
+from backend.models.orm.access import Workspace
 from backend.models.orm.user import User
 from backend.models.schemas.workspace_schema import (
     WorkspaceCreate,

@@ -7,13 +7,13 @@
 from __future__ import annotations
 
 import uuid
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from backend.models.enums import MessageStatus
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
 
 if TYPE_CHECKING:
@@ -59,13 +59,6 @@ class ChatSession(Base, BaseIdModel, AuditMixin):
         back_populates="session",
         cascade="all, delete-orphan",
     )
-
-
-class MessageStatus(StrEnum):
-    THINKING = "thinking"
-    STREAMING = "streaming"
-    SUCCESS = "success"
-    FAILED = "failed"
 
 
 class ChatMessage(Base, BaseIdModel, AuditMixin):

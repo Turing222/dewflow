@@ -1,9 +1,9 @@
 """Lightweight chat history projection helpers for Web workflows."""
 
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any
 
-from backend.models.schemas.chat.dto import ChatMessageRole, ConversationMessage
+from backend.models.schemas.chat.dto import ConversationMessage
 
 
 def history_to_conversation_messages(
@@ -19,7 +19,5 @@ def history_to_conversation_messages(
             role = getattr(msg, "role", None)
             content = getattr(msg, "content", None)
         if role in ("user", "assistant") and content:
-            history.append(
-                {"role": cast(ChatMessageRole, role), "content": str(content)}
-            )
+            history.append({"role": role, "content": str(content)})
     return history

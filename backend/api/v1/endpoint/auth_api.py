@@ -3,11 +3,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from backend.api.dependencies import get_audit_service, get_login_data, get_uow
+from backend.api.dependencies import get_audit_service, get_login_data, get_user_service
 from backend.config.settings import settings
 from backend.core.exceptions import app_bad_request
 from backend.core.security import create_access_token
-from backend.models.orm.access import AuditOutcome
+from backend.models.enums import AuditOutcome
 from backend.models.schemas.user_schema import (
     Token,
     UserCreate,
@@ -15,31 +15,30 @@ from backend.models.schemas.user_schema import (
     UserResponse,
 )
 from backend.services.audit_service import AuditAction, AuditService, record_audit
-from backend.services.unit_of_work import AbstractUnitOfWork
 from backend.services.user_service import UserService
 
 router = APIRouter()
-UOWDep = Annotated[AbstractUnitOfWork, Depends(get_uow)]
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 LoginDataDep = Annotated[UserLogin, Depends(get_login_data)]
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_in: UserCreate, uow: UOWDep) -> UserResponse:
-    async with uow:
-        user = await UserService(uow).user_register_with_personal_workspace(user_in)
+async def register(user_in: UserCreate, user_service: UserServiceDep) -> UserResponse:
+    async with user_service.uow:
+        user = await user_service.user_register_with_personal_workspace(user_in)
     return UserResponse.model_validate(user)
 
 
 @router.post("/login", response_model=Token)
 async def login(
     login_data: LoginDataDep,
-    uow: UOWDep,
+    user_service: UserServiceDep,
     audit_service: AuditServiceDep,
 ) -> Token:
     # 1. 调用 Service 验证
-    async with uow:
-        user = await UserService(uow).authenticate(login_data)
+    async with user_service.uow:
+        user = await user_service.authenticate(login_data)
         if not user:
             await record_audit(
                 audit_service,

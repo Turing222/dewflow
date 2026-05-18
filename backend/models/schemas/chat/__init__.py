@@ -4,6 +4,7 @@
 边界：本模块不定义任何新类型，只做 re-export。
 """
 
+from backend.models.enums import MessageRole, MessageStatus
 from backend.models.schemas.chat.api import (
     ChatQueryResponse,
     MessageResponse,
@@ -16,12 +17,9 @@ from backend.models.schemas.chat.api import (
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import (
-    ChatMessageRole,
     ConversationMessage,
     LLMQueryDTO,
     LLMResultDTO,
-    MessageRole,
-    MessageStatusEnum,
 )
 from backend.models.schemas.chat.params import LLMExtraBody, LLMThinkingConfig
 from backend.models.schemas.chat.payloads import (
@@ -29,6 +27,10 @@ from backend.models.schemas.chat.payloads import (
     GenerationResult,
     LLMTaskPayload,
 )
+
+# Backward-compatible aliases
+ChatMessageRole = MessageRole
+MessageStatusEnum = MessageStatus
 
 __all__ = [
     "ChatMessageRole",
@@ -45,6 +47,7 @@ __all__ = [
     "LLMThinkingConfig",
     "MessageResponse",
     "MessageRole",
+    "MessageStatus",
     "MessageStatusEnum",
     "QuerySentRequest",
     "SessionDetailResponse",

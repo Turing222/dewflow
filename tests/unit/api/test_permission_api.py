@@ -11,8 +11,8 @@ from types import SimpleNamespace
 import pytest
 
 from backend.api.v1.endpoint import permission_api
-from backend.models.orm.access import WorkspaceRole
-from backend.services.permission_service import Permission
+from backend.models.enums import Permission, WorkspaceRole
+from backend.services.permission_service import PermissionService
 
 pytestmark = pytest.mark.asyncio
 
@@ -29,8 +29,19 @@ def make_user(**overrides: object) -> SimpleNamespace:
     return SimpleNamespace(**data)
 
 
+def make_permission_service() -> PermissionService:
+    class FakeUoW:
+        pass
+
+    return PermissionService(uow=FakeUoW())
+
+
 async def test_permission_policy_metadata_expands_owner_wildcard() -> None:
-    result = await permission_api.get_permission_policy_metadata(make_user())
+    permission_service = make_permission_service()
+    result = await permission_api.get_permission_policy_metadata(
+        _=make_user(),
+        permission_service=permission_service,
+    )
 
     assert WorkspaceRole.OWNER in result.roles
     assert Permission.WORKSPACE_READ in result.role_permissions["owner"]

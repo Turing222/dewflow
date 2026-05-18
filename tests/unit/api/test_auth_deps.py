@@ -52,17 +52,12 @@ def auth_ctx() -> SimpleNamespace:
     return SimpleNamespace(uow=uow, fake_service=fake_service)
 
 
-def _patch_auth(
+def _patch_jwt_decode(
     monkeypatch: pytest.MonkeyPatch,
-    auth_ctx: SimpleNamespace,
     payload: dict[str, Any],
 ) -> None:
     monkeypatch.setattr(
         "backend.api.deps.auth.jwt.decode", lambda *args, **kwargs: payload
-    )
-    monkeypatch.setattr(
-        "backend.api.deps.auth.UserService",
-        lambda uow: auth_ctx.fake_service,
     )
 
 
@@ -91,10 +86,12 @@ async def test_get_current_user_returns_loaded_user(
     auth_ctx: SimpleNamespace,
 ) -> None:
     user = make_user()
-    _patch_auth(monkeypatch, auth_ctx, {"sub": str(user.id)})
+    _patch_jwt_decode(monkeypatch, {"sub": str(user.id)})
     auth_ctx.fake_service.get_by_id.return_value = user
 
-    result = await auth.get_current_user(uow=auth_ctx.uow, token="good-token")
+    result = await auth.get_current_user(
+        uow=auth_ctx.uow, token="good-token", user_service=auth_ctx.fake_service,
+    )
 
     assert result == user
     auth_ctx.fake_service.get_by_id.assert_awaited_once_with(str(user.id))
@@ -113,7 +110,9 @@ async def test_get_current_user_returns_403_for_invalid_token(
     monkeypatch.setattr("backend.api.deps.auth.jwt.decode", raise_invalid_token)
 
     with pytest.raises(AppException) as exc_info:
-        await auth.get_current_user(uow=auth_ctx.uow, token="bad-token")
+        await auth.get_current_user(
+            uow=auth_ctx.uow, token="bad-token", user_service=auth_ctx.fake_service,
+        )
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.message == "Token 无效或已过期"
@@ -124,10 +123,12 @@ async def test_get_current_user_returns_403_when_subject_missing(
     monkeypatch: pytest.MonkeyPatch,
     auth_ctx: SimpleNamespace,
 ) -> None:
-    _patch_auth(monkeypatch, auth_ctx, {})
+    _patch_jwt_decode(monkeypatch, {})
 
     with pytest.raises(AppException) as exc_info:
-        await auth.get_current_user(uow=auth_ctx.uow, token="missing-sub")
+        await auth.get_current_user(
+            uow=auth_ctx.uow, token="missing-sub", user_service=auth_ctx.fake_service,
+        )
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.message == "Token 缺少身份标识"
@@ -138,11 +139,13 @@ async def test_get_current_user_returns_404_when_user_missing(
     monkeypatch: pytest.MonkeyPatch,
     auth_ctx: SimpleNamespace,
 ) -> None:
-    _patch_auth(monkeypatch, auth_ctx, {"sub": "user-404"})
+    _patch_jwt_decode(monkeypatch, {"sub": "user-404"})
     auth_ctx.fake_service.get_by_id.return_value = None
 
     with pytest.raises(AppException) as exc_info:
-        await auth.get_current_user(uow=auth_ctx.uow, token="good-token")
+        await auth.get_current_user(
+            uow=auth_ctx.uow, token="good-token", user_service=auth_ctx.fake_service,
+        )
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.message == "用户不存在"

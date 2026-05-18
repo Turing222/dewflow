@@ -7,7 +7,7 @@
 
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import AppException
-from backend.models.orm.access import AuditEvent, AuditOutcome
+from backend.models.enums import AuditOutcome
+from backend.models.orm.access import AuditEvent
+from backend.models.schemas.audit_schema import AuditEventFilters
 from backend.services.base import BaseService
 
 logger = logging.getLogger(__name__)
@@ -161,6 +163,21 @@ class AuditService(BaseService[AbstractUnitOfWork]):
         if session is None:
             raise RuntimeError("AuditService requires an active UnitOfWork session.")
         return session
+
+    async def list_events(
+        self,
+        *,
+        filters: AuditEventFilters,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[int, Sequence[AuditEvent]]:
+        """查询审计事件，返回 (总数, 事件列表)。"""
+        audit_repo = getattr(self.uow, "audit_repo", None)
+        if audit_repo is None:
+            raise RuntimeError("AuditService requires uow.audit_repo.")
+        total = await audit_repo.count_events(filters)
+        events = await audit_repo.list_events(filters=filters, skip=skip, limit=limit)
+        return total, events
 
 
 class _AuditCaptureContext(AbstractAsyncContextManager[AuditCapture]):

@@ -9,13 +9,16 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config.permissions import get_permission_policy
+from backend.config.permissions import get_permission_policy, get_permissions_config
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden
-from backend.models.orm.access import WorkspaceRole
+from backend.models.enums import Permission, WorkspaceRole
 from backend.models.orm.user import User
+from backend.models.schemas.permission_schema import (
+    PermissionDescription,
+    PermissionPolicyResponse,
+)
 from backend.services.base import BaseService
-from backend.services.permission_types import Permission
 
 
 class PermissionService(BaseService[AbstractUnitOfWork]):
@@ -115,6 +118,51 @@ class PermissionService(BaseService[AbstractUnitOfWork]):
         return get_permission_policy().role_has_permission(
             role=role,
             permission=permission,
+        )
+
+    def get_policy_response(self) -> PermissionPolicyResponse:
+        """返回权限策略元数据（用于 API 响应）。"""
+        config = get_permissions_config()
+        policy = get_permission_policy()
+
+        permissions = [
+            PermissionDescription(
+                value=Permission(p),
+                description=defn.description,
+            )
+            for p, defn in config.permissions.items()
+        ]
+        role_permissions = {
+            role.value: sorted(
+                policy.role_permissions.get(role, frozenset()),
+                key=lambda item: item.value,
+            )
+            for role in WorkspaceRole
+        }
+        return PermissionPolicyResponse(
+            permissions=permissions,
+            roles=list(WorkspaceRole),
+            role_permissions=role_permissions,
+        )
+
+    async def ensure_audit_access(
+        self,
+        *,
+        user: User,
+        workspace_id: uuid.UUID | None,
+    ) -> None:
+        """验证用户是否有审计读取权限，无权限则抛 app_forbidden。"""
+        if user.is_superuser and self.policy.superuser_bypass:
+            return
+        if workspace_id is None:
+            raise app_forbidden(
+                "权限不足",
+                details={"scope": "global", "permission": Permission.AUDIT_READ},
+            )
+        await self.require_permission(
+            user=user,
+            workspace_id=workspace_id,
+            permission=Permission.AUDIT_READ,
         )
 
     @property

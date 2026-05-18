@@ -9,8 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.models.orm.access import WorkspaceRole
-from backend.services.permission_types import Permission
+from backend.models.enums import Permission, WorkspaceRole
 
 
 class PermissionDefinition(BaseModel):

@@ -11,7 +11,8 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
+from backend.models.enums import MessageStatus
+from backend.models.orm.chat import ChatMessage, ChatSession
 from backend.models.schemas.chat.context_state import ContextState
 from backend.repositories.base import CRUDBase
 

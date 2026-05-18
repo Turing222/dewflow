@@ -6,25 +6,13 @@
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.orm.access import AuditEvent, AuditOutcome
-
-
-@dataclass(frozen=True, slots=True)
-class AuditEventFilters:
-    """审计事件列表过滤条件。"""
-
-    action: str | None = None
-    outcome: AuditOutcome | None = None
-    request_id: str | None = None
-    actor_user_id: uuid.UUID | None = None
-    workspace_id: uuid.UUID | None = None
+from backend.models.orm.access import AuditEvent
+from backend.models.schemas.audit_schema import AuditEventFilters
 
 
 class AuditRepository:

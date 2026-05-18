@@ -5,36 +5,15 @@
 """
 
 import uuid
-from enum import StrEnum
-from typing import Literal, TypedDict
+from typing import TypedDict
 
 from pydantic import BaseModel, Field
-
-
-class MessageRole(StrEnum):
-    """消息角色枚举，用于 Schema 层的类型安全"""
-
-    USER = "user"
-    ASSISTANT = "assistant"
-    SYSTEM = "system"
-
-
-class MessageStatusEnum(StrEnum):
-    """消息状态枚举，与 ORM 层的 MessageStatus 保持同步"""
-
-    THINKING = "thinking"
-    STREAMING = "streaming"
-    SUCCESS = "success"
-    FAILED = "failed"
-
-
-ChatMessageRole = Literal["system", "user", "assistant"]
 
 
 class ConversationMessage(TypedDict):
     """内部对话消息格式，在 provider 边界层再转换为具体 SDK schema。"""
 
-    role: ChatMessageRole
+    role: str
     content: str
 
 

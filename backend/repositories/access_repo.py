@@ -12,7 +12,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.orm.access import UserWorkspaceRole, Workspace, WorkspaceRole
+from backend.models.enums import WorkspaceRole
+from backend.models.orm.access import UserWorkspaceRole, Workspace
 from backend.models.orm.user import User
 
 

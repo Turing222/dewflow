@@ -6,6 +6,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError as PydanticValidationError
 
+from backend.api.deps.services import get_user_service
 from backend.api.deps.uow import get_uow
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
@@ -40,6 +41,7 @@ def get_login_data(
 async def get_current_user(
     uow: AbstractUnitOfWork = Depends(get_uow),
     token: str = Depends(reusable_oauth2),
+    user_service: UserService = Depends(get_user_service),
 ) -> User:
     try:
         payload = jwt.decode(
@@ -53,10 +55,8 @@ async def get_current_user(
     except (InvalidTokenError, PydanticValidationError) as e:
         raise app_forbidden("Token 无效或已过期", code="INVALID_TOKEN") from e
 
-    logger.debug("Current value of x: %s, type: %s", user_id, type(user_id))
-
     async with uow.read_context():
-        user = await UserService(uow).get_by_id(user_id)
+        user = await user_service.get_by_id(user_id)
 
     if not user:
         raise app_not_found("用户不存在", code="USER_NOT_FOUND")

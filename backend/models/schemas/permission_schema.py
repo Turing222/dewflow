@@ -6,8 +6,7 @@
 
 from pydantic import BaseModel
 
-from backend.models.orm.access import WorkspaceRole
-from backend.services.permission_types import Permission
+from backend.models.enums import Permission, WorkspaceRole
 
 
 class PermissionDescription(BaseModel):

@@ -15,8 +15,7 @@ from pydantic import ValidationError
 
 from backend.config.loader import ConfigurationError, load_yaml_config
 from backend.config.schemas import PermissionsConfig
-from backend.models.orm.access import WorkspaceRole
-from backend.services.permission_types import Permission
+from backend.models.enums import Permission, WorkspaceRole
 
 
 @dataclass(frozen=True, slots=True)

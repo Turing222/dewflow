@@ -10,7 +10,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from backend.models.schemas.chat.dto import MessageStatusEnum
+from backend.models.enums import MessageStatus
 from backend.models.schemas.chat.params import LLMExtraBody
 
 QueryStr = Annotated[
@@ -65,7 +65,7 @@ class MessageResponse(BaseModel):
     session_id: uuid.UUID
     role: str
     content: str
-    status: MessageStatusEnum
+    status: MessageStatus
     latency_ms: int | None = None
     search_context: dict | None = None
     created_at: datetime

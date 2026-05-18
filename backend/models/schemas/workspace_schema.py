@@ -10,7 +10,7 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from backend.models.orm.access import WorkspaceRole
+from backend.models.enums import WorkspaceRole
 
 WorkspaceNameStr = Annotated[str, Field(min_length=1, max_length=100)]
 WorkspaceSlugStr = Annotated[

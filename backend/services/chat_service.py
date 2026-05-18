@@ -11,9 +11,10 @@ import uuid
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import app_forbidden, app_not_found
-from backend.models.orm.chat import ChatMessage, ChatSession, MessageStatus
+from backend.models.enums import MessageStatus, Permission
+from backend.models.orm.chat import ChatMessage, ChatSession
 from backend.services.base import BaseService
-from backend.services.permission_service import Permission, PermissionService
+from backend.services.permission_service import PermissionService
 
 logger = logging.getLogger(__name__)
 

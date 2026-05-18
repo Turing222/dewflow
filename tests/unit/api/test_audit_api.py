@@ -14,7 +14,6 @@ import pytest
 
 from backend.api.v1.endpoint import audit_api
 from backend.core.exceptions import AppException
-from backend.services.permission_service import Permission
 
 pytestmark = pytest.mark.asyncio
 
@@ -36,6 +35,16 @@ class DummyUoW:
         return False
 
 
+class DummyAuditService:
+    def __init__(self, uow: DummyUoW | None = None) -> None:
+        self.uow = uow or DummyUoW()
+
+    async def list_events(self, *, filters: object, skip: int = 0, limit: int = 50):
+        total = await self.uow.audit_repo.count_events(filters)
+        events = await self.uow.audit_repo.list_events(filters=filters, skip=skip, limit=limit)
+        return total, events
+
+
 def make_user(**overrides: object) -> SimpleNamespace:
     now = datetime.now(UTC)
     data = {
@@ -54,6 +63,7 @@ def make_user(**overrides: object) -> SimpleNamespace:
 def make_permission_service() -> SimpleNamespace:
     return SimpleNamespace(
         policy=SimpleNamespace(superuser_bypass=True),
+        ensure_audit_access=AsyncMock(),
         require_permission=AsyncMock(),
     )
 
@@ -65,7 +75,7 @@ async def test_workspace_audit_events_require_audit_read_permission() -> None:
 
     result = await audit_api.list_audit_events(
         current_user=current_user,
-        uow=DummyUoW(),
+        audit_service=DummyAuditService(),
         permission_service=permission_service,
         workspace_id=workspace_id,
         action=None,
@@ -73,20 +83,22 @@ async def test_workspace_audit_events_require_audit_read_permission() -> None:
     )
 
     assert result.total == 0
-    permission_service.require_permission.assert_awaited_once_with(
+    permission_service.ensure_audit_access.assert_awaited_once_with(
         user=current_user,
         workspace_id=workspace_id,
-        permission=Permission.AUDIT_READ,
     )
 
 
 async def test_non_superuser_cannot_read_global_audit_events() -> None:
     permission_service = make_permission_service()
+    permission_service.ensure_audit_access = AsyncMock(
+        side_effect=AppException(status_code=403, message="权限不足", code="FORBIDDEN"),
+    )
 
     with pytest.raises(AppException) as exc_info:
         await audit_api.list_audit_events(
             current_user=make_user(),
-            uow=DummyUoW(),
+            audit_service=DummyAuditService(),
             permission_service=permission_service,
             workspace_id=None,
             action=None,
@@ -94,7 +106,6 @@ async def test_non_superuser_cannot_read_global_audit_events() -> None:
         )
 
     assert exc_info.value.status_code == 403
-    permission_service.require_permission.assert_not_awaited()
 
 
 async def test_superuser_can_read_global_audit_events_without_role_check() -> None:
@@ -102,7 +113,7 @@ async def test_superuser_can_read_global_audit_events_without_role_check() -> No
 
     result = await audit_api.list_audit_events(
         current_user=make_user(is_superuser=True),
-        uow=DummyUoW(),
+        audit_service=DummyAuditService(),
         permission_service=permission_service,
         workspace_id=None,
         action=None,
@@ -110,4 +121,4 @@ async def test_superuser_can_read_global_audit_events_without_role_check() -> No
     )
 
     assert result.total == 0
-    permission_service.require_permission.assert_not_awaited()
+    permission_service.ensure_audit_access.assert_awaited_once()
