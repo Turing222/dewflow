@@ -8,6 +8,8 @@
 import json
 import logging
 import uuid
+from collections.abc import Sequence
+from typing import Any, cast
 
 from backend.contracts.interfaces import (
     AbstractLLMService,
@@ -18,7 +20,7 @@ from backend.core.exceptions import AppException
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.schemas.chat.dto import LLMQueryDTO
 from backend.observability.trace_utils import set_span_attributes, trace_span
-from backend.services.vector_index_service import VectorIndexService
+from backend.services.vector_index_service import RetrievalHit, VectorIndexService
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ class RAGService(AbstractRAGService):
             logger.warning("RAG 检索失败，降级为无检索上下文: %s", exc)
             return []
 
-        return self._format_hits(hits)
+        return self._format_hits(hits, default_retrieval_mode="vector")
 
     async def rerank(
         self,
@@ -141,7 +143,7 @@ class RAGService(AbstractRAGService):
                     kb_id=kb_id,
                     limit=candidate_limit,
                 )
-                candidates = self._format_hits(hits)
+                candidates = self._format_hits(hits, default_retrieval_mode="hybrid")
                 set_span_attributes(span, {"rag.candidate_hit_count": len(candidates)})
         except AppException:
             raise
@@ -213,7 +215,7 @@ class RAGService(AbstractRAGService):
             logger.warning("RAG 全文检索失败，降级为无检索上下文: %s", exc)
             return []
 
-        return self._format_hits(hits)
+        return self._format_hits(hits, default_retrieval_mode="fulltext")
 
     async def retrieve_hybrid(
         self,
@@ -249,13 +251,22 @@ class RAGService(AbstractRAGService):
             logger.warning("RAG 混合检索失败，降级为无检索上下文: %s", exc)
             return []
 
-        return self._format_hits(hits)
+        return self._format_hits(hits, default_retrieval_mode="hybrid")
 
     @staticmethod
-    def _format_hits(hits: list[tuple[DocumentChunk, float]]) -> list[dict]:
+    def _format_hits(
+        hits: Sequence[RetrievalHit | dict[str, Any] | tuple[DocumentChunk, float]],
+        *,
+        default_retrieval_mode: str = "vector",
+    ) -> list[dict]:
         chunks: list[dict] = []
-        for chunk, distance in hits:
+        for hit in hits:
+            chunk, distance, metadata = RAGService._normalize_hit(
+                hit,
+                default_retrieval_mode=default_retrieval_mode,
+            )
             file_obj = getattr(chunk, "__dict__", {}).get("file")
+            score = max(0.0, 1.0 - distance)
             chunks.append(
                 {
                     "id": str(chunk.id),
@@ -269,10 +280,67 @@ class RAGService(AbstractRAGService):
                     "chunk_index": chunk.chunk_index,
                     "meta_info": chunk.meta_info or {},
                     "distance": distance,
-                    "score": max(0.0, 1.0 - distance),
+                    "score": score,
+                    "retrieval_mode": metadata["retrieval_mode"],
+                    "score_kind": metadata["score_kind"],
+                    "raw_score": metadata["raw_score"],
+                    "evidence_score": metadata["evidence_score"],
+                    "matched_by": metadata["matched_by"],
                 }
             )
         return chunks
+
+    @staticmethod
+    def _normalize_hit(
+        hit: RetrievalHit | dict[str, Any] | tuple[DocumentChunk, float],
+        *,
+        default_retrieval_mode: str,
+    ) -> tuple[DocumentChunk, float, dict[str, object]]:
+        if isinstance(hit, dict):
+            chunk = hit["chunk"]
+            distance = float(hit["distance"])
+            score = max(0.0, 1.0 - distance)
+            return (
+                chunk,
+                distance,
+                {
+                    "retrieval_mode": str(
+                        hit.get("retrieval_mode") or default_retrieval_mode
+                    ),
+                    "score_kind": str(
+                        hit.get("score_kind")
+                        or RAGService._default_score_kind(default_retrieval_mode)
+                    ),
+                    "raw_score": hit.get("raw_score"),
+                    "evidence_score": float(hit.get("evidence_score", score) or 0.0),
+                    "matched_by": list(hit.get("matched_by") or []),
+                },
+            )
+
+        legacy_hit = cast(tuple[DocumentChunk, float], hit)
+        chunk, distance = legacy_hit
+        score = max(0.0, 1.0 - float(distance))
+        return (
+            chunk,
+            float(distance),
+            {
+                "retrieval_mode": default_retrieval_mode,
+                "score_kind": RAGService._default_score_kind(default_retrieval_mode),
+                "raw_score": score,
+                "evidence_score": score,
+                "matched_by": [default_retrieval_mode]
+                if default_retrieval_mode in {"vector", "fulltext"}
+                else [],
+            },
+        )
+
+    @staticmethod
+    def _default_score_kind(retrieval_mode: str) -> str:
+        if retrieval_mode == "fulltext":
+            return "fulltext_rank_similarity"
+        if retrieval_mode == "hybrid":
+            return "hybrid_relative_rrf"
+        return "vector_similarity"
 
     @staticmethod
     def build_rerank_prompt(
@@ -349,6 +417,7 @@ class RAGService(AbstractRAGService):
                 continue
             chunk = dict(candidates[candidate_index])
             chunk["rerank_score"] = score
+            chunk["score_kind"] = "llm_rerank"
             selected.append(chunk)
             selected_indexes.add(candidate_index)
             if len(selected) >= limit:

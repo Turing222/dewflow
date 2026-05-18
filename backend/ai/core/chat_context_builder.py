@@ -460,19 +460,20 @@ class ChatContextBuilder:
                 "distance": chunk.get("distance"),
                 "meta_info": chunk.get("meta_info") or {},
             }
+            ChatContextBuilder._copy_optional_evidence_fields(chunk, chunk_ref)
             group["chunks"].append(chunk_ref)
-            flat_chunks.append(
-                {
-                    "ref_id": ref_id,
-                    "id": chunk["id"],
-                    "score": chunk.get("score"),
-                    "distance": chunk.get("distance"),
-                    "source_type": source_type,
-                    "file_id": file_id,
-                    "message_id": message_id,
-                    "chunk_index": chunk_index,
-                }
-            )
+            flat_chunk = {
+                "ref_id": ref_id,
+                "id": chunk["id"],
+                "score": chunk.get("score"),
+                "distance": chunk.get("distance"),
+                "source_type": source_type,
+                "file_id": file_id,
+                "message_id": message_id,
+                "chunk_index": chunk_index,
+            }
+            ChatContextBuilder._copy_optional_evidence_fields(chunk, flat_chunk)
+            flat_chunks.append(flat_chunk)
             context_chunks.append(
                 ChatContextBuilder._format_context_chunk(ref_id=ref_id, chunk=chunk)
             )
@@ -494,6 +495,20 @@ class ChatContextBuilder:
             context_chunks=context_chunks,
             search_context=search_context,
         )
+
+    @staticmethod
+    def _copy_optional_evidence_fields(source: dict[str, Any], target: dict[str, Any]) -> None:
+        for key in (
+            "retrieval_mode",
+            "score_kind",
+            "raw_score",
+            "evidence_score",
+            "matched_by",
+            "rerank_score",
+        ):
+            value = source.get(key)
+            if value is not None:
+                target[key] = value
 
     @staticmethod
     def _format_context_chunk(ref_id: str, chunk: dict) -> str:

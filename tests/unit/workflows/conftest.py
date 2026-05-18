@@ -52,10 +52,14 @@ def make_rag_hit(
     index: int = 0,
     score: float | None = None,
     distance: float | None = None,
+    retrieval_mode: str = "vector",
+    evidence_score: float | None = None,
+    matched_by: list[str] | None = None,
+    rerank_score: float | None = None,
 ) -> dict:
     _score = 0.9 - index * 0.1 if score is None else score
     _distance = 0.1 + index * 0.1 if distance is None else distance
-    return {
+    hit = {
         "id": str(uuid.uuid4()),
         "content": content,
         "source_type": "file",
@@ -66,4 +70,18 @@ def make_rag_hit(
         "meta_info": {},
         "distance": _distance,
         "score": _score,
+        "retrieval_mode": retrieval_mode,
+        "score_kind": (
+            "vector_similarity"
+            if retrieval_mode == "vector"
+            else "fulltext_rank_similarity"
+            if retrieval_mode == "fulltext"
+            else "hybrid_relative_rrf"
+        ),
+        "raw_score": _score,
+        "evidence_score": _score if evidence_score is None else evidence_score,
+        "matched_by": matched_by or [retrieval_mode],
     }
+    if rerank_score is not None:
+        hit["rerank_score"] = rerank_score
+    return hit

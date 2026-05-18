@@ -273,10 +273,15 @@ async def test_hybrid_search_returns_vector_hits_when_fulltext_empty() -> None:
         candidate_multiplier=3,
     )
 
-    assert [chunk.id for chunk, _ in result] == [chunk_a.id, chunk_b.id]
-    distances = [distance for _, distance in result]
+    assert [hit["chunk"].id for hit in result] == [chunk_a.id, chunk_b.id]
+    distances = [hit["distance"] for hit in result]
     assert all(0.0 <= distance <= 1.0 for distance in distances)
     assert distances[0] < distances[1]
+    assert result[0]["retrieval_mode"] == "hybrid"
+    assert result[0]["score_kind"] == "hybrid_relative_rrf"
+    assert result[0]["matched_by"] == ["vector"]
+    assert 0.0 < result[0]["raw_score"] < 1.0
+    assert result[0]["evidence_score"] < 1.0
     embedder.encode_query.assert_awaited_once_with("数据库 max_connections")
     repo.search_chunks_for_kb.assert_awaited_once_with(
         query_vector=[0.1, 0.2, 0.3],
@@ -312,5 +317,8 @@ def test_fuse_hybrid_hits_only_vector_hits() -> None:
 
     assert len(result) == 2
     # RRF: chunk_a (rank 1, distance 0.1) gets higher score → lower distance when normalized.
-    assert result[0][0].id == chunk_a.id
-    assert result[1][0].id == chunk_b.id
+    assert result[0]["chunk"].id == chunk_a.id
+    assert result[1]["chunk"].id == chunk_b.id
+    assert result[0]["matched_by"] == ["vector"]
+    assert result[0]["score_kind"] == "hybrid_relative_rrf"
+    assert result[0]["evidence_score"] < 1.0

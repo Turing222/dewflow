@@ -70,6 +70,43 @@ async def test_retrieve_fulltext_formats_hits_returns_results() -> None:
     assert result[0]["meta_info"] == {"page_label": "3"}
     assert result[0]["distance"] == 0.2
     assert result[0]["score"] == 0.8
+    assert result[0]["retrieval_mode"] == "fulltext"
+    assert result[0]["score_kind"] == "fulltext_rank_similarity"
+    assert result[0]["evidence_score"] == 0.8
+    assert result[0]["matched_by"] == ["fulltext"]
+
+
+async def test_retrieve_hybrid_formats_structured_hit_metadata() -> None:
+    service = _build_service()
+    chunk = _chunk("hybrid chunk", 0)
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[
+            {
+                "chunk": chunk,
+                "distance": 0.3,
+                "retrieval_mode": "hybrid",
+                "score_kind": "hybrid_relative_rrf",
+                "raw_score": 0.012,
+                "evidence_score": 0.7,
+                "matched_by": ["vector", "fulltext"],
+            }
+        ]
+    )
+
+    result = await service.retrieve_hybrid(
+        query_text="test query",
+        kb_id=uuid.uuid4(),
+        top_k=1,
+    )
+
+    assert len(result) == 1
+    assert result[0]["score"] == pytest.approx(0.7)
+    assert result[0]["distance"] == 0.3
+    assert result[0]["retrieval_mode"] == "hybrid"
+    assert result[0]["score_kind"] == "hybrid_relative_rrf"
+    assert result[0]["raw_score"] == 0.012
+    assert result[0]["evidence_score"] == 0.7
+    assert result[0]["matched_by"] == ["vector", "fulltext"]
 
 
 async def test_retrieve_hybrid_returns_empty_on_error() -> None:
@@ -110,6 +147,8 @@ async def test_retrieve_with_rerank_orders_results_by_llm_scores() -> None:
 
     assert [chunk["content"] for chunk in result] == ["beta", "alpha"]
     assert result[0]["rerank_score"] == 9
+    assert result[0]["score_kind"] == "llm_rerank"
+    assert "evidence_score" in result[0]
     llm_service.generate_response.assert_awaited_once()
 
 

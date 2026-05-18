@@ -178,3 +178,123 @@ async def test_rerank_candidates_if_enabled_rerank_error_falls_back(monkeypatch)
     assert len(result) == 2
     assert result[0]["content"] == "chunk-0"
     assert result[1]["content"] == "chunk-1"
+
+
+async def test_prepare_context_refusal_search_context_includes_evidence_fields(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RELEVANCE_SCORE",
+        0.5,
+    )
+
+    low_evidence_hit = make_rag_hit(
+        retrieval_mode="hybrid",
+        score=1.0,
+        evidence_score=0.2,
+        matched_by=["vector"],
+    )
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        kb_id=uuid.uuid4(),
+        conversation_history=[],
+        rag_candidates=[low_evidence_hit],
+    )
+
+    orchestrator = WorkerRAGOrchestrator()
+    result = await orchestrator.prepare_context(payload)
+
+    assert result.refusal_decision is not None
+    assert result.search_context is not None
+    assert result.search_context["rag_refusal"] is True
+    assert result.search_context["reason"] == "RAG hybrid 证据不足"
+    first_chunk = result.search_context["chunks"][0]
+    assert first_chunk["retrieval_mode"] == "hybrid"
+    assert first_chunk["evidence_score"] == 0.2
+    assert first_chunk["matched_by"] == ["vector"]
+
+
+async def test_prepare_context_hybrid_rerank_uses_rerank_score_for_policy(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RELEVANCE_SCORE",
+        0.5,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RERANK_SCORE",
+        4.0,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        kb_id=uuid.uuid4(),
+        conversation_history=[],
+    )
+    candidate = make_rag_hit(
+        retrieval_mode="hybrid",
+        score=1.0,
+        evidence_score=0.1,
+        matched_by=["vector"],
+    )
+    reranked = dict(candidate, rerank_score=5.0, score_kind="rerank_score")
+    rag_service = MagicMock()
+    rag_service.retrieve_hybrid = AsyncMock(return_value=[candidate])
+    rag_service.rerank = AsyncMock(return_value=[reranked])
+    context_builder = MagicMock()
+    context_builder.build_from_chunks.return_value = SimpleNamespace(
+        assembled_prompt=SimpleNamespace(total_tokens=42, messages=[]),
+        search_context={"chunks": [{"rerank_score": 5.0}]},
+    )
+    rag_plan = RAGExecutionPlan(
+        should_use_rag=True,
+        retrieval_mode="hybrid",
+        top_k=4,
+        use_rerank=True,
+        candidate_count=20,
+        rerank_top_k=4,
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=rag_plan)
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+        chat_context_builder=context_builder,
+    )
+    result = await orchestrator.prepare_context(payload)
+
+    assert result.refusal_decision is None
+    rag_service.rerank.assert_awaited_once()
+    context_builder.build_from_chunks.assert_called_once()
+    assert context_builder.build_from_chunks.call_args.kwargs["rag_chunks"][0][
+        "rerank_score"
+    ] == 5.0

@@ -20,7 +20,7 @@ class RAGEvidenceDecision:
     hit_count: int
     best_score: float | None = None
     best_rerank_score: float | None = None
-    policy_version: int = 1
+    policy_version: int = 2
 
     def to_metadata(self) -> dict[str, object]:
         return {
@@ -44,7 +44,9 @@ class RAGEvidencePolicy:
         chunks: list[dict[str, Any]],
     ) -> RAGEvidenceDecision:
         hit_count = len(chunks)
-        best_score = self._max_numeric(chunks, "score")
+        best_score = self._max_numeric(chunks, "evidence_score")
+        if best_score is None:
+            best_score = self._max_numeric(chunks, "score")
         best_rerank_score = self._max_numeric(chunks, "rerank_score")
 
         if not ai_settings.RAG_REFUSAL_ENABLED:
@@ -67,11 +69,31 @@ class RAGEvidencePolicy:
             return self._allow(
                 "RAG rerank 证据充足", hit_count, best_score, best_rerank_score
             )
-        if best_score is None or best_score < ai_settings.RAG_MIN_RELEVANCE_SCORE:
-            return self._refuse(
-                "RAG 相关性分数不足", hit_count, best_score, best_rerank_score
+
+        retrieval_mode = self._resolve_retrieval_mode(
+            rag_plan=rag_plan,
+            chunks=chunks,
+        )
+        if retrieval_mode == "hybrid":
+            return self._evaluate_hybrid(
+                chunks=chunks,
+                hit_count=hit_count,
+                best_score=best_score,
+                best_rerank_score=best_rerank_score,
             )
-        return self._allow("RAG 证据充足", hit_count, best_score, best_rerank_score)
+
+        if retrieval_mode in {"vector", "fulltext"}:
+            if best_score is None or best_score < ai_settings.RAG_MIN_RELEVANCE_SCORE:
+                return self._refuse(
+                    "RAG 相关性分数不足", hit_count, best_score, best_rerank_score
+                )
+            return self._allow(
+                "RAG 证据充足", hit_count, best_score, best_rerank_score
+            )
+
+        return self._refuse(
+            "RAG 检索模式未知", hit_count, best_score, best_rerank_score
+        )
 
     @staticmethod
     def _max_numeric(chunks: list[dict[str, Any]], key: str) -> float | None:
@@ -81,6 +103,57 @@ class RAGEvidencePolicy:
             if isinstance(value, (int, float)):
                 values.append(float(value))
         return max(values) if values else None
+
+    def _evaluate_hybrid(
+        self,
+        *,
+        chunks: list[dict[str, Any]],
+        hit_count: int,
+        best_score: float | None,
+        best_rerank_score: float | None,
+    ) -> RAGEvidenceDecision:
+        top_chunk = chunks[0] if chunks else {}
+        has_sufficient_score = (
+            best_score is not None
+            and best_score >= ai_settings.RAG_MIN_RELEVANCE_SCORE
+        )
+        if self._matched_by_both(top_chunk) and has_sufficient_score:
+            return self._allow(
+                "RAG hybrid 双路命中证据充足",
+                hit_count,
+                best_score,
+                best_rerank_score,
+            )
+        if hit_count >= 2 and has_sufficient_score:
+            return self._allow(
+                "RAG hybrid 多片段证据充足",
+                hit_count,
+                best_score,
+                best_rerank_score,
+            )
+        return self._refuse(
+            "RAG hybrid 证据不足", hit_count, best_score, best_rerank_score
+        )
+
+    @staticmethod
+    def _resolve_retrieval_mode(
+        *,
+        rag_plan: RAGExecutionPlan,
+        chunks: list[dict[str, Any]],
+    ) -> str:
+        for chunk in chunks:
+            mode = chunk.get("retrieval_mode")
+            if isinstance(mode, str) and mode:
+                return mode
+        return rag_plan.retrieval_mode
+
+    @staticmethod
+    def _matched_by_both(chunk: dict[str, Any]) -> bool:
+        matched_by = chunk.get("matched_by")
+        if not isinstance(matched_by, list):
+            return False
+        matched = {str(item) for item in matched_by}
+        return {"vector", "fulltext"}.issubset(matched)
 
     @staticmethod
     def _allow(
