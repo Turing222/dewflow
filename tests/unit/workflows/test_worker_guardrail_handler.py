@@ -10,8 +10,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from backend.services.chat_safety_metadata import (
+    INJECTION_REFUSAL_MESSAGE,
     SAFETY_REFUSAL_MESSAGE,
     GuardrailDecision,
+    GuardrailReason,
     ResponseOutcome,
 )
 
@@ -179,3 +181,46 @@ async def test_idempotency_lock_skipped_when_message_id_none() -> None:
 
     persistence.persist_success.assert_awaited_once()
     persistence.write_idempotency_message.assert_not_awaited()
+
+
+# ── Injection risk refusal message ──────────────────────────────────
+
+
+async def test_stream_input_block_uses_injection_refusal_for_injection_risk() -> None:
+    publisher = AsyncMock()
+    handler, persistence = _make_handler(stream_publisher=publisher)
+
+    decision = GuardrailDecision(
+        triggered=True, reason=GuardrailReason.INJECTION_RISK.value
+    )
+    await handler.handle_stream_input_block(
+        channel="stream:test",
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        input_decision=decision,
+        start_time=1.0,
+        idempotency_lock_key=None,
+    )
+
+    publisher.publish_chunk.assert_awaited_once_with(
+        "stream:test", INJECTION_REFUSAL_MESSAGE
+    )
+    kwargs = persistence.persist_success.call_args.kwargs
+    assert kwargs["content"] == INJECTION_REFUSAL_MESSAGE
+
+
+async def test_nonstream_input_block_uses_injection_refusal_for_injection_risk() -> None:
+    handler, persistence = _make_handler()
+
+    decision = GuardrailDecision(
+        triggered=True, reason=GuardrailReason.INJECTION_RISK.value
+    )
+    result = await handler.handle_nonstream_input_block(
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        input_decision=decision,
+        start_time=1.0,
+        idempotency_lock_key=None,
+    )
+
+    assert result.content == INJECTION_REFUSAL_MESSAGE

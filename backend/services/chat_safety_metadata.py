@@ -10,12 +10,21 @@ implementation exists for early-stage safety data collection and MUST be
 replaced with an ML-based classifier before production deployment.
 """
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 from enum import StrEnum
 
+from backend.services.safety_scanner import (
+    SafetyCategory,
+    SafetyScanner,
+    SafetyScanResult,
+)
+
 SCHEMA_VERSION = 1
 SAFETY_REFUSAL_MESSAGE = "抱歉，这个请求涉及安全或权限风险，暂时无法回答。"
+INJECTION_REFUSAL_MESSAGE = "抱歉，我无法处理包含指令覆盖或角色切换内容的请求。请用正常方式提问。"
 
 
 class ResponseOutcome(StrEnum):
@@ -33,6 +42,8 @@ class GuardrailAction(StrEnum):
 class GuardrailReason(StrEnum):
     PERMISSION_OR_PRIVACY_RISK = "permission_or_privacy_risk"
     UNSAFE_OUTPUT = "unsafe_output"
+    INJECTION_RISK = "injection_risk"
+    SENSITIVE_DATA_DETECTED = "sensitive_data_detected"
 
 
 class BadcaseSeverity(StrEnum):
@@ -54,6 +65,7 @@ class GuardrailDecision:
 
     triggered: bool
     reason: str | None = None
+    scan_result: SafetyScanResult | None = None
 
 
 def build_safety_metadata(
@@ -103,10 +115,10 @@ def build_safety_metadata(
 
 
 def evaluate_input_guardrail(query_text: str) -> GuardrailDecision:
-    """Evaluate input guardrail (PLACEHOLDER — see module docstring)."""
+    """Evaluate input guardrail with safety scanner integration."""
     lowered = query_text.lower()
 
-    # English: word-boundary regex to avoid matching substrings of unrelated words
+    # --- Phase 1: existing intent+target check ---
     _intent_en = re.compile(
         r"\b(?:leak|exfiltrat|bypass|circulvent|dump|hack|crack"
         r"|steal|sniff|scrape|extract)\b"
@@ -137,6 +149,25 @@ def evaluate_input_guardrail(query_text: str) -> GuardrailDecision:
 
     if has_intent and has_target:
         return GuardrailDecision(True, GuardrailReason.PERMISSION_OR_PRIVACY_RISK.value)
+
+    # --- Phase 2: safety scanner ---
+    scan_result = SafetyScanner.scan(query_text)
+
+    if scan_result.category == SafetyCategory.INJECTION_RISK:
+        return GuardrailDecision(
+            True, GuardrailReason.INJECTION_RISK.value, scan_result
+        )
+
+    if scan_result.category == SafetyCategory.SENSITIVE_DATA_DETECTED:
+        if SafetyScanner.has_secret_patterns(scan_result):
+            return GuardrailDecision(
+                True,
+                GuardrailReason.SENSITIVE_DATA_DETECTED.value,
+                scan_result,
+            )
+        # phone/email only: allow through but carry scan_result for log redaction
+        return GuardrailDecision(False, scan_result=scan_result)
+
     return GuardrailDecision(False)
 
 

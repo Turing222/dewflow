@@ -106,3 +106,14 @@ def setup_logging() -> None:
     # 第三方访问/SQL 日志量大，默认降级以保留业务日志信噪比。
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+
+def redacted(text: str) -> str:
+    """Redact sensitive data from text for safe logging.
+
+    Strips API keys, passwords, phone numbers, and emails. Only applies to
+    sensitive-data patterns — injection keywords are left intact.
+    """
+    from backend.services.safety_scanner import SafetyScanner
+
+    return SafetyScanner.redact(text)

@@ -13,8 +13,10 @@ from backend.application.chat.worker_stream_publisher import WorkerStreamPublish
 from backend.config.ai_settings import ai_settings
 from backend.models.schemas.chat.payloads import GenerationResult
 from backend.services.chat_safety_metadata import (
+    INJECTION_REFUSAL_MESSAGE,
     SAFETY_REFUSAL_MESSAGE,
     GuardrailDecision,
+    GuardrailReason,
     ResponseOutcome,
     build_rag_refusal_metadata,
     build_safety_metadata,
@@ -49,13 +51,18 @@ class WorkerGuardrailHandler:
         start_time: float,
         idempotency_lock_key: str | None,
     ) -> None:
-        tokens_output = self._count_output_tokens(SAFETY_REFUSAL_MESSAGE)
+        refusal_message = (
+            INJECTION_REFUSAL_MESSAGE
+            if input_decision.reason == GuardrailReason.INJECTION_RISK.value
+            else SAFETY_REFUSAL_MESSAGE
+        )
+        tokens_output = self._count_output_tokens(refusal_message)
         if self._stream_publisher is not None:
-            await self._stream_publisher.publish_chunk(channel, SAFETY_REFUSAL_MESSAGE)
+            await self._stream_publisher.publish_chunk(channel, refusal_message)
         await self._persist_refusal(
             assistant_message_id=assistant_message_id,
             user_id=user_id,
-            content=SAFETY_REFUSAL_MESSAGE,
+            content=refusal_message,
             tokens_input=0,
             tokens_output=tokens_output,
             search_context=None,
@@ -104,11 +111,16 @@ class WorkerGuardrailHandler:
         start_time: float,
         idempotency_lock_key: str | None,
     ) -> GenerationResult:
-        tokens_output = self._count_output_tokens(SAFETY_REFUSAL_MESSAGE)
+        refusal_message = (
+            INJECTION_REFUSAL_MESSAGE
+            if input_decision.reason == GuardrailReason.INJECTION_RISK.value
+            else SAFETY_REFUSAL_MESSAGE
+        )
+        tokens_output = self._count_output_tokens(refusal_message)
         await self._persist_refusal(
             assistant_message_id=assistant_message_id,
             user_id=user_id,
-            content=SAFETY_REFUSAL_MESSAGE,
+            content=refusal_message,
             tokens_input=0,
             tokens_output=tokens_output,
             search_context=None,
@@ -121,7 +133,7 @@ class WorkerGuardrailHandler:
         )
         return GenerationResult(
             success=True,
-            content=SAFETY_REFUSAL_MESSAGE,
+            content=refusal_message,
             tokens_input=0,
             tokens_output=tokens_output,
         )

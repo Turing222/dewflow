@@ -21,6 +21,7 @@ from backend.models.orm.knowledge import FileStatus
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chunking_service import ChunkingService, ChunkPayload
 from backend.services.knowledge_service import KnowledgeService
+from backend.services.safety_scanner import SafetyScanner
 from backend.services.vector_index_service import VectorIndexService
 
 
@@ -184,6 +185,10 @@ class KnowledgeRAGWorkflow:
                 meta_info["section_path"] = section_path
             if page_label:
                 meta_info["page_label"] = page_label
+
+            scan_result = SafetyScanner.scan(content)
+            meta_info["injection_risk"] = scan_result.injection_risk
+            meta_info["sensitive_data_risk"] = scan_result.sensitive_data_risk
 
             prepared = dict(chunk)
             prepared["content"] = content
