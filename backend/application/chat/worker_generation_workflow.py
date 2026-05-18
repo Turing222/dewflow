@@ -39,6 +39,12 @@ from backend.services.chat_safety_metadata import (
     evaluate_input_guardrail,
     evaluate_output_guardrail,
 )
+from backend.services.citation_validator import (
+    CitationResult,
+    StreamingCitationFilter,
+    extract_valid_ref_ids,
+    validate_citations,
+)
 from backend.services.rag_evidence_policy import RAGEvidencePolicy
 from backend.services.rag_planning_service import RAGPlanningService
 
@@ -212,6 +218,19 @@ class LLMGenerationWorkerWorkflow:
         )
         return count_tokens(content, model_name)
 
+    @staticmethod
+    def _enrich_metadata_with_citation(
+        metadata: dict[str, object],
+        *,
+        citation_result: CitationResult | None,
+    ) -> dict[str, object]:
+        if citation_result is not None:
+            metadata["citation"] = {
+                "total": citation_result.total_citations,
+                "removed_count": citation_result.removed_count,
+            }
+        return metadata
+
     # ── Streaming ──────────────────────────────────────────────────
 
     async def generate_stream(
@@ -271,6 +290,11 @@ class LLMGenerationWorkerWorkflow:
                     channel=channel,
                 ),
             ) as span:
+                citation_filter: StreamingCitationFilter | None = None
+                if search_context is not None:
+                    valid_ref_ids = extract_valid_ref_ids(search_context)
+                    if valid_ref_ids:
+                        citation_filter = StreamingCitationFilter(valid_ref_ids)
                 async with llm_concurrency_slot(
                     {
                         "chat.session_id": payload.session_id,
@@ -282,9 +306,6 @@ class LLMGenerationWorkerWorkflow:
                         candidate_content = "".join([*accumulated_content, chunk])
                         output_decision = evaluate_output_guardrail(candidate_content)
                         if output_decision.triggered:
-                            # Provider streaming lacks a cancel token here, so we stop
-                            # consuming before unsafe content is published and rely on
-                            # future provider-level cancellation to reduce token waste.
                             accumulated_content.append(chunk)
                             output_blocked = True
                             await self.stream_publisher.publish_chunk(
@@ -293,7 +314,16 @@ class LLMGenerationWorkerWorkflow:
                             )
                             break
                         accumulated_content.append(chunk)
-                        await self.stream_publisher.publish_chunk(channel, chunk)
+                        if citation_filter is not None:
+                            cleaned = citation_filter.push(chunk)
+                            if cleaned is not None:
+                                await self.stream_publisher.publish_chunk(channel, cleaned)
+                        else:
+                            await self.stream_publisher.publish_chunk(channel, chunk)
+                    if not output_blocked and citation_filter is not None:
+                        remaining = citation_filter.flush()
+                        if remaining:
+                            await self.stream_publisher.publish_chunk(channel, remaining)
 
                 full_content = "".join(accumulated_content)
                 if output_blocked:
@@ -303,6 +333,12 @@ class LLMGenerationWorkerWorkflow:
                 else:
                     output_decision = evaluate_output_guardrail(full_content)
                     content_to_persist = full_content
+                citation_result: CitationResult | None = None
+                if not output_blocked and search_context is not None and content_to_persist:
+                    valid_ref_ids = extract_valid_ref_ids(search_context)
+                    if valid_ref_ids:
+                        citation_result = validate_citations(content_to_persist, valid_ref_ids)
+                        content_to_persist = citation_result.cleaned_content
                 tokens_output = self._count_output_tokens(content_to_persist)
                 await self._persist_success_and_idempotency(
                     assistant_message_id=assistant_message_id,
@@ -312,13 +348,23 @@ class LLMGenerationWorkerWorkflow:
                     tokens_output=tokens_output,
                     search_context=search_context,
                     start_time=start_time,
-                    message_metadata=build_guardrail_success_metadata(
-                        output_decision=output_decision,
-                        original_content=full_content,
+                    message_metadata=self._enrich_metadata_with_citation(
+                        build_guardrail_success_metadata(
+                            output_decision=output_decision,
+                            original_content=full_content,
+                        ),
+                        citation_result=citation_result,
                     ),
                     idempotency_lock_key=idempotency_lock_key,
                 )
 
+                citation_attrs: dict[str, object] = {}
+                if citation_result is not None:
+                    citation_attrs = {
+                        "citation.total": citation_result.total_citations,
+                        "citation.valid": citation_result.total_citations - citation_result.removed_count,
+                        "citation.removed": citation_result.removed_count,
+                    }
                 set_span_attributes(
                     span,
                     {
@@ -328,6 +374,7 @@ class LLMGenerationWorkerWorkflow:
                         "chat.tokens_output": tokens_output,
                         "gen_ai.usage.input_tokens": tokens_input,
                         "gen_ai.usage.output_tokens": tokens_output,
+                        **citation_attrs,
                     },
                 )
             logger.info("TaskIQ Worker 成功结束流式处理: %s", channel)
@@ -425,6 +472,12 @@ class LLMGenerationWorkerWorkflow:
                 if output_decision.triggered
                 else original_content
             )
+            citation_result: CitationResult | None = None
+            if not output_decision.triggered and search_context is not None and full_content:
+                valid_ref_ids = extract_valid_ref_ids(search_context)
+                if valid_ref_ids:
+                    citation_result = validate_citations(full_content, valid_ref_ids)
+                    full_content = citation_result.cleaned_content
             tokens_output = (
                 self._count_output_tokens(full_content)
                 if output_decision.triggered
@@ -439,12 +492,26 @@ class LLMGenerationWorkerWorkflow:
                 tokens_output=tokens_output,
                 search_context=search_context,
                 start_time=start_time,
-                message_metadata=build_guardrail_success_metadata(
-                    output_decision=output_decision,
-                    original_content=original_content,
+                message_metadata=self._enrich_metadata_with_citation(
+                    build_guardrail_success_metadata(
+                        output_decision=output_decision,
+                        original_content=original_content,
+                    ),
+                    citation_result=citation_result,
                 ),
                 idempotency_lock_key=idempotency_lock_key,
             )
+
+            if citation_result is not None:
+                with trace_span(
+                    "taskiq.llm_nonstream.citation_validate",
+                    {
+                        "citation.total": citation_result.total_citations,
+                        "citation.valid": citation_result.total_citations - citation_result.removed_count,
+                        "citation.removed": citation_result.removed_count,
+                    },
+                ):
+                    pass
 
             logger.info(
                 "TaskIQ Worker 成功结束非流式处理: session_id=%s, message_id=%s",
