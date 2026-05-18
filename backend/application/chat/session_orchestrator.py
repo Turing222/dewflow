@@ -17,7 +17,7 @@ from backend.application.chat.history_projection import history_to_conversation_
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.concurrency import db_concurrency_slot
-from backend.core.exceptions import app_validation_error
+from backend.core.exceptions import AppException, app_bad_request, app_validation_error
 from backend.infra.redis import safe_release_lock
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.models.schemas.chat.payloads import GenerationPayload
@@ -115,6 +115,25 @@ class ChatSessionOrchestrator:
         trace_attrs: dict[str, object],
         span_prefix: str,
     ) -> ChatPreparedRequest:
+        try:
+            return await self._prepare_request_inner(
+                command=command,
+                idempotency=idempotency,
+                trace_attrs=trace_attrs,
+                span_prefix=span_prefix,
+            )
+        except AppException:
+            await self.release_idempotency(idempotency)
+            raise
+
+    async def _prepare_request_inner(
+        self,
+        *,
+        command: ChatQueryCommand,
+        idempotency: ChatIdempotencyState,
+        trace_attrs: dict[str, object],
+        span_prefix: str,
+    ) -> ChatPreparedRequest:
         async with db_concurrency_slot(trace_attrs):
             async with self.uow:
                 with trace_span(
@@ -123,7 +142,6 @@ class ChatSessionOrchestrator:
                 ) as span:
                     user = await self.uow.user_repo.get_with_lock(command.user_id)
                     if user and user.used_tokens >= user.max_tokens:
-                        await self.release_idempotency(idempotency)
                         raise app_validation_error(
                             "Token 余额不足",
                             code="TOKEN_QUOTA_EXCEEDED",
@@ -151,7 +169,20 @@ class ChatSessionOrchestrator:
                         session_id=command.session_id,
                         kb_id=resolved_kb_id,
                     )
-                    effective_kb_id = command.kb_id or session.kb_id
+                    # 已有会话：session.kb_id 不可覆盖；新会话：使用经权限校验的 resolved_kb_id。
+                    if command.session_id is not None:
+                        if command.kb_id is not None and command.kb_id != session.kb_id:
+                            raise app_bad_request(
+                                "请求的知识库与会话绑定的知识库不一致",
+                                code="KB_ID_MISMATCH",
+                                details={
+                                    "request_kb_id": str(command.kb_id),
+                                    "session_kb_id": str(session.kb_id),
+                                },
+                            )
+                        effective_kb_id = session.kb_id
+                    else:
+                        effective_kb_id = resolved_kb_id or session.kb_id
                     await session_manager.create_user_message(
                         session_id=session.id,
                         content=command.query_text,

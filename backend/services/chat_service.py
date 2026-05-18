@@ -64,6 +64,13 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                         code="CHAT_SESSION_FORBIDDEN",
                         details={"session_id": str(session_id)},
                     )
+            # 恢复已有会话时重新校验 KB 访问权限，防止 workspace 成员被移除后仍能通过旧会话查询 KB。
+            if session.kb_id is not None:
+                await self._revalidate_kb_access(
+                    kb_id=session.kb_id,
+                    user_id=user_id,
+                    session_id=session.id,
+                )
             logger.debug("继续已有会话: session_id=%s", session_id)
             return session
 
@@ -147,6 +154,55 @@ class SessionManager(BaseService[AbstractUnitOfWork]):
                 details={"workspace_id": str(workspace_id)},
             )
         return workspace_id
+
+    async def _revalidate_kb_access(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+    ) -> None:
+        """重新校验用户是否仍有权访问会话绑定的知识库。
+
+        处理 workspace 成员被移除后仍持有旧会话的场景。
+        """
+        kb = await self.uow.knowledge_repo.get_kb(kb_id)
+        if not kb:
+            return  # KB 已删除；FK ondelete=SET NULL 会在下次加载时清空 kb_id
+
+        if kb.workspace_id is not None:
+            if not await self._has_workspace_permission(
+                user_id=user_id,
+                workspace_id=kb.workspace_id,
+                permission=Permission.CHAT_WRITE,
+            ):
+                logger.warning(
+                    "用户已无权访问会话绑定的知识库: session_id=%s, kb_id=%s, "
+                    "workspace_id=%s, user_id=%s",
+                    session_id,
+                    kb_id,
+                    kb.workspace_id,
+                    user_id,
+                )
+                raise app_forbidden(
+                    "无权访问该会话关联的知识库",
+                    code="KNOWLEDGE_BASE_FORBIDDEN",
+                    details={"kb_id": str(kb_id), "session_id": str(session_id)},
+                )
+            return
+
+        if kb.user_id != user_id:
+            logger.warning(
+                "用户非知识库 owner，无权访问: session_id=%s, kb_id=%s, user_id=%s",
+                session_id,
+                kb_id,
+                user_id,
+            )
+            raise app_forbidden(
+                "无权访问该会话关联的知识库",
+                code="KNOWLEDGE_BASE_FORBIDDEN",
+                details={"kb_id": str(kb_id), "session_id": str(session_id)},
+            )
 
     async def _has_workspace_permission(
         self,

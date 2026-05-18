@@ -90,6 +90,8 @@ class TestSessionManagerEnsureSession:
         existing_session = MagicMock(spec=ChatSession)
         existing_session.user_id = user_id
         existing_session.id = session_id
+        existing_session.kb_id = None
+        existing_session.workspace_id = None
         mock_uow.chat_repo.get_session.return_value = existing_session
 
         result = await session_manager.ensure_session(
@@ -155,6 +157,147 @@ class TestSessionManagerEnsureSession:
 
         assert exc_info.value.code == "KNOWLEDGE_BASE_NOT_FOUND"
         assert str(kb_id) in exc_info.value.message
+
+    # --- KB access re-validation for existing sessions ---
+
+    async def test_ensure_session_existing_no_kb_id_allowed(
+        self, session_manager: SessionManager, mock_uow: AsyncMock
+    ) -> None:
+        """已有会话 + session.kb_id 非空 + 用户仍有 KB 权限 → 允许。"""
+        user_id = uuid.uuid4()
+        session_id = uuid.uuid4()
+        kb_id = uuid.uuid4()
+        workspace_id = uuid.uuid4()
+
+        existing_session = MagicMock(spec=ChatSession)
+        existing_session.user_id = user_id
+        existing_session.id = session_id
+        existing_session.kb_id = kb_id
+        existing_session.workspace_id = workspace_id
+        mock_uow.chat_repo.get_session.return_value = existing_session
+
+        kb = MagicMock()
+        kb.workspace_id = workspace_id
+        kb.user_id = user_id
+        mock_uow.knowledge_repo.get_kb.return_value = kb
+
+        session_manager.permission_service.has_permission_for_user_id = AsyncMock(
+            return_value=True
+        )
+
+        result = await session_manager.ensure_session(
+            user_id=user_id,
+            query_text="继续对话",
+            session_id=session_id,
+        )
+        assert result == existing_session
+
+    async def test_ensure_session_existing_kb_revoked_workspace(
+        self, session_manager: SessionManager, mock_uow: AsyncMock
+    ) -> None:
+        """已有会话 + 用户被移出 workspace → 拒绝 KB 访问。"""
+        owner_id = uuid.uuid4()
+        session_id = uuid.uuid4()
+        kb_id = uuid.uuid4()
+        workspace_id = uuid.uuid4()
+
+        existing_session = MagicMock(spec=ChatSession)
+        existing_session.user_id = owner_id
+        existing_session.id = session_id
+        existing_session.kb_id = kb_id
+        existing_session.workspace_id = workspace_id
+        mock_uow.chat_repo.get_session.return_value = existing_session
+
+        kb = MagicMock()
+        kb.workspace_id = workspace_id
+        kb.user_id = owner_id
+        mock_uow.knowledge_repo.get_kb.return_value = kb
+
+        session_manager.permission_service.has_permission_for_user_id = AsyncMock(
+            return_value=False
+        )
+
+        with pytest.raises(AppException) as exc_info:
+            await session_manager.ensure_session(
+                user_id=owner_id,
+                query_text="继续对话",
+                session_id=session_id,
+            )
+        assert exc_info.value.code == "KNOWLEDGE_BASE_FORBIDDEN"
+
+    async def test_ensure_session_existing_personal_kb_not_owner(
+        self, session_manager: SessionManager, mock_uow: AsyncMock
+    ) -> None:
+        """已有会话 + personal KB owner 不是当前用户 → 拒绝。"""
+        current_user_id = uuid.uuid4()
+        other_user_id = uuid.uuid4()
+        session_id = uuid.uuid4()
+        kb_id = uuid.uuid4()
+
+        existing_session = MagicMock(spec=ChatSession)
+        existing_session.user_id = current_user_id
+        existing_session.id = session_id
+        existing_session.kb_id = kb_id
+        existing_session.workspace_id = None
+        mock_uow.chat_repo.get_session.return_value = existing_session
+
+        kb = MagicMock()
+        kb.workspace_id = None
+        kb.user_id = other_user_id  # KB 属于另一个用户
+        mock_uow.knowledge_repo.get_kb.return_value = kb
+
+        with pytest.raises(AppException) as exc_info:
+            await session_manager.ensure_session(
+                user_id=current_user_id,
+                query_text="继续对话",
+                session_id=session_id,
+            )
+        assert exc_info.value.code == "KNOWLEDGE_BASE_FORBIDDEN"
+
+    async def test_ensure_session_existing_no_kb_skips_revalidation(
+        self, session_manager: SessionManager, mock_uow: AsyncMock
+    ) -> None:
+        """已有会话 + session.kb_id=None → 跳过 KB 重新校验。"""
+        user_id = uuid.uuid4()
+        session_id = uuid.uuid4()
+
+        existing_session = MagicMock(spec=ChatSession)
+        existing_session.user_id = user_id
+        existing_session.id = session_id
+        existing_session.kb_id = None
+        existing_session.workspace_id = None
+        mock_uow.chat_repo.get_session.return_value = existing_session
+
+        result = await session_manager.ensure_session(
+            user_id=user_id,
+            query_text="继续对话",
+            session_id=session_id,
+        )
+        assert result == existing_session
+        mock_uow.knowledge_repo.get_kb.assert_not_called()
+
+    async def test_ensure_session_existing_kb_deleted_allowed(
+        self, session_manager: SessionManager, mock_uow: AsyncMock
+    ) -> None:
+        """已有会话 + KB 已被删除 → 允许（graceful）。"""
+        user_id = uuid.uuid4()
+        session_id = uuid.uuid4()
+
+        existing_session = MagicMock(spec=ChatSession)
+        existing_session.user_id = user_id
+        existing_session.id = session_id
+        existing_session.kb_id = uuid.uuid4()
+        existing_session.workspace_id = uuid.uuid4()
+        mock_uow.chat_repo.get_session.return_value = existing_session
+
+        mock_uow.knowledge_repo.get_kb.return_value = None
+
+        result = await session_manager.ensure_session(
+            user_id=user_id,
+            query_text="继续对话",
+            session_id=session_id,
+        )
+        assert result == existing_session
 
 
 class TestSessionManagerCreateMessages:
