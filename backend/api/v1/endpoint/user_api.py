@@ -33,7 +33,7 @@ UserImportServiceDep = Annotated[UserImportService, Depends(get_user_import_serv
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me")
 async def read_users_me(
     current_user: CurrentUserDep,
 ) -> UserResponse:
@@ -41,7 +41,7 @@ async def read_users_me(
     return user_resp_data
 
 
-@router.get("", response_model=UserResponse)
+@router.get("")
 async def read_user(
     search_params: Annotated[UserSearch, Depends()],
     _: SuperUserDep,
@@ -67,7 +67,7 @@ async def read_user(
     return UserResponse.model_validate(user)
 
 
-@router.patch("/{user_id}", response_model=UserResponse)
+@router.patch("/{user_id}")
 async def update_user(
     user_id: uuid.UUID,
     user_in: UserUpdate,
@@ -95,46 +95,50 @@ async def update_user(
         return UserResponse.model_validate(updated_user)
 
 
-@router.post("", response_model=UserResponse)
+@router.post("")
 async def create_user(
     user_in: UserCreate,
     current_user: SuperUserDep,
     user_service: UserServiceDep,
     audit_service: AuditServiceDep,
 ) -> UserResponse:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.USER_CREATE,
-        actor_user_id=current_user.id,
-        resource_type="user",
-        metadata={"username": user_in.username, "email": user_in.email},
-    ) as audit:
-        async with user_service.write():
-            user = await user_service.user_register_with_personal_workspace(user_in)
-            if not user:
-                raise app_bad_request("用户创建失败", code="USER_CREATION_FAILED")
-            audit.set_resource(resource_id=user.id)
-            return UserResponse.model_validate(user)
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.USER_CREATE,
+            actor_user_id=current_user.id,
+            resource_type="user",
+            metadata={"username": user_in.username, "email": user_in.email},
+        ) as audit,
+        user_service.write(),
+    ):
+        user = await user_service.user_register_with_personal_workspace(user_in)
+        if not user:
+            raise app_bad_request("用户创建失败", code="USER_CREATION_FAILED")
+        audit.set_resource(resource_id=user.id)
+        return UserResponse.model_validate(user)
 
 
-@router.post("/csv_upload", response_model=UserImportResponse)
+@router.post("/csv_upload")
 async def csv_balk_insert_users(
     file: UpFile,
     current_user: SuperUserDep,
     import_service: UserImportServiceDep,
     audit_service: AuditServiceDep,
 ) -> UserImportResponse:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.USER_IMPORT_CSV,
-        actor_user_id=current_user.id,
-        resource_type="user",
-        metadata={"filename": getattr(file, "filename", None)},
-    ) as audit:
-        async with import_service.write():
-            result = await import_service.import_from_upload(file)
-            audit.add_metadata(
-                total_rows=result.total_rows,
-                imported_rows=result.imported_rows,
-            )
-            return result
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.USER_IMPORT_CSV,
+            actor_user_id=current_user.id,
+            resource_type="user",
+            metadata={"filename": getattr(file, "filename", None)},
+        ) as audit,
+        import_service.write(),
+    ):
+        result = await import_service.import_from_upload(file)
+        audit.add_metadata(
+            total_rows=result.total_rows,
+            imported_rows=result.imported_rows,
+        )
+        return result

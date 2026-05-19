@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from typing import Any
+from typing import Any, ClassVar
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 class UserImportService(BaseService[AbstractUnitOfWork]):
     """用户批量导入编排服务。"""
 
-    HEADER_MAP = {
+    HEADER_MAP: ClassVar[dict[str, str]] = {
         "用户名": "username",
         "邮箱": "email",
         "username": "username",

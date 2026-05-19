@@ -82,6 +82,9 @@ jobs:
       - name: Run lint
         run: make qa-lint
 
+      - name: Run format check
+        run: make qa-format-check
+
       - name: Run typecheck
         run: make qa-typecheck
 

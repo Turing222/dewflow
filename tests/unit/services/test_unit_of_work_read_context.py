@@ -69,7 +69,9 @@ async def test_read_context_inside_active_uow_raises_runtime_error() -> None:
     uow = SQLAlchemyUnitOfWork(lambda: session)
 
     async with uow:
-        with pytest.raises(RuntimeError, match="Cannot open read_context inside an active UoW"):
+        with pytest.raises(
+            RuntimeError, match="Cannot open read_context inside an active UoW"
+        ):
             async with uow.read_context():
                 pass
 

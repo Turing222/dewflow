@@ -65,7 +65,9 @@ def make_user_role(**overrides: object) -> SimpleNamespace:
     return SimpleNamespace(**data)
 
 
-ServiceContext = tuple[WorkspaceService, SimpleNamespace, SimpleNamespace, SimpleNamespace, SimpleNamespace]
+ServiceContext = tuple[
+    WorkspaceService, SimpleNamespace, SimpleNamespace, SimpleNamespace, SimpleNamespace
+]
 
 
 def make_service(*, role: WorkspaceRole | None = WorkspaceRole.OWNER) -> ServiceContext:

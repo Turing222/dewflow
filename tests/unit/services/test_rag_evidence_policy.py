@@ -206,7 +206,9 @@ def test_rerank_score_below_threshold_refuses(
     decision = RAGEvidencePolicy().evaluate(
         kb_id=object(),
         rag_plan=plan,
-        chunks=[{"retrieval_mode": "hybrid", "evidence_score": 0.9, "rerank_score": 2.0}],
+        chunks=[
+            {"retrieval_mode": "hybrid", "evidence_score": 0.9, "rerank_score": 2.0}
+        ],
     )
 
     assert decision.should_refuse is True
@@ -241,7 +243,9 @@ def test_rerank_score_at_threshold_allows(
     decision = RAGEvidencePolicy().evaluate(
         kb_id=object(),
         rag_plan=plan,
-        chunks=[{"retrieval_mode": "hybrid", "evidence_score": 0.1, "rerank_score": 4.0}],
+        chunks=[
+            {"retrieval_mode": "hybrid", "evidence_score": 0.1, "rerank_score": 4.0}
+        ],
     )
 
     assert decision.should_refuse is False

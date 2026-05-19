@@ -63,7 +63,9 @@ class PydanticAILLMService(AbstractLLMService):
                 provider=provider_name or resolved_profile.provider,
                 model=model_name or resolved_profile.model,
                 base_url=(
-                    base_url if base_url is not None else resolved_profile.resolve_base_url()
+                    base_url
+                    if base_url is not None
+                    else resolved_profile.resolve_base_url()
                 ),
                 api_key_envs=resolved_profile.api_key_envs,
                 aliases=resolved_profile.aliases,
@@ -71,10 +73,14 @@ class PydanticAILLMService(AbstractLLMService):
             )
         )
         self.provider_name = provider_name or self.profile.provider
-        self.api_key = api_key if api_key is not None else self.profile.resolve_api_key()
+        self.api_key = (
+            api_key if api_key is not None else self.profile.resolve_api_key()
+        )
         self.model_name = self.profile.model
         self.max_retries = max_retries
-        self._extra_body = extra_body if extra_body is not None else self.profile.extra_body
+        self._extra_body = (
+            extra_body if extra_body is not None else self.profile.extra_body
+        )
         self._circuit = CircuitBreaker(
             name="llm",
             failure_threshold=(
@@ -188,7 +194,9 @@ class PydanticAILLMService(AbstractLLMService):
                 content = str(getattr(result, "output", ""))
                 latency_ms = int((time.perf_counter() - start) * 1000)
                 prompt_tokens, completion_tokens = _usage_tokens(result)
-                completion_tokens = completion_tokens or count_tokens(content, self.model_name)
+                completion_tokens = completion_tokens or count_tokens(
+                    content, self.model_name
+                )
                 set_span_attributes(
                     span,
                     {

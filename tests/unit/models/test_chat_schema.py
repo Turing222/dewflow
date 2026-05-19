@@ -18,9 +18,7 @@ def test_extra_body_accepts_thinking_mode() -> None:
     )
 
     assert request.extra_body is not None
-    assert request.extra_body.to_provider_dict() == {
-        "thinking": {"type": "disabled"}
-    }
+    assert request.extra_body.to_provider_dict() == {"thinking": {"type": "disabled"}}
 
 
 def test_extra_body_rejects_unknown_keys() -> None:

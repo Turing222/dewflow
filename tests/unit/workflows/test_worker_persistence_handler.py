@@ -39,7 +39,9 @@ async def test_persist_success_token_limit_exceeded_writes_failed(
         WorkerPersistenceHandler,
     )
 
-    handler = WorkerPersistenceHandler(uow=fake_persistence_uow, redis_client=fake_persistence_redis)
+    handler = WorkerPersistenceHandler(
+        uow=fake_persistence_uow, redis_client=fake_persistence_redis
+    )
 
     assistant_message_id = uuid.uuid4()
     fake_persistence_uow.user_repo.try_increment_used_tokens_with_limit = AsyncMock(
@@ -70,7 +72,9 @@ async def test_persist_success_assistant_message_id_none_skips(
         WorkerPersistenceHandler,
     )
 
-    handler = WorkerPersistenceHandler(uow=fake_persistence_uow, redis_client=fake_persistence_redis)
+    handler = WorkerPersistenceHandler(
+        uow=fake_persistence_uow, redis_client=fake_persistence_redis
+    )
 
     await handler.persist_success(
         assistant_message_id=None,
@@ -97,7 +101,9 @@ async def test_persist_failure_redis_lock_cleanup_fails_still_writes_message(
     mock_redis_conn.delete = AsyncMock(side_effect=ConnectionError("Redis gone"))
     fake_persistence_redis.init = AsyncMock(return_value=mock_redis_conn)
 
-    handler = WorkerPersistenceHandler(uow=fake_persistence_uow, redis_client=fake_persistence_redis)
+    handler = WorkerPersistenceHandler(
+        uow=fake_persistence_uow, redis_client=fake_persistence_redis
+    )
 
     await handler.persist_failure(
         assistant_message_id=uuid.uuid4(),
@@ -124,7 +130,9 @@ async def test_persist_failure_update_throws_swallowed(
         side_effect=RuntimeError("DB error")
     )
 
-    handler = WorkerPersistenceHandler(uow=fake_persistence_uow, redis_client=fake_persistence_redis)
+    handler = WorkerPersistenceHandler(
+        uow=fake_persistence_uow, redis_client=fake_persistence_redis
+    )
 
     await handler.persist_failure(
         assistant_message_id=uuid.uuid4(),

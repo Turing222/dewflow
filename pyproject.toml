@@ -60,8 +60,15 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "B", "I", "UP"]
-ignore = ["E501"]
+select = ["E", "F", "B", "I", "UP", "C4", "SIM", "PIE", "PTH", "FAST", "RUF012", "RUF022", "S", "T20", "ERA"]
+ignore = ["E501", "S101", "S108", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/**" = ["PTH", "SIM105", "ERA001", "S105", "T20"]
+"evals/**" = ["S105", "S603", "S607", "T20"]
+"perf/**" = ["S105", "S106", "T20"]
+"scripts/**" = ["S105", "S106", "S310", "S603", "S607", "T20"]
+"tests/**" = ["RUF012", "S105", "S106", "S603", "T20"]
 
 [tool.ruff.format]
 quote-style = "double"

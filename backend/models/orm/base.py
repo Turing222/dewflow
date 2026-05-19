@@ -92,9 +92,8 @@ class SoftDeleteMixin:
 @event.listens_for(Session, "do_orm_execute")
 def _apply_soft_delete_filter(execute_state):
     """全局自动拦截所有 ORM SELECT 查询，默认剔除已被软删除的数据。"""
-    if (
-        execute_state.is_select
-        and not execute_state.execution_options.get("include_deleted", False)
+    if execute_state.is_select and not execute_state.execution_options.get(
+        "include_deleted", False
     ):
         execute_state.statement = execute_state.statement.options(
             with_loader_criteria(

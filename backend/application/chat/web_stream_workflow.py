@@ -126,7 +126,7 @@ class ChatWorkflow:
                 idempotency=idempotency,
                 trace_attrs=trace_attrs,
                 span_prefix="chat.stream",
-        )
+            )
         except AppException as exc:
             yield error_event(str(exc))
             yield done_event()
@@ -165,20 +165,18 @@ class ChatWorkflow:
             await orchestrator.release_idempotency(idempotency)
             logger.warning("流式任务初始化失败: %s", exc)
             yield error_event(str(exc))
-            async with db_concurrency_slot(prepared.trace_attrs):
-                async with self.uow:
-                    updater = ChatMessageUpdater(self.uow)
-                    await updater.update_as_failed(assistant_msg.id)
+            async with db_concurrency_slot(prepared.trace_attrs), self.uow:
+                updater = ChatMessageUpdater(self.uow)
+                await updater.update_as_failed(assistant_msg.id)
             yield done_event()
             return
         except Exception as exc:
             await orchestrator.release_idempotency(idempotency)
             logger.error("流式任务初始化异常: %s", str(exc), exc_info=True)
             yield error_event("服务暂时不可用，请稍后重试")
-            async with db_concurrency_slot(prepared.trace_attrs):
-                async with self.uow:
-                    updater = ChatMessageUpdater(self.uow)
-                    await updater.update_as_failed(assistant_msg.id)
+            async with db_concurrency_slot(prepared.trace_attrs), self.uow:
+                updater = ChatMessageUpdater(self.uow)
+                await updater.update_as_failed(assistant_msg.id)
             yield done_event()
             return
 

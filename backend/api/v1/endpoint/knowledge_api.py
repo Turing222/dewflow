@@ -35,7 +35,6 @@ AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 @router.post(
     "/default/upload",
-    response_model=KnowledgeUploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def upload_file_to_default_kb(
@@ -72,7 +71,6 @@ async def upload_file_to_default_kb(
 
 @router.post(
     "/bases/{kb_id}/upload",
-    response_model=KnowledgeUploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def upload_file(
@@ -99,7 +97,7 @@ async def upload_file(
         return result
 
 
-@router.get("/tasks/{task_id}", response_model=TaskResponse)
+@router.get("/tasks/{task_id}")
 async def get_task_status(
     task_id: uuid.UUID,
     current_user: CurrentUserDep,
@@ -114,7 +112,7 @@ async def get_task_status(
     return TaskResponse.model_validate(task)
 
 
-@router.get("/files/{file_id}", response_model=KnowledgeFileResponse)
+@router.get("/files/{file_id}")
 async def get_file_status(
     file_id: uuid.UUID,
     current_user: CurrentUserDep,

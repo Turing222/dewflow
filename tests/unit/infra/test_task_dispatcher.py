@@ -6,7 +6,7 @@
 import json
 import pickle
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 

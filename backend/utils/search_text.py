@@ -42,8 +42,7 @@ def build_search_text(content: str) -> str:
     )
     parts = [normalized_content, " ".join(zh_tokens)]
     parts.extend(
-        " ".join(keyword_tokens)
-        for _ in range(ai_settings.SEARCH_TEXT_KEYWORD_REPEAT)
+        " ".join(keyword_tokens) for _ in range(ai_settings.SEARCH_TEXT_KEYWORD_REPEAT)
     )
     return "\n".join(part for part in parts if part)
 

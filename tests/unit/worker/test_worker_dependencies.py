@@ -89,7 +89,6 @@ def test_wrapper_functions_delegate_to_container_return_services() -> None:
     assert dependencies.get_worker_embedder() is container.embedder
     assert dependencies.get_worker_rag_service() is container.rag_service
     assert (
-        dependencies.get_worker_rag_planning_service()
-        is container.rag_planning_service
+        dependencies.get_worker_rag_planning_service() is container.rag_planning_service
     )
     assert dependencies.get_worker_object_storage() is container.object_storage

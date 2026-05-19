@@ -37,7 +37,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-boundaries qa-format qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
+	qa-lint qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	image-build \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
@@ -52,6 +52,7 @@ help:
 		'  qa-lint              Run Ruff lint checks' \
 		'  qa-boundaries        Check Web/Worker import boundaries' \
 		'  qa-format            Run Ruff formatter' \
+		'  qa-format-check      Check Ruff formatter without writing files' \
 		'  qa-typecheck         Run type checking' \
 			'  qa-layer-deps        Verify each extras layer can import independently' \
 			'  qa-alembic-check     Validate migration chain integrity' \
@@ -98,6 +99,9 @@ qa-boundaries:
 
 qa-format:
 	uv run ruff format .
+
+qa-format-check:
+	uv run ruff format --check .
 
 qa-typecheck:
 	uv run ty check .
@@ -201,6 +205,7 @@ verify-smoke:
 
 flow-static:
 	$(MAKE) qa-lint
+	$(MAKE) qa-format-check
 	$(MAKE) qa-boundaries
 	$(MAKE) qa-test-markers
 	$(MAKE) qa-typecheck

@@ -70,5 +70,5 @@ new_panels.append(alert_panel)
 
 data["panels"] = new_panels
 
-with open(file_path, "w") as f:
+with file_path.open("w") as f:
     json.dump(data, f, indent=4, ensure_ascii=False)

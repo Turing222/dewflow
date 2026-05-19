@@ -42,7 +42,9 @@ def _build_orchestrator() -> tuple[ChatSessionOrchestrator, MagicMock]:
     redis_client = AsyncMock()
     permission_service = MagicMock(spec=PermissionService)
     orchestrator = ChatSessionOrchestrator(
-        uow, redis_client, permission_service,
+        uow,
+        redis_client,
+        permission_service,
     )
     return orchestrator, uow
 
@@ -61,14 +63,16 @@ class TestKbIdMismatchRejection:
             used_tokens=0, max_tokens=1000
         )
 
-        session = MagicMock(id=session_id, user_id=user_id, kb_id=kb_id, workspace_id=None)
+        session = MagicMock(
+            id=session_id, user_id=user_id, kb_id=kb_id, workspace_id=None
+        )
         uow.chat_repo.get_session.return_value = session
 
         kb = MagicMock(workspace_id=None, user_id=user_id)
         uow.knowledge_repo.get_kb.return_value = kb
 
-        orchestrator._session_manager.permission_service.has_permission_for_user_id = AsyncMock(
-            return_value=True
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
         )
 
         assistant_msg = MagicMock(id=uuid.uuid4())
@@ -94,8 +98,10 @@ class TestKbIdMismatchRejection:
         ):
             prepared = await orchestrator.prepare_request(
                 command=ChatQueryCommand(
-                    user_id=user_id, query_text="test",
-                    session_id=session_id, kb_id=kb_id,
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=session_id,
+                    kb_id=kb_id,
                 ),
                 idempotency=_make_idempotency(),
                 trace_attrs={},
@@ -117,15 +123,18 @@ class TestKbIdMismatchRejection:
         )
 
         session = MagicMock(
-            id=session_id, user_id=user_id, kb_id=session_kb_id, workspace_id=None,
+            id=session_id,
+            user_id=user_id,
+            kb_id=session_kb_id,
+            workspace_id=None,
         )
         uow.chat_repo.get_session.return_value = session
 
         kb = MagicMock(workspace_id=None, user_id=user_id)
         uow.knowledge_repo.get_kb.return_value = kb
 
-        orchestrator._session_manager.permission_service.has_permission_for_user_id = AsyncMock(
-            return_value=True
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
         )
 
         with (
@@ -145,17 +154,19 @@ class TestKbIdMismatchRejection:
                 "backend.application.chat.session_orchestrator.history_to_conversation_messages",
                 return_value=[],
             ),
+            pytest.raises(AppException) as exc_info,
         ):
-            with pytest.raises(AppException) as exc_info:
-                await orchestrator.prepare_request(
-                    command=ChatQueryCommand(
-                        user_id=user_id, query_text="test",
-                        session_id=session_id, kb_id=different_kb_id,
-                    ),
-                    idempotency=_make_idempotency(),
-                    trace_attrs={},
-                    span_prefix="test",
-                )
+            await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=session_id,
+                    kb_id=different_kb_id,
+                ),
+                idempotency=_make_idempotency(),
+                trace_attrs={},
+                span_prefix="test",
+            )
 
         assert exc_info.value.code == "KB_ID_MISMATCH"
         assert exc_info.value.status_code == 400
@@ -172,15 +183,18 @@ class TestKbIdMismatchRejection:
         )
 
         session = MagicMock(
-            id=session_id, user_id=user_id, kb_id=session_kb_id, workspace_id=None,
+            id=session_id,
+            user_id=user_id,
+            kb_id=session_kb_id,
+            workspace_id=None,
         )
         uow.chat_repo.get_session.return_value = session
 
         kb = MagicMock(workspace_id=None, user_id=user_id)
         uow.knowledge_repo.get_kb.return_value = kb
 
-        orchestrator._session_manager.permission_service.has_permission_for_user_id = AsyncMock(
-            return_value=True
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
         )
 
         assistant_msg = MagicMock(id=uuid.uuid4())
@@ -206,8 +220,10 @@ class TestKbIdMismatchRejection:
         ):
             prepared = await orchestrator.prepare_request(
                 command=ChatQueryCommand(
-                    user_id=user_id, query_text="test",
-                    session_id=session_id, kb_id=None,
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=session_id,
+                    kb_id=None,
                 ),
                 idempotency=_make_idempotency(),
                 trace_attrs={},
@@ -229,8 +245,8 @@ class TestKbIdMismatchRejection:
         kb = MagicMock(id=kb_id, workspace_id=None, user_id=user_id)
         uow.knowledge_repo.get_kb.return_value = kb
 
-        orchestrator._session_manager.permission_service.has_permission_for_user_id = AsyncMock(
-            return_value=True
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
         )
 
         new_session = MagicMock(id=uuid.uuid4(), kb_id=kb_id, workspace_id=None)
@@ -259,8 +275,10 @@ class TestKbIdMismatchRejection:
         ):
             prepared = await orchestrator.prepare_request(
                 command=ChatQueryCommand(
-                    user_id=user_id, query_text="test",
-                    session_id=None, kb_id=kb_id,
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=None,
+                    kb_id=kb_id,
                 ),
                 idempotency=_make_idempotency(),
                 trace_attrs={},
@@ -286,15 +304,18 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
         )
 
         session = MagicMock(
-            id=session_id, user_id=user_id, kb_id=session_kb_id, workspace_id=None,
+            id=session_id,
+            user_id=user_id,
+            kb_id=session_kb_id,
+            workspace_id=None,
         )
         uow.chat_repo.get_session.return_value = session
 
         kb = MagicMock(workspace_id=None, user_id=user_id)
         uow.knowledge_repo.get_kb.return_value = kb
 
-        orchestrator._session_manager.permission_service.has_permission_for_user_id = AsyncMock(
-            return_value=True
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
         )
 
         with patch.object(
@@ -303,8 +324,10 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
             with pytest.raises(AppException) as exc_info:
                 await orchestrator.prepare_request(
                     command=ChatQueryCommand(
-                        user_id=user_id, query_text="test",
-                        session_id=session_id, kb_id=different_kb_id,
+                        user_id=user_id,
+                        query_text="test",
+                        session_id=session_id,
+                        kb_id=different_kb_id,
                     ),
                     idempotency=ChatIdempotencyState(
                         lock_key="idempotency:chat:test",
@@ -332,7 +355,10 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
         )
 
         session = MagicMock(
-            id=session_id, user_id=user_id, kb_id=kb_id, workspace_id=workspace_id,
+            id=session_id,
+            user_id=user_id,
+            kb_id=kb_id,
+            workspace_id=workspace_id,
         )
         uow.chat_repo.get_session.return_value = session
 
@@ -340,8 +366,8 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
         uow.knowledge_repo.get_kb.return_value = kb
 
         # 用户被移出 workspace
-        orchestrator._session_manager.permission_service.has_permission_for_user_id = AsyncMock(
-            return_value=False
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=False)
         )
 
         with patch.object(
@@ -350,8 +376,10 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
             with pytest.raises(AppException) as exc_info:
                 await orchestrator.prepare_request(
                     command=ChatQueryCommand(
-                        user_id=user_id, query_text="test",
-                        session_id=session_id, kb_id=None,
+                        user_id=user_id,
+                        query_text="test",
+                        session_id=session_id,
+                        kb_id=None,
                     ),
                     idempotency=ChatIdempotencyState(
                         lock_key="idempotency:chat:test",
@@ -379,20 +407,26 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
         )
 
         session = MagicMock(
-            id=session_id, user_id=user_id, kb_id=session_kb_id, workspace_id=None,
+            id=session_id,
+            user_id=user_id,
+            kb_id=session_kb_id,
+            workspace_id=None,
         )
         uow.chat_repo.get_session.return_value = session
 
         kb = MagicMock(workspace_id=None, user_id=user_id)
         uow.knowledge_repo.get_kb.return_value = kb
 
-        orchestrator._session_manager.permission_service.has_permission_for_user_id = AsyncMock(
-            return_value=True
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
         )
 
         # lock_key=None, lock_token=None → 无锁
         no_lock_idempotency = ChatIdempotencyState(
-            lock_key=None, lock_token=None, is_new=True, value=None,
+            lock_key=None,
+            lock_token=None,
+            is_new=True,
+            value=None,
         )
 
         with patch.object(
@@ -401,8 +435,10 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
             with pytest.raises(AppException) as exc_info:
                 await orchestrator.prepare_request(
                     command=ChatQueryCommand(
-                        user_id=user_id, query_text="test",
-                        session_id=session_id, kb_id=different_kb_id,
+                        user_id=user_id,
+                        query_text="test",
+                        session_id=session_id,
+                        kb_id=different_kb_id,
                     ),
                     idempotency=no_lock_idempotency,
                     trace_attrs={},

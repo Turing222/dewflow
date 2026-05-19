@@ -24,7 +24,9 @@ from backend.services.safety_scanner import (
 
 SCHEMA_VERSION = 1
 SAFETY_REFUSAL_MESSAGE = "抱歉，这个请求涉及安全或权限风险，暂时无法回答。"
-INJECTION_REFUSAL_MESSAGE = "抱歉，我无法处理包含指令覆盖或角色切换内容的请求。请用正常方式提问。"
+INJECTION_REFUSAL_MESSAGE = (
+    "抱歉，我无法处理包含指令覆盖或角色切换内容的请求。请用正常方式提问。"
+)
 
 
 class ResponseOutcome(StrEnum):
@@ -130,14 +132,28 @@ def evaluate_input_guardrail(query_text: str) -> GuardrailDecision:
     )
 
     risky_intent_cn = (
-        "泄露", "窃取", "绕过权限", "导出隐私",
-        "入侵", "盗取", "非法获取", "私自导出",
-        "越权", "脱库",
+        "泄露",
+        "窃取",
+        "绕过权限",
+        "导出隐私",
+        "入侵",
+        "盗取",
+        "非法获取",
+        "私自导出",
+        "越权",
+        "脱库",
     )
     risky_target_cn = (
-        "密码", "token", "api key", "密钥",
-        "身份证", "手机号", "银行卡", "验证码",
-        "支付密码", "登录密码",
+        "密码",
+        "token",
+        "api key",
+        "密钥",
+        "身份证",
+        "手机号",
+        "银行卡",
+        "验证码",
+        "支付密码",
+        "登录密码",
     )
 
     has_intent = bool(_intent_en.search(lowered)) or any(
@@ -180,13 +196,15 @@ def evaluate_output_guardrail(content: str) -> GuardrailDecision:
         r"|secret\s+is|credential[-\s:]+|ssn[-\s:])\b"
     )
     risky_marker_cn = (
-        "密码是", "token 是", "api key 是",
-        "密钥是", "身份证号是", "验证码是",
+        "密码是",
+        "token 是",
+        "api key 是",
+        "密钥是",
+        "身份证号是",
+        "验证码是",
     )
 
-    if _marker_en.search(lowered) or any(
-        kw in lowered for kw in risky_marker_cn
-    ):
+    if _marker_en.search(lowered) or any(kw in lowered for kw in risky_marker_cn):
         return GuardrailDecision(True, GuardrailReason.UNSAFE_OUTPUT.value)
     return GuardrailDecision(False)
 

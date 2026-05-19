@@ -42,24 +42,24 @@ _AI_EXPORTS = {
 }
 
 __all__ = [
-    "reusable_oauth2",
-    "get_uow",
-    "get_current_user",
-    "get_current_active_user",
-    "get_current_superuser",
-    "get_login_data",
     "get_audit_service",
     "get_chat_nonstream_workflow",
     "get_chat_workflow",
+    "get_current_active_user",
+    "get_current_superuser",
+    "get_current_user",
     "get_knowledge_service",
+    "get_knowledge_upload_workflow",
+    "get_login_data",
     "get_object_storage",
     "get_permission_service",
-    "get_knowledge_upload_workflow",
-    "get_task_service",
     "get_session_query_service",
-    "get_user_service",
+    "get_task_service",
+    "get_uow",
     "get_user_import_service",
+    "get_user_service",
     "get_workspace_service",
+    "reusable_oauth2",
 ]
 
 

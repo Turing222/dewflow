@@ -134,9 +134,7 @@ class TestRedact:
         )
 
     def test_replaces_aws_key(self) -> None:
-        assert "[REDACTED_AWS_KEY]" in SafetyScanner.redact(
-            "AKIAIOSFODNN7EXAMPLE"
-        )
+        assert "[REDACTED_AWS_KEY]" in SafetyScanner.redact("AKIAIOSFODNN7EXAMPLE")
 
     def test_replaces_password(self) -> None:
         redacted = SafetyScanner.redact("password=MySecretPass123")

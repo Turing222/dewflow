@@ -6,12 +6,10 @@
 """
 
 from backend.services.citation_validator import (
-    CitationResult,
     StreamingCitationFilter,
     extract_valid_ref_ids,
     validate_citations,
 )
-
 
 # ── validate_citations ────────────────────────────────────────────
 

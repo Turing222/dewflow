@@ -57,7 +57,9 @@ class KnowledgeRAGWorkflow:
                 if not success:
                     file_obj = await self.knowledge_service.get_file(file_id)
                     if not file_obj:
-                        raise app_not_found("文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND")
+                        raise app_not_found(
+                            "文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND"
+                        )
                     raise app_validation_error(
                         "文件状态不为 UPLOADED 或已被并发任务处理",
                         code="KNOWLEDGE_FILE_ALREADY_INGESTING",

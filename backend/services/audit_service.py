@@ -145,7 +145,9 @@ class AuditService(BaseService[AbstractUnitOfWork]):
 
     async def _record_independent(self, event: AuditEvent) -> None:
         if self.independent_uow_factory is None:
-            logger.warning("Audit event skipped because independent_uow_factory is unavailable")
+            logger.warning(
+                "Audit event skipped because independent_uow_factory is unavailable"
+            )
             return
 
         try:

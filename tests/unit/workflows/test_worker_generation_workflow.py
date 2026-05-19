@@ -74,7 +74,9 @@ class RecordingConcurrencySlot:
 def install_llm_slot_recorder(monkeypatch) -> list[dict]:
     calls: list[dict] = []
 
-    def fake_llm_concurrency_slot(attributes: dict | None = None) -> RecordingConcurrencySlot:
+    def fake_llm_concurrency_slot(
+        attributes: dict | None = None,
+    ) -> RecordingConcurrencySlot:
         return RecordingConcurrencySlot(calls, attributes)
 
     monkeypatch.setattr(
@@ -155,10 +157,14 @@ def make_rerank_impl(
 ) -> Callable[[str, list[dict], int | None], Awaitable[list[dict]]]:
     """Wire rerank through RAGService public helpers so LLM response affects chunk survival."""
 
-    async def _rerank_impl(query_text: str, candidates: list[dict], top_k: int | None = None) -> list[dict]:
+    async def _rerank_impl(
+        query_text: str, candidates: list[dict], top_k: int | None = None
+    ) -> list[dict]:
         from backend.services.rag_service import RAGService
 
-        prompt = RAGService.build_rerank_prompt(query_text=query_text, candidates=candidates)
+        prompt = RAGService.build_rerank_prompt(
+            query_text=query_text, candidates=candidates
+        )
         result = await llm_service.generate_response(
             type(
                 "LLMDTO",
@@ -173,12 +179,16 @@ def make_rerank_impl(
         if not result.success:
             raise ValueError(result.error_message or "LLM rerank failed")
         rankings = RAGService.parse_rerank_response(result.content)
-        return RAGService.apply_rankings(candidates=candidates, rankings=rankings, limit=top_k or 4)
+        return RAGService.apply_rankings(
+            candidates=candidates, rankings=rankings, limit=top_k or 4
+        )
 
     return _rerank_impl
 
 
-async def test_worker_generation_persists_success_and_publishes_done(monkeypatch) -> None:
+async def test_worker_generation_persists_success_and_publishes_done(
+    monkeypatch,
+) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
 
@@ -468,7 +478,9 @@ async def test_worker_output_guardrail_replaces_and_marks_p0(monkeypatch) -> Non
     assert metadata["badcase"]["reason"] == "should_refuse_but_answered"
 
 
-async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(monkeypatch) -> None:
+async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(
+    monkeypatch,
+) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
 
@@ -709,7 +721,9 @@ async def test_worker_generation_refuses_low_vector_score(monkeypatch) -> None:
     assert result.search_context["best_score"] == 0.1
 
 
-async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(monkeypatch) -> None:
+async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(
+    monkeypatch,
+) -> None:
     redis = FakeRedis()
     monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
@@ -811,7 +825,9 @@ async def test_worker_generation_does_not_plan_without_kb(monkeypatch) -> None:
     rag_service.retrieve.assert_not_awaited()
 
 
-async def test_worker_generation_skips_planner_when_candidates_exist(monkeypatch) -> None:
+async def test_worker_generation_skips_planner_when_candidates_exist(
+    monkeypatch,
+) -> None:
     redis = FakeRedis()
 
     planner = RecordingRAGPlanner(error=AssertionError("planner should not run"))
@@ -846,7 +862,9 @@ async def test_worker_generation_uses_fulltext_plan(monkeypatch) -> None:
         True,
     )
 
-    rag_service = RecordingRAGService([make_rag_hit(content="fulltext context", index=1)])
+    rag_service = RecordingRAGService(
+        [make_rag_hit(content="fulltext context", index=1)]
+    )
     planner = RecordingRAGPlanner(
         RAGExecutionPlan(
             should_use_rag=True,
@@ -1025,7 +1043,9 @@ async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch) -> None:
         True,
     )
 
-    rag_service = RecordingRAGService([make_rag_hit(content="low", index=0), make_rag_hit(content="high", index=1)])
+    rag_service = RecordingRAGService(
+        [make_rag_hit(content="low", index=0), make_rag_hit(content="high", index=1)]
+    )
     planner = RecordingRAGPlanner(
         RAGExecutionPlan(
             should_use_rag=True,
@@ -1120,7 +1140,9 @@ async def test_worker_generation_uses_planner_fallback_plan(monkeypatch) -> None
     )
 
 
-async def test_worker_generation_uses_planner_fallback_on_exception(monkeypatch) -> None:
+async def test_worker_generation_uses_planner_fallback_on_exception(
+    monkeypatch,
+) -> None:
     redis = FakeRedis()
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
@@ -1169,7 +1191,12 @@ def _make_search_context_with_refs() -> dict:
         "version": 1,
         "kb_id": str(uuid.uuid4()),
         "query": "test query",
-        "retrieval": {"hit_count": 3, "source_count": 2, "max_score": 0.9, "avg_score": 0.8},
+        "retrieval": {
+            "hit_count": 3,
+            "source_count": 2,
+            "max_score": 0.9,
+            "avg_score": 0.8,
+        },
         "refs": [
             {
                 "ref_id": "R1",
@@ -1178,8 +1205,22 @@ def _make_search_context_with_refs() -> dict:
                 "message_id": None,
                 "filename": "doc1.md",
                 "chunks": [
-                    {"ref_id": "R1.1", "chunk_id": str(uuid.uuid4()), "chunk_index": 0, "score": 0.9, "distance": 0.1, "meta_info": {}},
-                    {"ref_id": "R1.2", "chunk_id": str(uuid.uuid4()), "chunk_index": 1, "score": 0.8, "distance": 0.2, "meta_info": {}},
+                    {
+                        "ref_id": "R1.1",
+                        "chunk_id": str(uuid.uuid4()),
+                        "chunk_index": 0,
+                        "score": 0.9,
+                        "distance": 0.1,
+                        "meta_info": {},
+                    },
+                    {
+                        "ref_id": "R1.2",
+                        "chunk_id": str(uuid.uuid4()),
+                        "chunk_index": 1,
+                        "score": 0.8,
+                        "distance": 0.2,
+                        "meta_info": {},
+                    },
                 ],
             },
             {
@@ -1189,14 +1230,48 @@ def _make_search_context_with_refs() -> dict:
                 "message_id": None,
                 "filename": "doc2.md",
                 "chunks": [
-                    {"ref_id": "R2.1", "chunk_id": str(uuid.uuid4()), "chunk_index": 0, "score": 0.7, "distance": 0.3, "meta_info": {}},
+                    {
+                        "ref_id": "R2.1",
+                        "chunk_id": str(uuid.uuid4()),
+                        "chunk_index": 0,
+                        "score": 0.7,
+                        "distance": 0.3,
+                        "meta_info": {},
+                    },
                 ],
             },
         ],
         "chunks": [
-            {"ref_id": "R1.1", "id": str(uuid.uuid4()), "score": 0.9, "distance": 0.1, "source_type": "file", "file_id": str(uuid.uuid4()), "message_id": None, "chunk_index": 0},
-            {"ref_id": "R1.2", "id": str(uuid.uuid4()), "score": 0.8, "distance": 0.2, "source_type": "file", "file_id": str(uuid.uuid4()), "message_id": None, "chunk_index": 1},
-            {"ref_id": "R2.1", "id": str(uuid.uuid4()), "score": 0.7, "distance": 0.3, "source_type": "file", "file_id": str(uuid.uuid4()), "message_id": None, "chunk_index": 0},
+            {
+                "ref_id": "R1.1",
+                "id": str(uuid.uuid4()),
+                "score": 0.9,
+                "distance": 0.1,
+                "source_type": "file",
+                "file_id": str(uuid.uuid4()),
+                "message_id": None,
+                "chunk_index": 0,
+            },
+            {
+                "ref_id": "R1.2",
+                "id": str(uuid.uuid4()),
+                "score": 0.8,
+                "distance": 0.2,
+                "source_type": "file",
+                "file_id": str(uuid.uuid4()),
+                "message_id": None,
+                "chunk_index": 1,
+            },
+            {
+                "ref_id": "R2.1",
+                "id": str(uuid.uuid4()),
+                "score": 0.7,
+                "distance": 0.3,
+                "source_type": "file",
+                "file_id": str(uuid.uuid4()),
+                "message_id": None,
+                "chunk_index": 0,
+            },
         ],
     }
 
@@ -1209,13 +1284,20 @@ async def test_worker_nonstream_citation_removes_invalid_markers(monkeypatch) ->
     uow.chat_repo.update_message_status.return_value = object()
     uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
     llm_service = NonStreamingLLM(
-        LLMResultDTO(content="text [R1.1] more [R9.1] end", completion_tokens=10, latency_ms=50)
+        LLMResultDTO(
+            content="text [R1.1] more [R9.1] end", completion_tokens=10, latency_ms=50
+        )
     )
     search_context = _make_search_context_with_refs()
 
     async def fake_prepare(self, payload):
         from backend.models.schemas.chat.dto import LLMQueryDTO
-        dto = LLMQueryDTO(session_id=payload.session_id, query_text=payload.query_text, conversation_history=[])
+
+        dto = LLMQueryDTO(
+            session_id=payload.session_id,
+            query_text=payload.query_text,
+            conversation_history=[],
+        )
         return dto, 20, search_context
 
     monkeypatch.setattr(
@@ -1266,7 +1348,12 @@ async def test_worker_stream_citation_removes_invalid_markers(monkeypatch) -> No
 
     async def fake_prepare(self, payload):
         from backend.models.schemas.chat.dto import LLMQueryDTO
-        dto = LLMQueryDTO(session_id=payload.session_id, query_text=payload.query_text, conversation_history=[])
+
+        dto = LLMQueryDTO(
+            session_id=payload.session_id,
+            query_text=payload.query_text,
+            conversation_history=[],
+        )
         return dto, 20, search_context
 
     monkeypatch.setattr(
@@ -1305,6 +1392,7 @@ async def test_worker_stream_citation_removes_invalid_markers(monkeypatch) -> No
 
     # Verify published chunks contain no invalid markers
     from backend.application.chat.stream_events import decode_stream_event
+
     chunk_events = []
     for channel_name, payload in redis.published:
         if channel_name == "stream:test":
@@ -1324,7 +1412,9 @@ async def test_worker_citation_skips_when_no_search_context(monkeypatch) -> None
     uow.chat_repo.update_message_status.return_value = object()
     uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
     llm_service = NonStreamingLLM(
-        LLMResultDTO(content="no citations here [R1.1]", completion_tokens=5, latency_ms=10)
+        LLMResultDTO(
+            content="no citations here [R1.1]", completion_tokens=5, latency_ms=10
+        )
     )
 
     workflow = LLMGenerationWorkerWorkflow(
@@ -1366,7 +1456,12 @@ async def test_worker_citation_skips_when_guardrail_blocked(monkeypatch) -> None
 
     async def fake_prepare(self, payload):
         from backend.models.schemas.chat.dto import LLMQueryDTO
-        dto = LLMQueryDTO(session_id=payload.session_id, query_text=payload.query_text, conversation_history=[])
+
+        dto = LLMQueryDTO(
+            session_id=payload.session_id,
+            query_text=payload.query_text,
+            conversation_history=[],
+        )
         return dto, 20, search_context
 
     monkeypatch.setattr(
@@ -1399,7 +1494,9 @@ async def test_worker_citation_skips_when_guardrail_blocked(monkeypatch) -> None
     assert "citation" not in metadata
 
 
-async def test_worker_citation_records_zero_when_no_markers_in_output(monkeypatch) -> None:
+async def test_worker_citation_records_zero_when_no_markers_in_output(
+    monkeypatch,
+) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
 
@@ -1407,13 +1504,20 @@ async def test_worker_citation_records_zero_when_no_markers_in_output(monkeypatc
     uow.chat_repo.update_message_status.return_value = object()
     uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
     llm_service = NonStreamingLLM(
-        LLMResultDTO(content="plain answer with no citations", completion_tokens=8, latency_ms=30)
+        LLMResultDTO(
+            content="plain answer with no citations", completion_tokens=8, latency_ms=30
+        )
     )
     search_context = _make_search_context_with_refs()
 
     async def fake_prepare(self, payload):
         from backend.models.schemas.chat.dto import LLMQueryDTO
-        dto = LLMQueryDTO(session_id=payload.session_id, query_text=payload.query_text, conversation_history=[])
+
+        dto = LLMQueryDTO(
+            session_id=payload.session_id,
+            query_text=payload.query_text,
+            conversation_history=[],
+        )
         return dto, 20, search_context
 
     monkeypatch.setattr(

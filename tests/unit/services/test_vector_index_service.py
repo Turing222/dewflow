@@ -87,7 +87,9 @@ async def test_replace_file_chunks_uses_batch_embedding_returns_replaced() -> No
     assert {record["chunking_version"] for record in records} == {CHUNKING_VERSION}
 
 
-async def test_replace_file_chunks_prefers_embedding_content_for_structured_chunks() -> None:
+async def test_replace_file_chunks_prefers_embedding_content_for_structured_chunks() -> (
+    None
+):
     file_id = uuid.uuid4()
     repo = SimpleNamespace(
         delete_chunks_for_file=AsyncMock(),

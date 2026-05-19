@@ -45,7 +45,7 @@ def parse_csv_to_list(file_content: bytes) -> list[dict[str, Any]]:
         content_str = file_content.decode("utf-8-sig")
         f = io.StringIO(content_str)
         reader = csv.DictReader(f)
-        return [row for row in reader]
+        return list(reader)
     except UnicodeDecodeError as exc:
         raise app_validation_error(
             "文件编码格式不正确，请上传 UTF-8 编码的文件",

@@ -90,7 +90,9 @@ async def test_get_current_user_returns_loaded_user(
     auth_ctx.fake_service.get_by_id.return_value = user
 
     result = await auth.get_current_user(
-        uow=auth_ctx.uow, token="good-token", user_service=auth_ctx.fake_service,
+        uow=auth_ctx.uow,
+        token="good-token",
+        user_service=auth_ctx.fake_service,
     )
 
     assert result == user
@@ -111,7 +113,9 @@ async def test_get_current_user_returns_403_for_invalid_token(
 
     with pytest.raises(AppException) as exc_info:
         await auth.get_current_user(
-            uow=auth_ctx.uow, token="bad-token", user_service=auth_ctx.fake_service,
+            uow=auth_ctx.uow,
+            token="bad-token",
+            user_service=auth_ctx.fake_service,
         )
 
     assert exc_info.value.status_code == 403
@@ -127,7 +131,9 @@ async def test_get_current_user_returns_403_when_subject_missing(
 
     with pytest.raises(AppException) as exc_info:
         await auth.get_current_user(
-            uow=auth_ctx.uow, token="missing-sub", user_service=auth_ctx.fake_service,
+            uow=auth_ctx.uow,
+            token="missing-sub",
+            user_service=auth_ctx.fake_service,
         )
 
     assert exc_info.value.status_code == 403
@@ -144,7 +150,9 @@ async def test_get_current_user_returns_404_when_user_missing(
 
     with pytest.raises(AppException) as exc_info:
         await auth.get_current_user(
-            uow=auth_ctx.uow, token="good-token", user_service=auth_ctx.fake_service,
+            uow=auth_ctx.uow,
+            token="good-token",
+            user_service=auth_ctx.fake_service,
         )
 
     assert exc_info.value.status_code == 404

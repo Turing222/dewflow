@@ -71,7 +71,9 @@ def test_embedding_profile_does_not_fallback_to_llm_base_url(
     )
     config = load_llm_model_config()
 
-    assert config.resolve_embedding_profile("openai-compatible").resolve_base_url() is None
+    assert (
+        config.resolve_embedding_profile("openai-compatible").resolve_base_url() is None
+    )
 
 
 def test_llm_profile_extra_body_rejects_unknown_keys(tmp_path: Path) -> None:

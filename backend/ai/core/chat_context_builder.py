@@ -171,9 +171,7 @@ class ChatContextBuilder:
         )
 
         # 4. Assemble prompt
-        prompt_manager = (
-            self.rag_prompt_manager if rag_chunks else self.prompt_manager
-        )
+        prompt_manager = self.rag_prompt_manager if rag_chunks else self.prompt_manager
         search_context = rag_references.search_context if rag_chunks else None
 
         context_chunks = self._fit_context_chunks(
@@ -320,9 +318,7 @@ class ChatContextBuilder:
                 role = getattr(msg, "role", None)
                 content = getattr(msg, "content", None)
             if role in ("user", "assistant") and content:
-                history.append(
-                    {"role": role, "content": str(content)}
-                )
+                history.append({"role": role, "content": str(content)})
         return history
 
     # ── RAG retrieval ──────────────────────────────────────────────
@@ -497,7 +493,9 @@ class ChatContextBuilder:
         )
 
     @staticmethod
-    def _copy_optional_evidence_fields(source: dict[str, Any], target: dict[str, Any]) -> None:
+    def _copy_optional_evidence_fields(
+        source: dict[str, Any], target: dict[str, Any]
+    ) -> None:
         for key in (
             "retrieval_mode",
             "score_kind",

@@ -24,7 +24,9 @@ from backend.models.schemas.chat.payloads import GenerationResult
 pytestmark = pytest.mark.asyncio
 
 
-def _build_workflow(uow=None, dispatcher=None, redis_client=None) -> ChatNonStreamWorkflow:
+def _build_workflow(
+    uow=None, dispatcher=None, redis_client=None
+) -> ChatNonStreamWorkflow:
     return ChatNonStreamWorkflow(
         uow=uow or MagicMock(),
         dispatcher=dispatcher or AsyncMock(),
@@ -167,7 +169,9 @@ async def test_token_quota_exceeded_raises_error() -> None:
         )
 
 
-async def test_idempotency_replay_with_non_success_message_does_not_prepare_request() -> None:
+async def test_idempotency_replay_with_non_success_message_does_not_prepare_request() -> (
+    None
+):
     uow = MagicMock()
     user_id = uuid.uuid4()
     client_req_id = "test-req-failed"
@@ -179,9 +183,7 @@ async def test_idempotency_replay_with_non_success_message_does_not_prepare_requ
 
     failed_msg = MagicMock(status=MessageStatus.FAILED)
     uow.chat_repo = AsyncMock()
-    uow.chat_repo.get_message_by_client_request_id = AsyncMock(
-        return_value=failed_msg
-    )
+    uow.chat_repo.get_message_by_client_request_id = AsyncMock(return_value=failed_msg)
     uow.__aenter__.return_value = uow
 
     with (
@@ -227,9 +229,7 @@ async def test_idempotency_replay_with_success_message_returns_cached_answer() -
     )
     session = MagicMock(id=session_id, title="Cached Session")
     uow.chat_repo = AsyncMock()
-    uow.chat_repo.get_message_by_client_request_id = AsyncMock(
-        return_value=success_msg
-    )
+    uow.chat_repo.get_message_by_client_request_id = AsyncMock(return_value=success_msg)
     uow.chat_repo.get_session = AsyncMock(return_value=session)
     uow.read_context.return_value = uow
     uow.__aenter__.return_value = uow

@@ -42,7 +42,9 @@ async def _limited_client(fake_redis: FakeRedis) -> AsyncIterator[AsyncClient]:
         yield client
 
 
-async def test_records_allowed_result_returns_200(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_records_allowed_result_returns_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_redis = FakeRedis([1, 1])
 
     async def init_redis() -> FakeRedis:
@@ -63,7 +65,9 @@ async def test_records_allowed_result_returns_200(monkeypatch: pytest.MonkeyPatc
     assert fake_redis.calls
 
 
-async def test_rejects_when_window_is_full_returns_429(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_rejects_when_window_is_full_returns_429(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_redis = FakeRedis([0, 2])
 
     async def init_redis() -> FakeRedis:
@@ -82,7 +86,9 @@ async def test_rejects_when_window_is_full_returns_429(monkeypatch: pytest.Monke
     }
 
 
-async def test_uses_compact_unique_members_does_not_deduplicate(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_uses_compact_unique_members_does_not_deduplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_redis = FakeRedis([1, 1])
     random_values = iter([b"abcd", b"efgh"])
 

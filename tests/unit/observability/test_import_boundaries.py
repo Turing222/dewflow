@@ -15,7 +15,7 @@ _FORBIDDEN_DIRS = [
 
 
 def _collect_py_files() -> list[Path]:
-    root = Path(".")
+    root = Path()
     result: list[Path] = []
     for dir_path in _FORBIDDEN_DIRS:
         base = root / dir_path

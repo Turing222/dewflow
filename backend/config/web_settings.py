@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from backend.config.ai_settings import _env_files
 
-DEFAULT_SECRET_KEY = "local-dev-secret"
+DEFAULT_SECRET_KEY = "local-dev-secret"  # noqa: S105
 PRODUCTION_APP_ENVS = {"prod", "production"}
 PRODUCTION_CORS_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 PRODUCTION_CORS_HEADERS = ["Authorization", "Content-Type", "X-Request-ID"]

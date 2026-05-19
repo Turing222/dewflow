@@ -20,26 +20,38 @@ def _mock_langfuse_context():
 
 def test_langfuse_generation_yields_recorder():
     mock_client, mock_generation = _mock_langfuse_context()
-    with patch("langfuse.get_client", return_value=mock_client):
-        with langfuse_generation(name="test", input_payload="hello") as recorder:
-            recorder.record(
-                output="world",
-                usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-                model="gemini-2.0-flash",
-            )
+    with (
+        patch("langfuse.get_client", return_value=mock_client),
+        langfuse_generation(name="test", input_payload="hello") as recorder,
+    ):
+        recorder.record(
+            output="world",
+            usage={
+                "prompt_tokens": 10,
+                "completion_tokens": 20,
+                "total_tokens": 30,
+            },
+            model="gemini-2.0-flash",
+        )
     mock_generation.update.assert_called_once_with(
         output="world",
-        usage_details={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        usage_details={
+            "prompt_tokens": 10,
+            "completion_tokens": 20,
+            "total_tokens": 30,
+        },
         model="gemini-2.0-flash",
     )
 
 
 def test_langfuse_generation_records_error_on_exception():
     mock_client, mock_generation = _mock_langfuse_context()
-    with patch("langfuse.get_client", return_value=mock_client):
-        with pytest.raises(ValueError, match="boom"):
-            with langfuse_generation(name="test") as _recorder:
-                raise ValueError("boom")
+    with (
+        patch("langfuse.get_client", return_value=mock_client),
+        pytest.raises(ValueError, match="boom"),
+        langfuse_generation(name="test") as _recorder,
+    ):
+        raise ValueError("boom")
     mock_generation.update.assert_called_once_with(
         status_message="boom",
         level="ERROR",
@@ -48,11 +60,13 @@ def test_langfuse_generation_records_error_on_exception():
 
 def test_langfuse_generation_passes_model_and_metadata():
     mock_client, mock_generation = _mock_langfuse_context()
-    with patch("langfuse.get_client", return_value=mock_client):
-        with langfuse_generation(
+    with (
+        patch("langfuse.get_client", return_value=mock_client),
+        langfuse_generation(
             name="test", model="gpt-4", metadata={"key": "value"}
-        ) as _recorder:
-            pass
+        ) as _recorder,
+    ):
+        pass
     mock_client.start_as_current_generation.assert_called_once_with(
         name="test", model="gpt-4", metadata={"key": "value"}
     )
@@ -60,7 +74,9 @@ def test_langfuse_generation_passes_model_and_metadata():
 
 def test_langfuse_generation_record_noop():
     mock_client, mock_generation = _mock_langfuse_context()
-    with patch("langfuse.get_client", return_value=mock_client):
-        with langfuse_generation(name="test") as recorder:
-            recorder.record()
+    with (
+        patch("langfuse.get_client", return_value=mock_client),
+        langfuse_generation(name="test") as recorder,
+    ):
+        recorder.record()
     mock_generation.update.assert_not_called()

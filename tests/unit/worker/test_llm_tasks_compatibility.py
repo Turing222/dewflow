@@ -58,16 +58,15 @@ async def test_stream_task_unpacks_new_payload_dict() -> None:
     )
     payload_dict = task_payload.model_dump(mode="json")
 
-    with patch(
-        "backend.worker.tasks.llm_tasks._generate_llm_stream_task",
-        new_callable=AsyncMock,
-        return_value=None,
-    ) as mock_inner, patch(
-        "backend.worker.tasks.llm_tasks.use_trace_context"
-    ), patch(
-        "backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"
-    ), patch(
-        "backend.worker.tasks.llm_tasks.langfuse_generation"
+    with (
+        patch(
+            "backend.worker.tasks.llm_tasks._generate_llm_stream_task",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_inner,
+        patch("backend.worker.tasks.llm_tasks.use_trace_context"),
+        patch("backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"),
+        patch("backend.worker.tasks.llm_tasks.langfuse_generation"),
     ):
         await generate_llm_stream_task(payload_dict)
 
@@ -88,16 +87,15 @@ async def test_stream_task_unpacks_old_positional_args() -> None:
         _make_stream_positional_args()
     )
 
-    with patch(
-        "backend.worker.tasks.llm_tasks._generate_llm_stream_task",
-        new_callable=AsyncMock,
-        return_value=None,
-    ) as mock_inner, patch(
-        "backend.worker.tasks.llm_tasks.use_trace_context"
-    ), patch(
-        "backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"
-    ), patch(
-        "backend.worker.tasks.llm_tasks.langfuse_generation"
+    with (
+        patch(
+            "backend.worker.tasks.llm_tasks._generate_llm_stream_task",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_inner,
+        patch("backend.worker.tasks.llm_tasks.use_trace_context"),
+        patch("backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"),
+        patch("backend.worker.tasks.llm_tasks.langfuse_generation"),
     ):
         await generate_llm_stream_task(
             gen_payload, channel, trace_ctx, msg_id, user_id, lock_key
@@ -128,16 +126,15 @@ async def test_nonstream_task_unpacks_new_payload_dict() -> None:
     payload_dict = task_payload.model_dump(mode="json")
 
     expected = GenerationResult(success=True, content="answer")
-    with patch(
-        "backend.worker.tasks.llm_tasks._generate_llm_nonstream_task",
-        new_callable=AsyncMock,
-        return_value=expected,
-    ) as mock_inner, patch(
-        "backend.worker.tasks.llm_tasks.use_trace_context"
-    ), patch(
-        "backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"
-    ), patch(
-        "backend.worker.tasks.llm_tasks.langfuse_generation"
+    with (
+        patch(
+            "backend.worker.tasks.llm_tasks._generate_llm_nonstream_task",
+            new_callable=AsyncMock,
+            return_value=expected,
+        ) as mock_inner,
+        patch("backend.worker.tasks.llm_tasks.use_trace_context"),
+        patch("backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"),
+        patch("backend.worker.tasks.llm_tasks.langfuse_generation"),
     ):
         result = await generate_llm_nonstream_task(payload_dict)
 
@@ -160,16 +157,15 @@ async def test_nonstream_task_unpacks_old_positional_args() -> None:
     )
 
     expected = GenerationResult(success=True, content="answer")
-    with patch(
-        "backend.worker.tasks.llm_tasks._generate_llm_nonstream_task",
-        new_callable=AsyncMock,
-        return_value=expected,
-    ) as mock_inner, patch(
-        "backend.worker.tasks.llm_tasks.use_trace_context"
-    ), patch(
-        "backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"
-    ), patch(
-        "backend.worker.tasks.llm_tasks.langfuse_generation"
+    with (
+        patch(
+            "backend.worker.tasks.llm_tasks._generate_llm_nonstream_task",
+            new_callable=AsyncMock,
+            return_value=expected,
+        ) as mock_inner,
+        patch("backend.worker.tasks.llm_tasks.use_trace_context"),
+        patch("backend.worker.tasks.llm_tasks.set_langfuse_trace_metadata"),
+        patch("backend.worker.tasks.llm_tasks.langfuse_generation"),
     ):
         result = await generate_llm_nonstream_task(
             gen_payload, trace_ctx, msg_id, user_id, lock_key

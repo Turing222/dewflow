@@ -307,7 +307,10 @@ class GoogleGenAIEmbedder(AbstractRAGEmbedder):
                             "Google embedding 服务未返回向量数据",
                             code="GOOGLE_EMBEDDING_EMPTY_RESPONSE",
                         )
-                    if self.dimensions is not None and len(embedding) != self.dimensions:
+                    if (
+                        self.dimensions is not None
+                        and len(embedding) != self.dimensions
+                    ):
                         raise app_service_error(
                             "Google embedding 维度不匹配",
                             code="GOOGLE_EMBEDDING_DIMENSION_MISMATCH",

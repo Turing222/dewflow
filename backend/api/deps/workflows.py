@@ -43,7 +43,9 @@ def get_chat_workflow(
     permission_service: PermissionService = Depends(get_permission_service),
     session_manager: SessionManager = Depends(get_session_manager),
 ) -> ChatWorkflow:
-    return ChatWorkflow(uow, dispatcher, redis_client, permission_service, session_manager)
+    return ChatWorkflow(
+        uow, dispatcher, redis_client, permission_service, session_manager
+    )
 
 
 def get_chat_nonstream_workflow(
@@ -53,7 +55,9 @@ def get_chat_nonstream_workflow(
     permission_service: PermissionService = Depends(get_permission_service),
     session_manager: SessionManager = Depends(get_session_manager),
 ) -> ChatNonStreamWorkflow:
-    return ChatNonStreamWorkflow(uow, dispatcher, redis_client, permission_service, session_manager)
+    return ChatNonStreamWorkflow(
+        uow, dispatcher, redis_client, permission_service, session_manager
+    )
 
 
 def get_knowledge_upload_workflow(

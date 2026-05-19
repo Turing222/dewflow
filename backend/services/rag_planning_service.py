@@ -95,7 +95,11 @@ class RAGPlanningService:
             has_kb=kb_id is not None,
             query_text=query_text,
         )
-        if kb_id is None or not query_text.strip() or not ai_settings.RAG_PLANNER_ENABLED:
+        if (
+            kb_id is None
+            or not query_text.strip()
+            or not ai_settings.RAG_PLANNER_ENABLED
+        ):
             return default_plan
 
         try:
@@ -161,9 +165,13 @@ class RAGPlanningService:
 
     def _create_model(self):
         profile = get_llm_model_config().resolve_profile(
-            self.provider or ai_settings.RAG_PLANNER_PROVIDER or ai_settings.LLM_PROVIDER
+            self.provider
+            or ai_settings.RAG_PLANNER_PROVIDER
+            or ai_settings.LLM_PROVIDER
         )
-        return create_pydantic_ai_model(profile=profile, api_key=profile.resolve_api_key())
+        return create_pydantic_ai_model(
+            profile=profile, api_key=profile.resolve_api_key()
+        )
 
 
 def _clamp(value: int, minimum: int, maximum: int) -> int:

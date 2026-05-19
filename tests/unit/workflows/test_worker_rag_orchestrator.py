@@ -16,7 +16,9 @@ from tests.unit.workflows.conftest import make_rag_hit
 pytestmark = pytest.mark.asyncio
 
 
-async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(monkeypatch) -> None:
+async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(
+    monkeypatch,
+) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.context_state import ContextState
     from backend.models.schemas.chat.payloads import GenerationPayload
@@ -97,7 +99,9 @@ async def test_build_rag_plan_planner_error_falls_back_to_default(monkeypatch) -
     assert planner_used is False
 
 
-async def test_retrieve_rag_candidates_connection_error_returns_empty(monkeypatch) -> None:
+async def test_retrieve_rag_candidates_connection_error_returns_empty(
+    monkeypatch,
+) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
@@ -129,7 +133,9 @@ async def test_retrieve_rag_candidates_connection_error_returns_empty(monkeypatc
     rag_service.retrieve.assert_awaited_once()
 
 
-async def test_rerank_candidates_if_enabled_rerank_error_falls_back(monkeypatch) -> None:
+async def test_rerank_candidates_if_enabled_rerank_error_falls_back(
+    monkeypatch,
+) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
@@ -295,6 +301,9 @@ async def test_prepare_context_hybrid_rerank_uses_rerank_score_for_policy(
     assert result.refusal_decision is None
     rag_service.rerank.assert_awaited_once()
     context_builder.build_from_chunks.assert_called_once()
-    assert context_builder.build_from_chunks.call_args.kwargs["rag_chunks"][0][
-        "rerank_score"
-    ] == 5.0
+    assert (
+        context_builder.build_from_chunks.call_args.kwargs["rag_chunks"][0][
+            "rerank_score"
+        ]
+        == 5.0
+    )

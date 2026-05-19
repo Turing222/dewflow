@@ -72,7 +72,9 @@ def install_llm_slot_recorder(monkeypatch) -> list[dict]:
     return calls
 
 
-async def test_stream_error_publishes_error_and_done_and_cleans_lock(monkeypatch) -> None:
+async def test_stream_error_publishes_error_and_done_and_cleans_lock(
+    monkeypatch,
+) -> None:
     """Stream LLM failure: error + done published to Redis, idempotency lock cleaned."""
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
@@ -155,7 +157,9 @@ async def test_nonstream_idempotency_lock_written_on_success(monkeypatch) -> Non
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
         redis_client=FakeRedisClient(redis),
-        llm_service=_make_nonstreaming_llm(LLMResultDTO(content="ok", completion_tokens=1)),
+        llm_service=_make_nonstreaming_llm(
+            LLMResultDTO(content="ok", completion_tokens=1)
+        ),
     )
     monkeypatch.setattr(workflow, "_count_output_tokens", lambda c: 1)
 
@@ -186,7 +190,9 @@ async def test_nonstream_idempotency_lock_skipped_when_key_none(monkeypatch) -> 
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
         redis_client=FakeRedisClient(redis),
-        llm_service=_make_nonstreaming_llm(LLMResultDTO(content="ok", completion_tokens=1)),
+        llm_service=_make_nonstreaming_llm(
+            LLMResultDTO(content="ok", completion_tokens=1)
+        ),
     )
     monkeypatch.setattr(workflow, "_count_output_tokens", lambda c: 1)
 

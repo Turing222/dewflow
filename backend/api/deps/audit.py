@@ -13,7 +13,9 @@ def get_audit_service(
     client_ip = request.client.host if request.client else None
     return AuditService(
         uow=uow,
-        independent_uow_factory=lambda: SQLAlchemyUnitOfWork(request.app.state.session_factory),
+        independent_uow_factory=lambda: SQLAlchemyUnitOfWork(
+            request.app.state.session_factory
+        ),
         request_context=AuditRequestContext(
             ip=client_ip,
             user_agent=request.headers.get("user-agent"),

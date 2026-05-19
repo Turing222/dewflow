@@ -66,7 +66,6 @@ def _member_response(user_role, user: User) -> WorkspaceMemberResponse:
 
 @router.post(
     "",
-    response_model=WorkspaceResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_workspace(
@@ -75,23 +74,25 @@ async def create_workspace(
     service: WorkspaceServiceDep,
     audit_service: AuditServiceDep,
 ) -> WorkspaceResponse:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.WORKSPACE_CREATE,
-        actor_user_id=current_user.id,
-        resource_type="workspace",
-        metadata={"slug": workspace_in.slug},
-    ) as audit:
-        async with service.write():
-            workspace, role = await service.create_workspace(
-                current_user=current_user,
-                workspace_in=workspace_in,
-            )
-            audit.set_resource(resource_id=workspace.id)
-            return _workspace_response(workspace, role)
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.WORKSPACE_CREATE,
+            actor_user_id=current_user.id,
+            resource_type="workspace",
+            metadata={"slug": workspace_in.slug},
+        ) as audit,
+        service.write(),
+    ):
+        workspace, role = await service.create_workspace(
+            current_user=current_user,
+            workspace_in=workspace_in,
+        )
+        audit.set_resource(resource_id=workspace.id)
+        return _workspace_response(workspace, role)
 
 
-@router.get("", response_model=WorkspaceListResponse)
+@router.get("")
 async def list_workspaces(
     current_user: CurrentUserDep,
     service: WorkspaceServiceDep,
@@ -112,7 +113,7 @@ async def list_workspaces(
         )
 
 
-@router.get("/{workspace_id}", response_model=WorkspaceResponse)
+@router.get("/{workspace_id}")
 async def get_workspace(
     workspace_id: uuid.UUID,
     current_user: CurrentUserDep,
@@ -126,7 +127,7 @@ async def get_workspace(
         return _workspace_response(workspace, role)
 
 
-@router.patch("/{workspace_id}", response_model=WorkspaceResponse)
+@router.patch("/{workspace_id}")
 async def update_workspace(
     workspace_id: uuid.UUID,
     workspace_in: WorkspaceUpdate,
@@ -134,22 +135,24 @@ async def update_workspace(
     service: WorkspaceServiceDep,
     audit_service: AuditServiceDep,
 ) -> WorkspaceResponse:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.WORKSPACE_UPDATE,
-        actor_user_id=current_user.id,
-        workspace_id=workspace_id,
-        resource_type="workspace",
-        resource_id=workspace_id,
-        metadata={"updated_fields": list(workspace_in.model_fields_set)},
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.WORKSPACE_UPDATE,
+            actor_user_id=current_user.id,
+            workspace_id=workspace_id,
+            resource_type="workspace",
+            resource_id=workspace_id,
+            metadata={"updated_fields": list(workspace_in.model_fields_set)},
+        ),
+        service.write(),
     ):
-        async with service.write():
-            workspace, role = await service.update_workspace(
-                current_user=current_user,
-                workspace_id=workspace_id,
-                workspace_in=workspace_in,
-            )
-            return _workspace_response(workspace, role)
+        workspace, role = await service.update_workspace(
+            current_user=current_user,
+            workspace_id=workspace_id,
+            workspace_in=workspace_in,
+        )
+        return _workspace_response(workspace, role)
 
 
 @router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -159,23 +162,25 @@ async def delete_workspace(
     service: WorkspaceServiceDep,
     audit_service: AuditServiceDep,
 ) -> Response:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.WORKSPACE_DELETE,
-        actor_user_id=current_user.id,
-        workspace_id=workspace_id,
-        resource_type="workspace",
-        resource_id=workspace_id,
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.WORKSPACE_DELETE,
+            actor_user_id=current_user.id,
+            workspace_id=workspace_id,
+            resource_type="workspace",
+            resource_id=workspace_id,
+        ),
+        service.write(),
     ):
-        async with service.write():
-            await service.delete_workspace(
-                current_user=current_user,
-                workspace_id=workspace_id,
-            )
+        await service.delete_workspace(
+            current_user=current_user,
+            workspace_id=workspace_id,
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/{workspace_id}/members", response_model=WorkspaceMemberListResponse)
+@router.get("/{workspace_id}/members")
 async def list_workspace_members(
     workspace_id: uuid.UUID,
     current_user: CurrentUserDep,
@@ -200,7 +205,6 @@ async def list_workspace_members(
 
 @router.post(
     "/{workspace_id}/members",
-    response_model=WorkspaceMemberResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def add_workspace_member(
@@ -210,27 +214,28 @@ async def add_workspace_member(
     service: WorkspaceServiceDep,
     audit_service: AuditServiceDep,
 ) -> WorkspaceMemberResponse:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.WORKSPACE_MEMBER_ADD,
-        actor_user_id=current_user.id,
-        workspace_id=workspace_id,
-        resource_type="workspace_member",
-        resource_id=member_in.user_id,
-        metadata={"role": member_in.role},
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.WORKSPACE_MEMBER_ADD,
+            actor_user_id=current_user.id,
+            workspace_id=workspace_id,
+            resource_type="workspace_member",
+            resource_id=member_in.user_id,
+            metadata={"role": member_in.role},
+        ),
+        service.write(),
     ):
-        async with service.write():
-            user_role, user = await service.add_workspace_member(
-                current_user=current_user,
-                workspace_id=workspace_id,
-                member_in=member_in,
-            )
-            return _member_response(user_role, user)
+        user_role, user = await service.add_workspace_member(
+            current_user=current_user,
+            workspace_id=workspace_id,
+            member_in=member_in,
+        )
+        return _member_response(user_role, user)
 
 
 @router.patch(
     "/{workspace_id}/members/{user_id}",
-    response_model=WorkspaceMemberResponse,
 )
 async def update_workspace_member(
     workspace_id: uuid.UUID,
@@ -240,23 +245,25 @@ async def update_workspace_member(
     service: WorkspaceServiceDep,
     audit_service: AuditServiceDep,
 ) -> WorkspaceMemberResponse:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.WORKSPACE_MEMBER_UPDATE,
-        actor_user_id=current_user.id,
-        workspace_id=workspace_id,
-        resource_type="workspace_member",
-        resource_id=user_id,
-        metadata={"role": member_in.role},
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.WORKSPACE_MEMBER_UPDATE,
+            actor_user_id=current_user.id,
+            workspace_id=workspace_id,
+            resource_type="workspace_member",
+            resource_id=user_id,
+            metadata={"role": member_in.role},
+        ),
+        service.write(),
     ):
-        async with service.write():
-            user_role, user = await service.update_workspace_member(
-                current_user=current_user,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                member_in=member_in,
-            )
-            return _member_response(user_role, user)
+        user_role, user = await service.update_workspace_member(
+            current_user=current_user,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            member_in=member_in,
+        )
+        return _member_response(user_role, user)
 
 
 @router.delete(
@@ -270,18 +277,20 @@ async def remove_workspace_member(
     service: WorkspaceServiceDep,
     audit_service: AuditServiceDep,
 ) -> Response:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.WORKSPACE_MEMBER_REMOVE,
-        actor_user_id=current_user.id,
-        workspace_id=workspace_id,
-        resource_type="workspace_member",
-        resource_id=user_id,
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.WORKSPACE_MEMBER_REMOVE,
+            actor_user_id=current_user.id,
+            workspace_id=workspace_id,
+            resource_type="workspace_member",
+            resource_id=user_id,
+        ),
+        service.write(),
     ):
-        async with service.write():
-            await service.remove_workspace_member(
-                current_user=current_user,
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
+        await service.remove_workspace_member(
+            current_user=current_user,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

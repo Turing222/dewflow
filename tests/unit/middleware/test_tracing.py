@@ -50,7 +50,9 @@ async def test_generates_request_id_and_process_time_in_headers(
     assert REQUEST_ID_CTX.get() == ""
 
 
-async def test_reuses_incoming_request_id_in_response_header(tracing_client: AsyncClient) -> None:
+async def test_reuses_incoming_request_id_in_response_header(
+    tracing_client: AsyncClient,
+) -> None:
     response = await tracing_client.get("/inspect", headers={"X-Request-ID": "req-123"})
 
     assert response.status_code == 200

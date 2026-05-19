@@ -88,8 +88,7 @@ class ChatSessionOrchestrator:
         with trace_span(span_name, trace_attrs) as span:
             if command.client_request_id:
                 lock_key = (
-                    f"idempotency:chat:{command.user_id}:"
-                    f"{command.client_request_id}"
+                    f"idempotency:chat:{command.user_id}:{command.client_request_id}"
                 )
                 lock_token = f"processing:{uuid.uuid4()}"
                 is_new = bool(
@@ -134,7 +133,7 @@ class ChatSessionOrchestrator:
         trace_attrs: dict[str, object],
         span_prefix: str,
     ) -> ChatPreparedRequest:
-        async with db_concurrency_slot(trace_attrs):
+        async with db_concurrency_slot(trace_attrs):  # noqa: SIM117
             async with self.uow:
                 with trace_span(
                     f"{span_prefix}.create_session_and_messages",
@@ -188,12 +187,10 @@ class ChatSessionOrchestrator:
                         content=command.query_text,
                         user_id=command.user_id,
                     )
-                    assistant_message = (
-                        await session_manager.create_assistant_message(
-                            session_id=session.id,
-                            client_request_id=command.client_request_id,
-                            user_id=command.user_id,
-                        )
+                    assistant_message = await session_manager.create_assistant_message(
+                        session_id=session.id,
+                        client_request_id=command.client_request_id,
+                        user_id=command.user_id,
                     )
                 set_span_attributes(
                     span,

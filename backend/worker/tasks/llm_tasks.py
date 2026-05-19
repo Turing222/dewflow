@@ -119,25 +119,27 @@ async def generate_llm_stream_task(*args: object) -> None:
     assert channel is not None, "stream task requires a channel"
     with use_trace_context(trace_context):
         payload = GenerationPayload(**generation_payload)
-        with set_langfuse_trace_metadata(
-            user_id=user_id,
-            session_id=payload.session_id,
-            tags=["chat_api", "worker", "stream"],
-        ):
-            with langfuse_generation(
+        with (
+            set_langfuse_trace_metadata(
+                user_id=user_id,
+                session_id=payload.session_id,
+                tags=["chat_api", "worker", "stream"],
+            ),
+            langfuse_generation(
                 name="generate_llm_stream",
                 input_payload=generation_payload,
                 metadata={"stream": True, "session_id": str(payload.session_id)},
-            ) as recorder:
-                error = await _generate_llm_stream_task(
-                    payload=payload,
-                    channel=channel,
-                    assistant_message_id=assistant_message_id,
-                    user_id=user_id,
-                    idempotency_lock_key=idempotency_lock_key,
-                )
-                if error is not None:
-                    recorder.record(error=error)
+            ) as recorder,
+        ):
+            error = await _generate_llm_stream_task(
+                payload=payload,
+                channel=channel,
+                assistant_message_id=assistant_message_id,
+                user_id=user_id,
+                idempotency_lock_key=idempotency_lock_key,
+            )
+            if error is not None:
+                recorder.record(error=error)
 
 
 async def _generate_llm_stream_task(
@@ -208,30 +210,32 @@ async def generate_llm_nonstream_task(*args: object) -> GenerationResult:
 
     with use_trace_context(trace_context):
         payload = GenerationPayload(**generation_payload)
-        with set_langfuse_trace_metadata(
-            user_id=user_id,
-            session_id=payload.session_id,
-            tags=["chat_api", "worker", "non-stream"],
-        ):
-            with langfuse_generation(
+        with (
+            set_langfuse_trace_metadata(
+                user_id=user_id,
+                session_id=payload.session_id,
+                tags=["chat_api", "worker", "non-stream"],
+            ),
+            langfuse_generation(
                 name="generate_llm_nonstream",
                 input_payload=generation_payload,
                 metadata={"stream": False, "session_id": str(payload.session_id)},
-            ) as recorder:
-                result = await _generate_llm_nonstream_task(
-                    payload=payload,
-                    assistant_message_id=assistant_message_id,
-                    user_id=user_id,
-                    idempotency_lock_key=idempotency_lock_key,
+            ) as recorder,
+        ):
+            result = await _generate_llm_nonstream_task(
+                payload=payload,
+                assistant_message_id=assistant_message_id,
+                user_id=user_id,
+                idempotency_lock_key=idempotency_lock_key,
+            )
+            if result.success:
+                recorder.record(
+                    output=result.content[:500],
+                    usage=_build_usage_details(result),
                 )
-                if result.success:
-                    recorder.record(
-                        output=result.content[:500],
-                        usage=_build_usage_details(result),
-                    )
-                else:
-                    recorder.record(error=result.error or "LLM 服务返回失败")
-                return result
+            else:
+                recorder.record(error=result.error or "LLM 服务返回失败")
+            return result
 
 
 async def _generate_llm_nonstream_task(

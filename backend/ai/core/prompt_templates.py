@@ -14,7 +14,7 @@ from backend.ai.core.prompt_resolver import get_prompt_resolver
 
 _env = Environment(
     loader=BaseLoader(),
-    autoescape=False,  # Prompt 不需要 HTML 转义
+    autoescape=False,  # noqa: S701 - Prompt templates render plain text, not HTML.
     keep_trailing_newline=True,
 )
 

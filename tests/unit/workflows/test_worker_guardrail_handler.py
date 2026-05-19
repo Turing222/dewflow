@@ -27,7 +27,9 @@ def _make_handler(
 ):
     from backend.application.chat.worker_guardrail_handler import WorkerGuardrailHandler
 
-    persistence_handler = AsyncMock(spec=["persist_success", "write_idempotency_message"])
+    persistence_handler = AsyncMock(
+        spec=["persist_success", "write_idempotency_message"]
+    )
     persistence_handler.persist_success = AsyncMock()
     persistence_handler.write_idempotency_message = AsyncMock()
 
@@ -56,7 +58,9 @@ async def test_stream_input_block_publishes_refusal_and_persists() -> None:
         idempotency_lock_key="lock:1",
     )
 
-    publisher.publish_chunk.assert_awaited_once_with("stream:test", SAFETY_REFUSAL_MESSAGE)
+    publisher.publish_chunk.assert_awaited_once_with(
+        "stream:test", SAFETY_REFUSAL_MESSAGE
+    )
     persistence.persist_success.assert_awaited_once()
     kwargs = persistence.persist_success.call_args.kwargs
     assert kwargs["content"] == SAFETY_REFUSAL_MESSAGE
@@ -209,7 +213,9 @@ async def test_stream_input_block_uses_injection_refusal_for_injection_risk() ->
     assert kwargs["content"] == INJECTION_REFUSAL_MESSAGE
 
 
-async def test_nonstream_input_block_uses_injection_refusal_for_injection_risk() -> None:
+async def test_nonstream_input_block_uses_injection_refusal_for_injection_risk() -> (
+    None
+):
     handler, persistence = _make_handler()
 
     decision = GuardrailDecision(

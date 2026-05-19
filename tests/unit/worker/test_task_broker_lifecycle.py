@@ -44,7 +44,9 @@ async def test_startup_creates_worker_container_returns_none(
         pass
 
     monkeypatch.setattr(worker_deps.WorkerContainer, "close", mock_close)
-    monkeypatch.setattr(worker_deps.WorkerContainer, "get_session_factory", lambda self: None)
+    monkeypatch.setattr(
+        worker_deps.WorkerContainer, "get_session_factory", lambda self: None
+    )
 
     await task_broker._startup_worker_dependencies(None)
 

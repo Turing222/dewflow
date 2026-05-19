@@ -40,7 +40,7 @@ class PromptResolver:
         self.clock = clock
         self._env = Environment(
             loader=BaseLoader(),
-            autoescape=False,
+            autoescape=False,  # noqa: S701 - Prompt templates render plain text, not HTML.
             keep_trailing_newline=True,
         )
         self._lock = RLock()

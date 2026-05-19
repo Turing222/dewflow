@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 import redis.asyncio as redis
 
@@ -18,14 +19,13 @@ from backend.config.settings import settings
 
 def _count_taskiq_worker_processes() -> int:
     count = 0
-    for entry in os.listdir("/proc"):
-        if not entry.isdigit():
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
             continue
 
-        cmdline_path = f"/proc/{entry}/cmdline"
+        cmdline_path = Path(f"/proc/{entry.name}/cmdline")
         try:
-            with open(cmdline_path, "rb") as cmdline_file:
-                raw = cmdline_file.read()
+            raw = cmdline_path.read_bytes()
         except OSError:
             continue
 
@@ -71,7 +71,7 @@ def main() -> int:
     try:
         return asyncio.run(_main())
     except Exception as exc:
-        print(f"task_worker healthcheck failed: {exc}", file=sys.stderr)
+        sys.stderr.write(f"task_worker healthcheck failed: {exc}\n")
         return 1
 
 

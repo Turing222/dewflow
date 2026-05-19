@@ -122,4 +122,4 @@ class Token(BaseModel):
     """访问令牌响应。"""
 
     access_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105

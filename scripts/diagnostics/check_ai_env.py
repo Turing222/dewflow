@@ -156,8 +156,5 @@ def check_langfuse(*, live: bool) -> bool:
         return False
 
 
-
-
-
 if __name__ == "__main__":
     main()

@@ -87,9 +87,7 @@ class RAGEvidencePolicy:
                 return self._refuse(
                     "RAG 相关性分数不足", hit_count, best_score, best_rerank_score
                 )
-            return self._allow(
-                "RAG 证据充足", hit_count, best_score, best_rerank_score
-            )
+            return self._allow("RAG 证据充足", hit_count, best_score, best_rerank_score)
 
         return self._refuse(
             "RAG 检索模式未知", hit_count, best_score, best_rerank_score
@@ -114,8 +112,7 @@ class RAGEvidencePolicy:
     ) -> RAGEvidenceDecision:
         top_chunk = chunks[0] if chunks else {}
         has_sufficient_score = (
-            best_score is not None
-            and best_score >= ai_settings.RAG_MIN_RELEVANCE_SCORE
+            best_score is not None and best_score >= ai_settings.RAG_MIN_RELEVANCE_SCORE
         )
         if self._matched_by_both(top_chunk) and has_sufficient_score:
             return self._allow(

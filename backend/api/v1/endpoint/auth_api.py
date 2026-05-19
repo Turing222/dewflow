@@ -23,14 +23,14 @@ LoginDataDep = Annotated[UserLogin, Depends(get_login_data)]
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
-@router.post("/register", response_model=UserResponse)
+@router.post("/register")
 async def register(user_in: UserCreate, user_service: UserServiceDep) -> UserResponse:
     async with user_service.write():
         user = await user_service.user_register_with_personal_workspace(user_in)
     return UserResponse.model_validate(user)
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login")
 async def login(
     login_data: LoginDataDep,
     user_service: UserServiceDep,
@@ -78,4 +78,4 @@ async def login(
         resource_id=user.id,
         metadata={"username": login_data.username},
     )
-    return Token(access_token=access_token, token_type="bearer")
+    return Token(access_token=access_token, token_type="bearer")  # noqa: S106

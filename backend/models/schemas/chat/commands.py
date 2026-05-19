@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 class ChatQueryCommand(BaseModel):
     """用例入口：一次对话查询的完整意图。"""
+
     user_id: uuid.UUID
     query_text: str
     session_id: uuid.UUID | None = None

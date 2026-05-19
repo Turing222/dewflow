@@ -20,7 +20,9 @@ class FakePlanner(RAGPlanningService):
         super().__init__()
         self.output = output
 
-    async def _run_agent(self, *, query_text: str, conversation_history: list[object]) -> object:
+    async def _run_agent(
+        self, *, query_text: str, conversation_history: list[object]
+    ) -> object:
         if isinstance(self.output, BaseException):
             raise self.output
         return self.output
@@ -61,7 +63,9 @@ def test_rag_planning_service_builds_plan_via_model(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def fake_create_model(*, profile: object, api_key: str, max_retries: object = None) -> str:
+    def fake_create_model(
+        *, profile: object, api_key: str, max_retries: object = None
+    ) -> str:
         captured["profile"] = profile
         captured["api_key"] = api_key
         captured["max_retries"] = max_retries

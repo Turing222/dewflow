@@ -53,7 +53,12 @@ def encode_meta_event(
     session_title: str | None,
     message_id: str,
 ) -> str:
-    return json.dumps(meta_event(session_id=session_id, session_title=session_title, message_id=message_id), ensure_ascii=False)
+    return json.dumps(
+        meta_event(
+            session_id=session_id, session_title=session_title, message_id=message_id
+        ),
+        ensure_ascii=False,
+    )
 
 
 def decode_stream_event(payload: str) -> StreamEvent:

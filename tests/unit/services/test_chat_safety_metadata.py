@@ -5,7 +5,6 @@ GuardrailDecision.scan_result 字段。
 边界：不启动 HTTP stack 或数据库；副作用：无。
 """
 
-
 from backend.services.chat_safety_metadata import (
     GuardrailDecision,
     GuardrailReason,

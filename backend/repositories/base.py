@@ -41,10 +41,7 @@ class CRUDBase[ModelType, CreateSchemaType: BaseModel, UpdateSchemaType: BaseMod
         return result.scalars().all()
 
     async def create(self, *, obj_in: CreateSchemaType | dict[str, Any]) -> ModelType:
-        if isinstance(obj_in, dict):
-            create_data = obj_in
-        else:
-            create_data = obj_in.model_dump()
+        create_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
 
         db_obj = self.model(**create_data)
 

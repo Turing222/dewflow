@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 class SessionManager(BaseService[AbstractUnitOfWork]):
     """负责会话确认、权限校验和消息创建。"""
 
-    def __init__(self, uow: AbstractUnitOfWork, permission_service: PermissionService) -> None:
+    def __init__(
+        self, uow: AbstractUnitOfWork, permission_service: PermissionService
+    ) -> None:
         super().__init__(uow)
         self.permission_service = permission_service
 

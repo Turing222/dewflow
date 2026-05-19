@@ -13,7 +13,7 @@ CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 PermissionServiceDep = Annotated[PermissionService, Depends(get_permission_service)]
 
 
-@router.get("/policy", response_model=PermissionPolicyResponse)
+@router.get("/policy")
 async def get_permission_policy_metadata(
     _: CurrentUserDep,
     permission_service: PermissionServiceDep,

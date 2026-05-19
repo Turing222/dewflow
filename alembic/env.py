@@ -115,9 +115,7 @@ target_metadata = Base.metadata
 # 设置buckup忽略函数
 def include_object(object, name, type_, reflected, compare_to):
     # 如果是表，且名字包含 "backup"，则忽略
-    if type_ == "table" and name and "backup" in name:
-        return False
-    return True
+    return not (type_ == "table" and name and "backup" in name)
 
 
 # this is the Alembic Config object, which provides

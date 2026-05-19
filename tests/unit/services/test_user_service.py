@@ -96,7 +96,9 @@ async def test_user_register_with_personal_workspace_creates_owner_workspace_rol
 
     monkeypatch.setattr("backend.services.user_service.get_password_hash", fake_hash)
 
-    result = await user_service_ctx.service.user_register_with_personal_workspace(user_in)
+    result = await user_service_ctx.service.user_register_with_personal_workspace(
+        user_in
+    )
 
     assert result is created_user
     user_service_ctx.access_repo.create_workspace.assert_awaited_once_with(
@@ -111,7 +113,9 @@ async def test_user_register_with_personal_workspace_creates_owner_workspace_rol
     )
 
 
-def test_user_create_forbids_role_and_workspace_fields_raises_validation_error() -> None:
+def test_user_create_forbids_role_and_workspace_fields_raises_validation_error() -> (
+    None
+):
     with pytest.raises(ValueError):
         UserCreate.model_validate(
             {
@@ -139,7 +143,9 @@ async def test_user_register_rejects_existing_username(
     user_service_ctx: SimpleNamespace,
 ) -> None:
     user_service_ctx.repo.get_by_email.return_value = None
-    user_service_ctx.repo.get_by_username.return_value = SimpleNamespace(id=uuid.uuid4())
+    user_service_ctx.repo.get_by_username.return_value = SimpleNamespace(
+        id=uuid.uuid4()
+    )
 
     with pytest.raises(AppException, match="该用户名已被注册"):
         await user_service_ctx.service.user_register(_build_user_create())

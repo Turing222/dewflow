@@ -36,7 +36,9 @@ class TaskDispatcher(AbstractTaskDispatcher):
 
     async def _send_task(self, task_name: str, *args: Any) -> str:
         task_id = uuid4().hex
-        message = self._build_taskiq_message(task_id=task_id, task_name=task_name, args=args)
+        message = self._build_taskiq_message(
+            task_id=task_id, task_name=task_name, args=args
+        )
         redis_client = self._redis_client
         await redis_client.lpush(TASKIQ_QUEUE_NAME, message)  # type: ignore[invalid-await]  # redis-py lacks async type stubs
         return task_id
@@ -121,8 +123,7 @@ class TaskDispatcher(AbstractTaskDispatcher):
         )
         task_id = await self._send_task(TASK_NONSTREAM, payload.model_dump(mode="json"))
         result = await self._wait_result(
-            task_id,
-            timeout=ai_settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS + 300
+            task_id, timeout=ai_settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS + 300
         )
         return GenerationResult.model_validate(result)
 

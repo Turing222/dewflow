@@ -191,9 +191,7 @@ class LiveWindowBuilder:
 
     # ── summary ─────────────────────────────────────────────────────
 
-    def _build_rounds_summary(
-        self, rounds: list[list[ConversationMessage]]
-    ) -> str:
+    def _build_rounds_summary(self, rounds: list[list[ConversationMessage]]) -> str:
         """为旧轮次生成纯文本摘要（截断拼接，不调用 LLM）。"""
         if not rounds:
             return ""

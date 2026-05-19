@@ -2,6 +2,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -95,7 +96,7 @@ if settings.DEBUG:
     @app.get("/debug-request")
     async def debug_request(
         request: Request,
-        _current_user: User = Depends(get_current_superuser),
+        _current_user: Annotated[User, Depends(get_current_superuser)],
     ) -> dict[str, object]:
         headers = dict(request.headers)
         client_host = request.client.host if request.client else "unknown"
@@ -110,9 +111,11 @@ if settings.DEBUG:
             "headers": headers,
         }
 
-        print("\n" + "=" * 50)
-        print("DEBUG: RECEIVED HTTP REQUEST")
-        print(json.dumps(debug_info, indent=4))
-        print("=" * 50 + "\n")
+        logger.debug(
+            "\n%s\nDEBUG: RECEIVED HTTP REQUEST\n%s\n%s\n",
+            "=" * 50,
+            json.dumps(debug_info, indent=4),
+            "=" * 50,
+        )
 
         return debug_info

@@ -229,7 +229,9 @@ async def test_ingest_file_reports_not_found_when_initial_transition_misses() ->
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_reports_already_ingesting_when_initial_state_conflicts() -> None:
+async def test_ingest_file_reports_already_ingesting_when_initial_state_conflicts() -> (
+    None
+):
     async def try_transition_file_status(
         *, file_id, expected_previous_statuses, target_status
     ) -> bool:

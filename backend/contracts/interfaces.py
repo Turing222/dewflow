@@ -152,7 +152,9 @@ class AbstractRAGEmbedder(ABC):
     async def encode_documents(self, texts: list[str]) -> list[list[float]]:
         """将文档片段批量编码为向量；默认有界并发编码。"""
         if self._encode_semaphore is None:
-            self._encode_semaphore = asyncio.Semaphore(self.DEFAULT_ENCODE_DOCUMENTS_CONCURRENCY)
+            self._encode_semaphore = asyncio.Semaphore(
+                self.DEFAULT_ENCODE_DOCUMENTS_CONCURRENCY
+            )
         semaphore = self._encode_semaphore  # type narrow for async with
 
         async def encode_with_limit(text: str) -> list[float]:

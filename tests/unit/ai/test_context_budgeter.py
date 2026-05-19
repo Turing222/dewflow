@@ -18,12 +18,16 @@ from backend.ai.core.context_budgeter import (
 
 @pytest.fixture
 def budgeter() -> ContextBudgeter:
-    return ContextBudgeter(max_context_tokens=4096, reserved_response_tokens=1024, model_name="gpt-4")
+    return ContextBudgeter(
+        max_context_tokens=4096, reserved_response_tokens=1024, model_name="gpt-4"
+    )
 
 
 @pytest.fixture
 def tight_budgeter() -> ContextBudgeter:
-    return ContextBudgeter(max_context_tokens=200, reserved_response_tokens=50, model_name="gpt-4")
+    return ContextBudgeter(
+        max_context_tokens=200, reserved_response_tokens=50, model_name="gpt-4"
+    )
 
 
 class TestBudgetBlock:
@@ -45,16 +49,34 @@ class TestContextBudgeterProperties:
 class TestAllocate:
     def test_allocates_required_blocks_first(self, budgeter) -> None:
         blocks = [
-            BudgetBlock(name="system", priority=PRIORITY_SYSTEM, content="X" * 400, required=True),
-            BudgetBlock(name="query", priority=PRIORITY_QUERY, content="Y" * 100, required=True),
+            BudgetBlock(
+                name="system",
+                priority=PRIORITY_SYSTEM,
+                content="X" * 400,
+                required=True,
+            ),
+            BudgetBlock(
+                name="query", priority=PRIORITY_QUERY, content="Y" * 100, required=True
+            ),
         ]
         budgeter.allocate(blocks)
         assert all(b.allocated > 0 for b in blocks)
 
     def test_drops_low_priority_when_over_budget(self, tight_budgeter) -> None:
         blocks = [
-            BudgetBlock(name="system", priority=PRIORITY_SYSTEM, content="X" * 400, required=True, token_estimate=120),
-            BudgetBlock(name="history", priority=PRIORITY_HISTORY, content="Z" * 2000, token_estimate=600),
+            BudgetBlock(
+                name="system",
+                priority=PRIORITY_SYSTEM,
+                content="X" * 400,
+                required=True,
+                token_estimate=120,
+            ),
+            BudgetBlock(
+                name="history",
+                priority=PRIORITY_HISTORY,
+                content="Z" * 2000,
+                token_estimate=600,
+            ),
         ]
         result = tight_budgeter.allocate(blocks)
         system_block = next(b for b in result if b.name == "system")
@@ -64,7 +86,13 @@ class TestAllocate:
 
     def test_marks_compressible_when_over_budget(self, tight_budgeter) -> None:
         blocks = [
-            BudgetBlock(name="system", priority=PRIORITY_SYSTEM, content="X" * 400, required=True, token_estimate=120),
+            BudgetBlock(
+                name="system",
+                priority=PRIORITY_SYSTEM,
+                content="X" * 400,
+                required=True,
+                token_estimate=120,
+            ),
             BudgetBlock(
                 name="history",
                 priority=PRIORITY_HISTORY,
@@ -79,8 +107,18 @@ class TestAllocate:
 
     def test_priority_order_respected(self, budgeter) -> None:
         blocks = [
-            BudgetBlock(name="bridge", priority=PRIORITY_BRIDGE, content="A" * 100, token_estimate=30),
-            BudgetBlock(name="rag", priority=PRIORITY_RAG_CHUNKS, content="B" * 1000, token_estimate=300),
+            BudgetBlock(
+                name="bridge",
+                priority=PRIORITY_BRIDGE,
+                content="A" * 100,
+                token_estimate=30,
+            ),
+            BudgetBlock(
+                name="rag",
+                priority=PRIORITY_RAG_CHUNKS,
+                content="B" * 1000,
+                token_estimate=300,
+            ),
         ]
         result = budgeter.allocate(blocks)
         rag = next(b for b in result if b.name == "rag")
@@ -90,9 +128,26 @@ class TestAllocate:
 
     def test_all_fit_no_drops(self, budgeter) -> None:
         blocks = [
-            BudgetBlock(name="system", priority=PRIORITY_SYSTEM, content="S" * 200, required=True, token_estimate=60),
-            BudgetBlock(name="query", priority=PRIORITY_QUERY, content="Q" * 50, required=True, token_estimate=20),
-            BudgetBlock(name="rag", priority=PRIORITY_RAG_CHUNKS, content="R" * 400, token_estimate=120),
+            BudgetBlock(
+                name="system",
+                priority=PRIORITY_SYSTEM,
+                content="S" * 200,
+                required=True,
+                token_estimate=60,
+            ),
+            BudgetBlock(
+                name="query",
+                priority=PRIORITY_QUERY,
+                content="Q" * 50,
+                required=True,
+                token_estimate=20,
+            ),
+            BudgetBlock(
+                name="rag",
+                priority=PRIORITY_RAG_CHUNKS,
+                content="R" * 400,
+                token_estimate=120,
+            ),
         ]
         result = budgeter.allocate(blocks)
         assert all(b.allocated >= b.token_estimate for b in result)

@@ -358,7 +358,7 @@ async def _copy_upload_to_temp(
 
 
 def _new_temp_path(*, suffix: str) -> Path:
-    temp_file = tempfile.NamedTemporaryFile(
+    temp_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
         prefix="knowledge_",
         suffix=suffix,
         delete=False,

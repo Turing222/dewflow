@@ -22,7 +22,9 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.mark.asyncio
-async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(monkeypatch) -> None:
+async def test_submit_with_explicit_kb_creates_task_and_dispatches_job(
+    monkeypatch,
+) -> None:
     file_id = uuid.uuid4()
     task_id = uuid.uuid4()
     kb_id = uuid.uuid4()

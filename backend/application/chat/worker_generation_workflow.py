@@ -265,9 +265,11 @@ class LLMGenerationWorkerWorkflow:
                 )
                 return
             try:
-                llm_query, tokens_input, search_context = (
-                    await self._prepare_generation(payload)
-                )
+                (
+                    llm_query,
+                    tokens_input,
+                    search_context,
+                ) = await self._prepare_generation(payload)
             except _RAGRefusalSignal as sig:
                 await self.guardrail_handler.handle_stream_refusal(
                     channel=channel,
@@ -317,13 +319,17 @@ class LLMGenerationWorkerWorkflow:
                         if citation_filter is not None:
                             cleaned = citation_filter.push(chunk)
                             if cleaned is not None:
-                                await self.stream_publisher.publish_chunk(channel, cleaned)
+                                await self.stream_publisher.publish_chunk(
+                                    channel, cleaned
+                                )
                         else:
                             await self.stream_publisher.publish_chunk(channel, chunk)
                     if not output_blocked and citation_filter is not None:
                         remaining = citation_filter.flush()
                         if remaining:
-                            await self.stream_publisher.publish_chunk(channel, remaining)
+                            await self.stream_publisher.publish_chunk(
+                                channel, remaining
+                            )
 
                 full_content = "".join(accumulated_content)
                 if output_blocked:
@@ -334,10 +340,16 @@ class LLMGenerationWorkerWorkflow:
                     output_decision = evaluate_output_guardrail(full_content)
                     content_to_persist = full_content
                 citation_result: CitationResult | None = None
-                if not output_blocked and search_context is not None and content_to_persist:
+                if (
+                    not output_blocked
+                    and search_context is not None
+                    and content_to_persist
+                ):
                     valid_ref_ids = extract_valid_ref_ids(search_context)
                     if valid_ref_ids:
-                        citation_result = validate_citations(content_to_persist, valid_ref_ids)
+                        citation_result = validate_citations(
+                            content_to_persist, valid_ref_ids
+                        )
                         content_to_persist = citation_result.cleaned_content
                 tokens_output = self._count_output_tokens(content_to_persist)
                 await self._persist_success_and_idempotency(
@@ -362,7 +374,8 @@ class LLMGenerationWorkerWorkflow:
                 if citation_result is not None:
                     citation_attrs = {
                         "citation.total": citation_result.total_citations,
-                        "citation.valid": citation_result.total_citations - citation_result.removed_count,
+                        "citation.valid": citation_result.total_citations
+                        - citation_result.removed_count,
                         "citation.removed": citation_result.removed_count,
                     }
                 set_span_attributes(
@@ -414,9 +427,11 @@ class LLMGenerationWorkerWorkflow:
                     idempotency_lock_key=idempotency_lock_key,
                 )
             try:
-                llm_query, tokens_input, search_context = (
-                    await self._prepare_generation(payload)
-                )
+                (
+                    llm_query,
+                    tokens_input,
+                    search_context,
+                ) = await self._prepare_generation(payload)
             except _RAGRefusalSignal as sig:
                 return await self.guardrail_handler.handle_nonstream_refusal(
                     assistant_message_id=assistant_message_id,
@@ -473,7 +488,11 @@ class LLMGenerationWorkerWorkflow:
                 else original_content
             )
             citation_result: CitationResult | None = None
-            if not output_decision.triggered and search_context is not None and full_content:
+            if (
+                not output_decision.triggered
+                and search_context is not None
+                and full_content
+            ):
                 valid_ref_ids = extract_valid_ref_ids(search_context)
                 if valid_ref_ids:
                     citation_result = validate_citations(full_content, valid_ref_ids)
@@ -507,7 +526,8 @@ class LLMGenerationWorkerWorkflow:
                     "taskiq.llm_nonstream.citation_validate",
                     {
                         "citation.total": citation_result.total_citations,
-                        "citation.valid": citation_result.total_citations - citation_result.removed_count,
+                        "citation.valid": citation_result.total_citations
+                        - citation_result.removed_count,
                         "citation.removed": citation_result.removed_count,
                     },
                 ):

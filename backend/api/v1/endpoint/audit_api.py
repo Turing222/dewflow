@@ -26,16 +26,16 @@ AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 PermissionServiceDep = Annotated[PermissionService, Depends(get_permission_service)]
 
 
-@router.get("/events", response_model=AuditEventListResponse)
+@router.get("/events")
 async def list_audit_events(
     current_user: CurrentUserDep,
     audit_service: AuditServiceDep,
     permission_service: PermissionServiceDep,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=MAX_AUDIT_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
-    action: str | None = Query(None, max_length=80),
+    action: Annotated[str | None, Query(max_length=80)] = None,
     outcome: AuditOutcome | None = None,
-    request_id: str | None = Query(None, max_length=64),
+    request_id: Annotated[str | None, Query(max_length=64)] = None,
     actor_user_id: uuid.UUID | None = None,
     workspace_id: uuid.UUID | None = None,
 ) -> AuditEventListResponse:

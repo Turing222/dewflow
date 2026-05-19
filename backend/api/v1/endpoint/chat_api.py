@@ -62,7 +62,7 @@ StreamWorkflowDep = Annotated[ChatWorkflow, Depends(get_chat_workflow)]
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
-@router.post("/query_sent", response_model=ChatQueryResponse)
+@router.post("/query_sent")
 async def query_sent(
     request: QuerySentRequest,
     current_user: CurrentUserDep,
@@ -84,7 +84,9 @@ async def query_sent(
             "client_request_id": request.client_request_id,
         },
     ) as audit:
-        extra_body = request.extra_body.to_provider_dict() if request.extra_body else None
+        extra_body = (
+            request.extra_body.to_provider_dict() if request.extra_body else None
+        )
         command = ChatQueryCommand(
             user_id=current_user.id,
             query_text=request.query,
@@ -120,6 +122,7 @@ async def query_stream(
     （或中途异常）后才收口审计记录，避免在 StreamingResponse 返回
     时提前标记 success。meta 事件解析后同步更新 resource_id。
     """
+
     async def _audited_stream() -> AsyncIterator[str]:
         async with capture_audit(
             audit_service,
@@ -173,7 +176,7 @@ async def query_stream(
     )
 
 
-@router.get("/sessions", response_model=SessionListResponse)
+@router.get("/sessions")
 async def get_sessions(
     current_user: CurrentUserDep,
     session_query_service: SessionQueryServiceDep,
@@ -189,7 +192,7 @@ async def get_sessions(
         )
 
 
-@router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
+@router.get("/sessions/{session_id}")
 async def get_session_detail(
     session_id: uuid.UUID,
     current_user: CurrentUserDep,
