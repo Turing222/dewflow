@@ -6,7 +6,9 @@
 """
 
 import asyncio
+import logging
 import uuid
+from collections.abc import Collection
 from pathlib import Path
 from typing import cast
 
@@ -23,6 +25,8 @@ from backend.services.chunking_service import ChunkingService, ChunkPayload
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.safety_scanner import SafetyScanner
 from backend.services.vector_index_service import VectorIndexService
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeRAGWorkflow:
@@ -45,10 +49,20 @@ class KnowledgeRAGWorkflow:
     ) -> None:
         with trace_span("knowledge.ingest.load_file", {"rag.file_id": file_id}) as span:
             async with self.knowledge_service.uow:
-                file_obj = await self.knowledge_service.set_file_status(
+                success = await self.knowledge_service.try_transition_file_status(
                     file_id=file_id,
-                    status=FileStatus.PARSING,
+                    expected_previous_statuses=[FileStatus.UPLOADED],
+                    target_status=FileStatus.PARSING,
                 )
+                if not success:
+                    file_obj = await self.knowledge_service.get_file(file_id)
+                    if not file_obj:
+                        raise app_not_found("文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND")
+                    raise app_validation_error(
+                        "文件状态不为 UPLOADED 或已被并发任务处理",
+                        code="KNOWLEDGE_FILE_ALREADY_INGESTING",
+                    )
+                file_obj = await self.knowledge_service.get_file(file_id)
             if file_obj:
                 set_span_attributes(
                     span,
@@ -100,50 +114,67 @@ class KnowledgeRAGWorkflow:
                 },
             ):
                 async with self.knowledge_service.uow:
-                    await self.knowledge_service.set_file_status(
+                    success = await self.knowledge_service.try_transition_file_status(
                         file_id=file_id,
-                        status=FileStatus.CHUNKING,
+                        expected_previous_statuses=[FileStatus.PARSING],
+                        target_status=FileStatus.CHUNKING,
                     )
+                    if not success:
+                        raise app_validation_error(
+                            "文件状态不为 PARSING 无法进入 CHUNKING 状态",
+                            code="KNOWLEDGE_FILE_NOT_PARSING",
+                        )
                     await self.vector_index_service.replace_file_chunks(
                         file_id=file_id,
                         chunks=chunks,
                         filename=file_obj.filename,
                         file_path=file_obj.file_path,
                     )
-                    await self.knowledge_service.set_file_status(
+                    success = await self.knowledge_service.try_transition_file_status(
                         file_id=file_id,
-                        status=FileStatus.READY,
+                        expected_previous_statuses=[FileStatus.CHUNKING],
+                        target_status=FileStatus.READY,
                     )
+                    if not success:
+                        raise app_validation_error(
+                            "文件状态不为 CHUNKING 无法进入 READY 状态",
+                            code="KNOWLEDGE_FILE_NOT_CHUNKING",
+                        )
         except FileNotFoundError as exc:
-            async with self.knowledge_service.uow:
-                await self.knowledge_service.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
-                await self.knowledge_service.set_file_status(
-                    file_id=file_id,
-                    status=FileStatus.FAILED,
-                )
+            await self._cleanup_failed_ingestion(file_id=file_id)
             raise app_not_found(
                 "上传文件在存储路径中不存在",
                 code="KNOWLEDGE_FILE_OBJECT_NOT_FOUND",
             ) from exc
         except AppException:
-            async with self.knowledge_service.uow:
-                await self.knowledge_service.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
-                await self.knowledge_service.set_file_status(
-                    file_id=file_id,
-                    status=FileStatus.FAILED,
-                )
+            await self._cleanup_failed_ingestion(file_id=file_id)
             raise
         except Exception as exc:
-            async with self.knowledge_service.uow:
-                await self.knowledge_service.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
-                await self.knowledge_service.set_file_status(
-                    file_id=file_id,
-                    status=FileStatus.FAILED,
-                )
+            await self._cleanup_failed_ingestion(file_id=file_id)
             raise app_service_error(
                 "知识文件处理失败，请稍后重试",
                 code="KNOWLEDGE_FILE_INGEST_FAILED",
             ) from exc
+
+    async def _cleanup_failed_ingestion(self, *, file_id: uuid.UUID) -> None:
+        expected_statuses: Collection[FileStatus] = (
+            FileStatus.UPLOADED,
+            FileStatus.PARSING,
+            FileStatus.CHUNKING,
+            FileStatus.READY,
+        )
+        async with self.knowledge_service.uow:
+            await self.knowledge_service.delete_chunks_for_file(file_id=file_id)
+            success = await self.knowledge_service.try_transition_file_status(
+                file_id=file_id,
+                expected_previous_statuses=expected_statuses,
+                target_status=FileStatus.FAILED,
+            )
+        if not success:
+            logger.warning(
+                "Failed to mark knowledge file ingestion as failed: file_id=%s",
+                file_id,
+            )
 
     def _extract_chunks(self, file_path: Path) -> list[ChunkPayload]:
         suffix = file_path.suffix.lower()

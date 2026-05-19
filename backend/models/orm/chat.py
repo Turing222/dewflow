@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.enums import MessageStatus
-from backend.models.orm.base import AuditMixin, Base, BaseIdModel
+from backend.models.orm.base import AuditMixin, Base, BaseIdModel, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from backend.models.orm.access import Workspace
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from backend.models.orm.user import User
 
 
-class ChatSession(Base, BaseIdModel, AuditMixin):
+class ChatSession(Base, BaseIdModel, AuditMixin, SoftDeleteMixin):
     """对话会话，作为消息分组和 LLM 配置容器。"""
 
     __tablename__ = "chat_sessions"

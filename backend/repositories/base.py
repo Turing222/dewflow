@@ -24,7 +24,9 @@ class CRUDBase[ModelType, CreateSchemaType: BaseModel, UpdateSchemaType: BaseMod
         self.session = session
 
     async def get(self, id: Any) -> ModelType | None:
-        return await self.session.get(self.model, id)
+        stmt = select(self.model).where(self.model.id == id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
     async def get_by(self, **kwargs: Any) -> ModelType | None:
         statement = select(self.model).filter_by(**kwargs)

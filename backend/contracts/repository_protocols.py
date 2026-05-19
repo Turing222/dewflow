@@ -9,7 +9,7 @@
 
 import datetime
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any, Protocol
 
 from backend.models.enums import MessageStatus, WorkspaceRole
@@ -225,6 +225,14 @@ class KnowledgeRepositoryProtocol(Protocol):
     async def update_file_status(
         self, file_id: uuid.UUID, status: FileStatus
     ) -> File | None: ...
+
+    async def try_transition_file_status(
+        self,
+        *,
+        file_id: uuid.UUID,
+        expected_previous_statuses: Collection[FileStatus],
+        target_status: FileStatus,
+    ) -> bool: ...
 
     async def mark_stale_ingestion_files_failed(
         self, *, older_than: datetime.datetime

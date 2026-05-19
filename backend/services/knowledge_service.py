@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -191,6 +192,22 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
         return await self.uow.knowledge_repo.update_file_status(
             file_id=file_id, status=status
         )
+
+    async def try_transition_file_status(
+        self,
+        *,
+        file_id: uuid.UUID,
+        expected_previous_statuses: Collection[FileStatus],
+        target_status: FileStatus,
+    ) -> bool:
+        return await self.uow.knowledge_repo.try_transition_file_status(
+            file_id=file_id,
+            expected_previous_statuses=expected_previous_statuses,
+            target_status=target_status,
+        )
+
+    async def delete_chunks_for_file(self, *, file_id: uuid.UUID) -> None:
+        await self.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:

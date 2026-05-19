@@ -38,18 +38,12 @@ class AccessRepository:
         return WorkspaceRole(role) if role else None
 
     async def get_workspace(self, workspace_id: uuid.UUID) -> Workspace | None:
-        stmt = select(Workspace).where(
-            Workspace.id == workspace_id,
-            Workspace.deleted_at.is_(None),  # 软删除行不出现在常规查询中
-        )
+        stmt = select(Workspace).where(Workspace.id == workspace_id)
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
     async def get_workspace_by_slug(self, slug: str) -> Workspace | None:
-        stmt = select(Workspace).where(
-            Workspace.slug == slug,
-            Workspace.deleted_at.is_(None),
-        )
+        stmt = select(Workspace).where(Workspace.slug == slug)
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
@@ -189,7 +183,6 @@ class AccessRepository:
             .join(UserWorkspaceRole, UserWorkspaceRole.workspace_id == Workspace.id)
             .where(
                 UserWorkspaceRole.user_id == user_id,
-                Workspace.deleted_at.is_(None),
             )
             .order_by(Workspace.created_at.desc())
             .offset(skip)
@@ -205,7 +198,6 @@ class AccessRepository:
             .join(UserWorkspaceRole, UserWorkspaceRole.workspace_id == Workspace.id)
             .where(
                 UserWorkspaceRole.user_id == user_id,
-                Workspace.deleted_at.is_(None),
             )
         )
         return await self.session.scalar(stmt) or 0

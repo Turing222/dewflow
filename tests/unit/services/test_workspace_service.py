@@ -43,6 +43,7 @@ def make_workspace(**overrides: object) -> SimpleNamespace:
         "name": "Team",
         "slug": "team",
         "owner_id": uuid.uuid4(),
+        "deleted_at": None,
         "created_at": now,
         "updated_at": now,
     }

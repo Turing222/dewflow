@@ -7,11 +7,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    DateTime,
     ForeignKey,
     Index,
     String,
@@ -22,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.models.orm.base import AuditMixin, Base, BaseIdModel
+from backend.models.orm.base import AuditMixin, Base, BaseIdModel, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from backend.models.orm.chat import ChatSession
@@ -33,7 +31,7 @@ if TYPE_CHECKING:
 from backend.models.enums import AuditOutcome, WorkspaceRole
 
 
-class Workspace(Base, BaseIdModel, AuditMixin):
+class Workspace(Base, BaseIdModel, AuditMixin, SoftDeleteMixin):
     """权限隔离的工作区。"""
 
     __tablename__ = "workspaces"
@@ -47,13 +45,7 @@ class Workspace(Base, BaseIdModel, AuditMixin):
         index=True,
         nullable=True,
     )
-    # 软删除保留关联资源的 workspace_id，避免物理删除造成历史数据脱链。
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        index=True,
-        comment="软删除时间，NULL 表示活跃",
-    )
+    # 软删除通过 SoftDeleteMixin.deleted_at 实现，保留 workspace_id 外键不被置 NULL。
 
     owner: Mapped[User | None] = relationship(
         back_populates="owned_workspaces",

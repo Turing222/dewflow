@@ -5,7 +5,7 @@
 """
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime
 
 from sqlalchemy import delete, func, insert, select, update
@@ -138,6 +138,29 @@ class KnowledgeRepository:
         await self.session.flush()
         await self.session.refresh(knowledge_file)
         return knowledge_file
+
+    async def try_transition_file_status(
+        self,
+        *,
+        file_id: uuid.UUID,
+        expected_previous_statuses: Collection[FileStatus],
+        target_status: FileStatus,
+    ) -> bool:
+        """条件更新：只有当当前状态处于 expected_previous_statuses 中时，才更新为 target_status。
+
+        返回 True 表示状态流转成功，返回 False 表示并发冲突或状态不匹配。
+        """
+        stmt = (
+            update(File)
+            .where(
+                File.id == file_id,
+                File.status.in_(list(expected_previous_statuses)),
+            )
+            .values(status=target_status)
+            .returning(File.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def mark_stale_ingestion_files_failed(
         self,

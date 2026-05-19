@@ -7,9 +7,15 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, func, text
+from sqlalchemy import DateTime, MetaData, event, func, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    with_loader_criteria,
+)
 from ulid import ULID
 
 naming_convention = {
@@ -65,3 +71,36 @@ class AuditMixin:
         onupdate=func.now(),
         comment="最后更新时间",
     )
+
+
+class SoftDeleteMixin:
+    """软删除混入类"""
+
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        index=True,
+        comment="软删除时间，NULL 表示未删除",
+    )
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _apply_soft_delete_filter(execute_state):
+    """全局自动拦截所有 ORM SELECT 查询，默认剔除已被软删除的数据。"""
+    if (
+        execute_state.is_select
+        and not execute_state.execution_options.get("include_deleted", False)
+    ):
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                SoftDeleteMixin,
+                lambda cls: cls.deleted_at.is_(None),
+                include_aliases=True,
+                propagate_to_loaders=True,
+            )
+        )
