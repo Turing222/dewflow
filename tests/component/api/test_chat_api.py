@@ -26,11 +26,6 @@ class _FakeEncoding:
         return list(text or "")
 
 
-class _NoopLangfuseClient:
-    def update_current_trace(self, **kwargs):
-        return None
-
-
 def make_user(**overrides):
     now = datetime.now(UTC)
     data = {
@@ -269,8 +264,7 @@ def stable_test_environment():
             return_value=_FakeEncoding(),
         ),
         patch(
-            "backend.application.chat.web_nonstream_workflow.get_client",
-            return_value=_NoopLangfuseClient(),
+            "backend.application.chat.web_nonstream_workflow.set_langfuse_trace_metadata",
         ),
     ):
         yield
@@ -326,7 +320,6 @@ def api_context():
     app.dependency_overrides[get_uow] = lambda: uow
     app.dependency_overrides[get_audit_service] = lambda: AuditService(
         uow=uow,  # type: ignore[arg-type]
-        session_factory=None,  # 测试不写审计库
         request_context=AuditRequestContext(),
     )
     app.dependency_overrides[get_permission_service] = lambda: PermissionService(

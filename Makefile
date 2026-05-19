@@ -37,7 +37,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
+	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	image-build \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
@@ -50,6 +50,7 @@ help:
 	@printf '%s\n' \
 		'Available targets:' \
 		'  qa-lint              Run Ruff lint checks' \
+		'  qa-lint-fix          Run Ruff lint fixes' \
 		'  qa-boundaries        Check Web/Worker import boundaries' \
 		'  qa-format            Run Ruff formatter' \
 		'  qa-format-check      Check Ruff formatter without writing files' \
@@ -93,6 +94,9 @@ help:
 
 qa-lint:
 	uv run ruff check .
+
+qa-lint-fix:
+	uv run ruff check . --fix
 
 qa-boundaries:
 	uv run python scripts/check_import_boundaries.py

@@ -124,6 +124,23 @@ markers = [
     "ci_only: tests intended only for CI profile runs",
 ]
 
+[tool.coverage.run]
+source = ["backend"]
+omit = [
+    "backend/main.py",
+    "backend/**/conftest.py",
+]
+
+[tool.coverage.report]
+fail_under = 75
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "pass",
+]
+
 [tool.ty.environment]
 python = ".venv"
 

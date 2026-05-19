@@ -73,6 +73,11 @@ test_demo.py
 # 测试快照归档（不提交到仓库）
 snapshots/*.json
 perf/reports/
+
+# 覆盖率报告（构建产物，不提交）
+htmlcov/
+.coverage
+.coverage.*
 # 工具目录
 tools/
 test-debug-agent/

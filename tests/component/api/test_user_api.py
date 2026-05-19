@@ -39,11 +39,26 @@ class StubUserService:
         self.user_update = AsyncMock()
         self.user_register_with_personal_workspace = AsyncMock()
 
+    @asynccontextmanager
+    async def read(self) -> AsyncIterator[DummyUoW]:
+        async with self.uow.read_context():
+            yield self.uow
+
+    @asynccontextmanager
+    async def write(self) -> AsyncIterator[DummyUoW]:
+        async with self.uow:
+            yield self.uow
+
 
 class StubUserImportService:
     def __init__(self):
         self.uow = DummyUoW()
         self.import_from_upload = AsyncMock()
+
+    @asynccontextmanager
+    async def write(self) -> AsyncIterator[DummyUoW]:
+        async with self.uow:
+            yield self.uow
 
 
 def make_user(**overrides):
