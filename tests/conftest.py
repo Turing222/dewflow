@@ -17,6 +17,7 @@ def pytest_configure() -> None:
     get_test_profile()
     os.environ.setdefault("APP_ENV", "test")
     os.environ.setdefault("SECRET_KEY", "test-secret")
+    os.environ.setdefault("CHAT_RATE_LIMIT_TIMES", "100000")
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
