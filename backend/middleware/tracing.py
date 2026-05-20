@@ -11,6 +11,7 @@
 import logging
 import time
 
+from fastapi import FastAPI
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from backend.observability.trace_utils import (
@@ -37,11 +38,16 @@ class TracingMiddleware:
         trace_id = current_trace_id()
 
         headers = dict(scope.get("headers", []))
-        incoming_request_id = (
-            headers.get(b"x-request-id", b"").decode().strip()
-        )
+        incoming_request_id = headers.get(b"x-request-id", b"").decode().strip()
         request_id = incoming_request_id or trace_id
         token = REQUEST_ID_CTX.set(request_id)
+
+        if "state" not in scope:
+            scope["state"] = {}
+        scope["state"]["request_id"] = request_id
+        scope["state"]["trace_id"] = trace_id
+        scope["state"]["process_start"] = start
+
         set_current_span_attributes(
             {
                 "app.request_id": request_id,
@@ -52,7 +58,12 @@ class TracingMiddleware:
         async def send_with_headers(message: dict) -> None:
             if message["type"] == "http.response.start":
                 process_time_ms = (time.perf_counter() - start) * 1000
-                headers_list = list(message.get("headers", []))
+                headers_list = [
+                    h
+                    for h in message.get("headers", [])
+                    if h[0].lower()
+                    not in (b"x-request-id", b"x-trace-id", b"x-process-time")
+                ]
                 headers_list.append([b"x-request-id", request_id.encode()])
                 headers_list.append([b"x-trace-id", trace_id.encode()])
                 headers_list.append(
@@ -80,3 +91,8 @@ class TracingMiddleware:
             raise
         finally:
             REQUEST_ID_CTX.reset(token)
+
+
+def setup_tracing(app: FastAPI) -> None:
+    """Helper to add TracingMiddleware to a FastAPI application."""
+    app.add_middleware(TracingMiddleware)

@@ -58,6 +58,10 @@ class TypedStreamWorkflow:
 
 
 async def test_query_stream_serializes_typed_events_and_audits_meta_resource() -> None:
+    class FakeHttpRequest:
+        async def is_disconnected(self) -> bool:
+            return False
+
     uow_factory = CapturingUowFactory()
     audit_service = AuditService(
         uow=SimpleNamespace(),
@@ -72,6 +76,7 @@ async def test_query_stream_serializes_typed_events_and_audits_meta_resource() -
     )
 
     response = await chat_api.query_stream(
+        http_request=FakeHttpRequest(),  # type: ignore
         request=request,
         current_user=SimpleNamespace(id=uuid.uuid4()),
         workflow=TypedStreamWorkflow(),

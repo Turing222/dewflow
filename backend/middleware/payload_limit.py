@@ -1,7 +1,5 @@
 """Payload size limit middleware."""
 
-from starlette.requests import Request
-from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from backend.core.constants import MAX_PAYLOAD_SIZE_BYTES
@@ -84,12 +82,14 @@ class PayloadLimitMiddleware:
 
     @staticmethod
     async def _send_too_large(send: Send) -> None:
-        await send({
-            "type": "http.response.start",
-            "status": 413,
-            "headers": [
-                [b"content-type", b"application/json"],
-                [b"content-length", str(len(_TOO_LARGE)).encode()],
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    [b"content-type", b"application/json"],
+                    [b"content-length", str(len(_TOO_LARGE)).encode()],
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": _TOO_LARGE})

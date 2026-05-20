@@ -45,7 +45,9 @@ def test_build_agent_input_splits_system_history_and_current_user() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_response_uses_pydantic_agent(monkeypatch) -> None:
-    service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
+    service = PydanticAILLMService(
+        api_key="test-key", model_name="gemini-test", provider_name="gemini"
+    )
     captured = {}
 
     class FakeAgent:
@@ -92,7 +94,9 @@ async def test_generate_response_merges_extra_body(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_stream_response_yields_delta_chunks(monkeypatch) -> None:
-    service = PydanticAILLMService(api_key="test-key", model_name="gemini-test")
+    service = PydanticAILLMService(
+        api_key="test-key", model_name="gemini-test", provider_name="gemini"
+    )
 
     class FakeStreamResult:
         async def stream_text(self, *, delta: bool = False):
