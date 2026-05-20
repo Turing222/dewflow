@@ -1,0 +1,309 @@
+"""Worker RAG orchestrator tests — RAG plan, retrieval, rerank, and fusion.
+
+职责：验证 WorkerRAGOrchestrator 的 RAG 计划构建、检索错误处理、rerank 降级和 hybrid fusion；
+边界：不启动 HTTP stack、不连接真实数据库或 Redis；副作用：无。
+"""
+
+import uuid
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from backend.services.rag_planning_service import RAGExecutionPlan
+from tests.unit.workflows.conftest import make_rag_hit
+
+pytestmark = pytest.mark.asyncio
+
+
+async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.context_state import ContextState
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
+        False,
+    )
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        False,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test query",
+        conversation_history=[],
+        context_state=ContextState(decisions=["使用会话记忆"]),
+    )
+
+    rag_service = MagicMock()
+    rag_service.retrieve_fulltext = AsyncMock(return_value=[])
+    rag_service.retrieve = AsyncMock(return_value=[])
+
+    mock_assembled_prompt = SimpleNamespace(total_tokens=42, messages=[])
+    mock_context_builder = MagicMock()
+    mock_context_builder.build_from_chunks.return_value = SimpleNamespace(
+        assembled_prompt=mock_assembled_prompt,
+        search_context={"key": "val"},
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        chat_context_builder=mock_context_builder,
+    )
+
+    result = await orchestrator.prepare_context(payload)
+
+    assert result.refusal_decision is None
+    assert result.assembled_prompt is not None
+    assert (
+        mock_context_builder.build_from_chunks.call_args.kwargs["context_state"]
+        == payload.context_state
+    )
+
+
+async def test_build_rag_plan_planner_error_falls_back_to_default(monkeypatch) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
+        False,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test query",
+        kb_id=uuid.uuid4(),
+        conversation_history=[],
+    )
+
+    planner = MagicMock()
+    planner.plan = AsyncMock(side_effect=ValueError("LLM API failed"))
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_planning_service=planner,
+    )
+
+    plan, planner_used = await orchestrator.build_rag_plan(payload)
+
+    assert isinstance(plan, RAGExecutionPlan)
+    assert plan.should_use_rag is True
+    assert planner_used is False
+
+
+async def test_retrieve_rag_candidates_connection_error_returns_empty(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
+        False,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        kb_id=uuid.uuid4(),
+        conversation_history=[],
+    )
+
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(side_effect=ConnectionError("DB down"))
+
+    rag_plan = RAGExecutionPlan(
+        should_use_rag=True,
+        retrieval_mode="vector",
+        top_k=4,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(rag_service=rag_service)
+    result = await orchestrator.retrieve_rag_candidates(payload, rag_plan)
+
+    assert result == []
+    rag_service.retrieve.assert_awaited_once()
+
+
+async def test_rerank_candidates_if_enabled_rerank_error_falls_back(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    calls: list[dict] = []
+
+    class _FakeSlot:
+        def __init__(self, attrs: dict | None) -> None:
+            self.attrs = attrs
+
+        async def __aenter__(self) -> None:
+            calls.append(self.attrs)
+
+        async def __aexit__(self, *args) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.llm_concurrency_slot",
+        _FakeSlot,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        conversation_history=[],
+    )
+
+    candidates = [make_rag_hit(content=f"chunk-{i}", index=i) for i in range(3)]
+
+    rag_plan = RAGExecutionPlan(
+        should_use_rag=True,
+        retrieval_mode="vector",
+        top_k=4,
+        use_rerank=True,
+        rerank_top_k=2,
+        candidate_count=20,
+    )
+
+    rag_service = MagicMock()
+    rag_service.rerank = AsyncMock(side_effect=RuntimeError("rerank failed"))
+
+    orchestrator = WorkerRAGOrchestrator(rag_service=rag_service)
+    result = await orchestrator.rerank_candidates_if_enabled(
+        payload, candidates, rag_plan
+    )
+
+    assert len(result) == 2
+    assert result[0]["content"] == "chunk-0"
+    assert result[1]["content"] == "chunk-1"
+
+
+async def test_prepare_context_refusal_search_context_includes_evidence_fields(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RELEVANCE_SCORE",
+        0.5,
+    )
+
+    low_evidence_hit = make_rag_hit(
+        retrieval_mode="hybrid",
+        score=1.0,
+        evidence_score=0.2,
+        matched_by=["vector"],
+    )
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        kb_id=uuid.uuid4(),
+        conversation_history=[],
+        rag_candidates=[low_evidence_hit],
+    )
+
+    orchestrator = WorkerRAGOrchestrator()
+    result = await orchestrator.prepare_context(payload)
+
+    assert result.refusal_decision is not None
+    assert result.search_context is not None
+    assert result.search_context["rag_refusal"] is True
+    assert result.search_context["reason"] == "RAG hybrid 证据不足"
+    first_chunk = result.search_context["chunks"][0]
+    assert first_chunk["retrieval_mode"] == "hybrid"
+    assert first_chunk["evidence_score"] == 0.2
+    assert first_chunk["matched_by"] == ["vector"]
+
+
+async def test_prepare_context_hybrid_rerank_uses_rerank_score_for_policy(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RELEVANCE_SCORE",
+        0.5,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RERANK_SCORE",
+        4.0,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        kb_id=uuid.uuid4(),
+        conversation_history=[],
+    )
+    candidate = make_rag_hit(
+        retrieval_mode="hybrid",
+        score=1.0,
+        evidence_score=0.1,
+        matched_by=["vector"],
+    )
+    reranked = dict(candidate, rerank_score=5.0, score_kind="rerank_score")
+    rag_service = MagicMock()
+    rag_service.retrieve_hybrid = AsyncMock(return_value=[candidate])
+    rag_service.rerank = AsyncMock(return_value=[reranked])
+    context_builder = MagicMock()
+    context_builder.build_from_chunks.return_value = SimpleNamespace(
+        assembled_prompt=SimpleNamespace(total_tokens=42, messages=[]),
+        search_context={"chunks": [{"rerank_score": 5.0}]},
+    )
+    rag_plan = RAGExecutionPlan(
+        should_use_rag=True,
+        retrieval_mode="hybrid",
+        top_k=4,
+        use_rerank=True,
+        candidate_count=20,
+        rerank_top_k=4,
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=rag_plan)
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+        chat_context_builder=context_builder,
+    )
+    result = await orchestrator.prepare_context(payload)
+
+    assert result.refusal_decision is None
+    rag_service.rerank.assert_awaited_once()
+    context_builder.build_from_chunks.assert_called_once()
+    assert (
+        context_builder.build_from_chunks.call_args.kwargs["rag_chunks"][0][
+            "rerank_score"
+        ]
+        == 5.0
+    )

@@ -4,7 +4,7 @@
 
 配套的工程化分层标准见：
 
-- [automation-standard.md](/home/tongying/workspace/mlops-project/docs/automation-standard.md)
+- [automation-standard.md](./automation-standard.md)
 
 ## 1. 目标
 
@@ -56,7 +56,7 @@ flowchart TD
 示例：
 
 ```bash
-make qa-test-unit UNIT_TARGETS=tests/unit/api/test_user_api_unit.py
+make qa-test-unit UNIT_TARGETS=tests/unit/api/test_user_api.py
 ```
 
 如果改动影响多个模块，则运行对应的单元测试集合，例如：
@@ -132,7 +132,7 @@ make image-build
 
 当前 Smoke 环境使用：
 
-- [docker-compose.db.yml](/home/tongying/workspace/mlops-project/docker-compose.db.yml)
+- [docker-compose.db.yml](../docker-compose.db.yml)
 
 当前编排包含的核心服务：
 

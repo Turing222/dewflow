@@ -1,0 +1,4 @@
+interface:
+  display_name: "Edit"
+  short_description: "Modify existing repository files safely"
+  default_prompt: "Modify existing files while preserving project boundaries and user changes."

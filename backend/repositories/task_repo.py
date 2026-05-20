@@ -1,8 +1,15 @@
+"""Async task persistence repository.
+
+职责：封装 TaskJob 的创建、状态流转和按用户/状态维度的查询。
+边界：本模块不负责任务调度或执行，只做持久化读写。
+"""
+
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.task import TaskJob, TaskStatus
@@ -10,14 +17,13 @@ from backend.repositories.base import CRUDBase
 
 
 class TaskRepository:
-    """任务相关的 Repository（单模型，采用组合风格）。"""
+    """异步任务的持久化操作，组合 CRUDBase 管理状态流转。"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.crud: CRUDBase[TaskJob, BaseModel, BaseModel] = CRUDBase(TaskJob, session)
 
     async def get(self, task_id: uuid.UUID) -> TaskJob | None:
-        """根据 ID 获取任务"""
         return await self.crud.get(task_id)
 
     async def create(
@@ -27,7 +33,6 @@ class TaskRepository:
         status: TaskStatus = TaskStatus.PENDING,
         progress: int = 0,
     ) -> TaskJob:
-        """创建新任务"""
         data = {
             "action_type": action_type,
             "status": status,
@@ -43,7 +48,6 @@ class TaskRepository:
         progress: int | None = None,
         error_log: str | None = None,
     ) -> TaskJob | None:
-        """更新任务状态和进度"""
         task = await self.get(task_id)
         if not task:
             return None
@@ -62,7 +66,6 @@ class TaskRepository:
         skip: int = 0,
         limit: int = 100,
     ) -> Sequence[TaskJob]:
-        """根据状态获取任务列表"""
         stmt = (
             select(TaskJob)
             .where(TaskJob.status == status)
@@ -79,22 +82,21 @@ class TaskRepository:
         skip: int = 0,
         limit: int = 20,
     ) -> Sequence[TaskJob]:
-        """
-        获取用户的任务列表
-        注意：TaskJob 没有直接的 user_id 字段，需要通过 payload 中的 session_id 关联查询
-        或者由 Service 层在调用时传入 user_id 到 payload 中
-        """
-        raise NotImplementedError(
-            "TaskRepository.get_user_tasks is not implemented: "
-            "task_jobs has no user_id column yet."
+        stmt = (
+            select(TaskJob)
+            .where(TaskJob.payload["user_id"].astext == str(user_id))
+            .order_by(TaskJob.created_at.desc())
+            .offset(skip)
+            .limit(limit)
         )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
 
     async def mark_completed(
         self,
         task_id: uuid.UUID,
         progress: int = 100,
     ) -> TaskJob | None:
-        """标记任务为完成状态"""
         return await self.update_status(
             task_id=task_id,
             status=TaskStatus.COMPLETED,
@@ -106,7 +108,6 @@ class TaskRepository:
         task_id: uuid.UUID,
         error_log: str,
     ) -> TaskJob | None:
-        """标记任务为失败状态"""
         return await self.update_status(
             task_id=task_id,
             status=TaskStatus.FAILED,
@@ -119,9 +120,28 @@ class TaskRepository:
         task_id: uuid.UUID,
         progress: int = 0,
     ) -> TaskJob | None:
-        """标记任务为处理中状态"""
         return await self.update_status(
             task_id=task_id,
             status=TaskStatus.PROCESSING,
             progress=progress,
         )
+
+    async def mark_stale_kb_ingestion_tasks_failed(
+        self,
+        *,
+        older_than: datetime,
+        error_log: str,
+    ) -> int:
+        stmt = (
+            update(TaskJob)
+            .where(TaskJob.action_type == "KB_INGESTION")
+            .where(TaskJob.status == TaskStatus.PROCESSING)
+            .where(TaskJob.updated_at < older_than)
+            .values(
+                status=TaskStatus.FAILED,
+                progress=0,
+                error_log=error_log[:5000],
+            )
+        )
+        result = await self.session.execute(stmt)
+        return int(getattr(result, "rowcount", 0) or 0)

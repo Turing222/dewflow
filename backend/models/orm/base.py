@@ -1,9 +1,21 @@
+"""SQLAlchemy declarative base and shared ORM mixins.
+
+职责：集中定义模型基类、ID 生成策略和审计时间字段。
+边界：本模块不声明业务表，只提供 ORM 模型的公共结构。
+"""
+
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, func, text
+from sqlalchemy import DateTime, MetaData, event, func, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    with_loader_criteria,
+)
 from ulid import ULID
 
 naming_convention = {
@@ -16,7 +28,7 @@ naming_convention = {
 
 
 class IDGenerator:
-    """ID 生成器工具"""
+    """生成应用层主键。"""
 
     @staticmethod
     def new_ulid_as_uuid() -> uuid.UUID:
@@ -24,31 +36,22 @@ class IDGenerator:
 
 
 class Base(DeclarativeBase):
-    metadata = MetaData(naming_convention=naming_convention)
-    """所有模型的祖先类"""
+    """所有 ORM 模型的声明式基类。"""
 
-    pass
+    metadata = MetaData(naming_convention=naming_convention)
 
 
 class BaseIdModel:
-    """
-    基础 ID 模型
-    使用 ULID -> UUID 的方案。
-    作为 DBA，你一定知道 K-Ordered (按时间排序) 的 ID 对 B-Tree 索引非常友好，
-    能极大减少索引分裂（Index Fragmentation）。
-    """
+    """提供基于 ULID 的 UUID 主键。"""
 
     id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),  # 显式指定存储类型
+        PG_UUID(as_uuid=True),
         primary_key=True,
-        # 这里使用 default 而非 server_default，是因为 ULID 通常由应用层生成
+        # ULID 由应用层生成，数据库默认值只作为直接 SQL 写入时的兜底。
         default=IDGenerator.new_ulid_as_uuid,
-        # 显式指定 SQL 类型，确保跨库一致性
         nullable=False,
         comment="基于ULID生成的唯一标识",
-        server_default=text(
-            "gen_random_uuid()"
-        ),  # 数据库侧兜底逻辑（PG17原生时间序UUID）
+        server_default=text("gen_random_uuid()"),
     )
 
     def __repr__(self) -> str:
@@ -56,17 +59,47 @@ class BaseIdModel:
 
 
 class AuditMixin:
-    # 1. 使用 datetime 类型
-    # 2. sort_order=999 确保这些审计字段在建表时排在最后（可选）
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),  # 建议开启时区支持
+        DateTime(timezone=True),
         server_default=func.now(),
         comment="创建时间",
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),  # 初始时更新时间等于创建时间
-        onupdate=func.now(),  # 应用层触发更新
+        server_default=func.now(),
+        onupdate=func.now(),
         comment="最后更新时间",
     )
+
+
+class SoftDeleteMixin:
+    """软删除混入类"""
+
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        index=True,
+        comment="软删除时间，NULL 表示未删除",
+    )
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _apply_soft_delete_filter(execute_state):
+    """全局自动拦截所有 ORM SELECT 查询，默认剔除已被软删除的数据。"""
+    if execute_state.is_select and not execute_state.execution_options.get(
+        "include_deleted", False
+    ):
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                SoftDeleteMixin,
+                lambda cls: cls.deleted_at.is_(None),
+                include_aliases=True,
+                propagate_to_loaders=True,
+            )
+        )

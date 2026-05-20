@@ -5,15 +5,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.workflow.chat_workflow import ChatWorkflow
+from backend.application.chat.web_stream_workflow import ChatWorkflow
+from backend.models.schemas.chat.commands import ChatQueryCommand
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.performance]
 
 
 async def test_workflow_concurrency():
     with (
-        patch("backend.workflow.chat_workflow.settings.LLM_MAX_CONCURRENCY", 2),
-        patch("backend.workflow.chat_workflow.settings.DB_MAX_CONCURRENCY", 2),
+        patch(
+            "backend.application.chat.web_stream_workflow.settings.LLM_MAX_CONCURRENCY",
+            2,
+        ),
+        patch(
+            "backend.application.chat.web_stream_workflow.settings.DB_MAX_CONCURRENCY",
+            2,
+        ),
     ):
         ChatWorkflow._llm_semaphore = asyncio.Semaphore(2)
         ChatWorkflow._db_semaphore = asyncio.Semaphore(2)
@@ -22,18 +29,15 @@ async def test_workflow_concurrency():
         uow.__aenter__.return_value = uow
         uow.__aexit__.return_value = None
 
-        llm_service = MagicMock()
-
-        async def mock_stream(*args, **kwargs):
-            await asyncio.sleep(0.5)
-            yield '{"type":"chunk", "content":"hello"}'
-
-        llm_service.stream_response = MagicMock(side_effect=mock_stream)
+        dispatcher = AsyncMock()
 
         with (
-            patch("backend.workflow.chat_workflow.SessionManager") as mock_sm,
-            patch("backend.workflow.chat_workflow.ChatMessageUpdater") as mock_up,
-            patch("backend.workflow.chat_workflow.PromptManager") as mock_pm,
+            patch(
+                "backend.application.chat.web_stream_workflow.SessionManager"
+            ) as mock_sm,
+            patch(
+                "backend.application.chat.web_stream_workflow.ChatMessageUpdater"
+            ) as mock_up,
         ):
             mock_sm_inst = mock_sm.return_value
             mock_sm_inst.ensure_session = AsyncMock(
@@ -49,21 +53,17 @@ async def test_workflow_concurrency():
             mock_up_inst.update_as_success = AsyncMock()
             mock_up_inst.update_as_failed = AsyncMock()
 
-            mock_pm_inst = mock_pm.return_value
-            mock_pm_inst.assemble = MagicMock(
-                return_value=MagicMock(
-                    messages=[], total_tokens=0, history_rounds_used=0, truncated=False
-                )
-            )
-
-            workflow = ChatWorkflow(uow, llm_service)
+            workflow = ChatWorkflow(uow, dispatcher)
 
             user_id = uuid.uuid4()
             start_time = time.time()
 
             async def consume_stream():
                 async for _ in workflow.handle_query_stream(
-                    user_id=user_id, query_text="hello"
+                    ChatQueryCommand(
+                        user_id=user_id,
+                        query_text="hello",
+                    )
                 ):
                     pass
 

@@ -54,24 +54,21 @@ services:
     networks:
       - app_net
   api:
-    image: ai-tutor-backend:v1
+    image: dewflow-backend:2.0.0-web
     container_name: api
+    stop_grace_period: 40s
     volumes:
       - knowledge_files_volume:/data/knowledge_files
-
-    # 限制 Docker 自身收集的控制台日志大小，防止撑爆磁盘
-    #只管控制台日志
     logging: *default-logging
     user: "${CURRENT_UID}:${CURRENT_GID}"
-    # 模拟 2026 生产环境 Python 3.11 优化环境
     env_file:
       - ../.env
     environment:
-      - PYTHONMALLOC=default # 生产环境使用 default，debug 模式严重拖慢性能
-      - WEB_CONCURRENCY=1 # 充分利用 1.5GB 内存，启动 2 个 Worker  Worker Process（工作进程） 测试时只开启一个
-      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
+      - PYTHONMALLOC=default
+      - WEB_CONCURRENCY=1
+      - LOCAL_STORAGE_ROOT=/data/knowledge_files
     cap_add:
-      - SYS_PTRACE # 允许 py-spy 性能分析工具附加到进程
+      - SYS_PTRACE
     restart: unless-stopped
     deploy:
       resources:
@@ -79,7 +76,6 @@ services:
           cpus: '1.0'
           memory: 800M
         reservations:
-          # 预留内存，确保容器不会因为内存碎片化启动失败
           memory: 256M
     depends_on:
       postgres:
@@ -91,13 +87,12 @@ services:
       vector:
         condition: service_started
     healthcheck:
-      # 1. 确保路径与你的路由完全一致
-      # 2. 使用 python3 确保兼容性
       test: [ "CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/health_check/live\", timeout=5)' || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s # 考虑到 FastAPI 启动和数据库连接，给 10 秒缓冲
+      start_period: 10s
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips "*" --timeout-graceful-shutdown 30
     networks:
       - app_net
       - monitor_net
@@ -138,6 +133,7 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-otlp-receiver'
     deploy:
       resources:
         limits:
@@ -198,7 +194,7 @@ services:
     volumes:
       - ./monitoring/grafana_datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./monitoring/grafana_dashboards_provisioning.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
-      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/mlops:ro
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/dewflow:ro
     networks:
       - monitor_net
 
@@ -239,7 +235,7 @@ services:
   # 1. 专门负责“更新数据库”的工具人
 
   db_migrator:
-    image: ai-tutor-backend:v1
+    image: dewflow-backend:2.0.0-web
     depends_on:
       postgres:
         condition: service_healthy
@@ -278,17 +274,17 @@ services:
 
   # 5. 异步长连接任务队列 Taskiq Worker
   task_worker:
-    image: ai-tutor-backend:v1
+    image: dewflow-backend:2.0.0-ai
     container_name: task_worker
+    stop_grace_period: 120s
     volumes:
       - knowledge_files_volume:/data/knowledge_files
     env_file:
       - ../.env
     environment:
       - TASKIQ_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
-      - KNOWLEDGE_STORAGE_ROOT=/data/knowledge_files
-    # 启动 taskiq worker，指向您的 broker 对象！ --workers 2 表示最多并发 2 个LLM请求
-    command: taskiq worker backend.core.task_broker:broker backend.tasks.llm_tasks backend.tasks.knowledge_tasks --workers 2
+      - LOCAL_STORAGE_ROOT=/data/knowledge_files
+    command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks --workers 2 --wait-tasks-timeout 105 --shutdown-timeout 10
     restart: unless-stopped
     logging: *default-logging
     depends_on:

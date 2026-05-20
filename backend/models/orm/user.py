@@ -1,3 +1,9 @@
+"""User ORM model.
+
+职责：定义账号、登录凭据、额度和用户侧反向关系。
+边界：本模块不处理密码哈希、认证或权限判定。
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -8,14 +14,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
 
 if TYPE_CHECKING:
+    from backend.models.orm.access import AuditEvent, UserWorkspaceRole, Workspace
     from backend.models.orm.chat import ChatSession
     from backend.models.orm.knowledge import KnowledgeBase
 
 
 class User(Base, BaseIdModel, AuditMixin):
+    """用户账号持久化模型。"""
+
     __tablename__ = "users"
 
-    # 使用 Mapped 明确 Python 类型，mapped_column 明确数据库约束
     username: Mapped[str] = mapped_column(
         String(50), unique=True, index=True, nullable=False, comment="B端登录唯一标识"
     )
@@ -29,7 +37,6 @@ class User(Base, BaseIdModel, AuditMixin):
         Boolean, server_default=text("false"), default=False
     )
 
-    # Token 管理
     max_tokens: Mapped[int] = mapped_column(
         default=100000, server_default=text("100000"), comment="用户 Token 总额度"
     )
@@ -37,9 +44,17 @@ class User(Base, BaseIdModel, AuditMixin):
         default=0, server_default=text("0"), comment="用户已消费 Token 数"
     )
 
-    # 核心安全字段：绝不出现在 Schema 中
+    # 哈希密码只允许在鉴权链路使用，响应 schema 不暴露该字段。
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # 反向关联
     sessions: Mapped[list[ChatSession]] = relationship(back_populates="user")
     knowledge_bases: Mapped[list[KnowledgeBase]] = relationship(back_populates="user")
+    owned_workspaces: Mapped[list[Workspace]] = relationship(
+        back_populates="owner",
+        foreign_keys="Workspace.owner_id",
+    )
+    workspace_roles: Mapped[list[UserWorkspaceRole]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    audit_events: Mapped[list[AuditEvent]] = relationship(back_populates="actor")

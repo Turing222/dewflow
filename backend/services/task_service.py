@@ -1,13 +1,22 @@
+"""Task service.
+
+职责：创建知识库入库任务并维护任务状态。
+边界：本模块只写 TaskJob 记录，不投递 TaskIQ 消息。
+风险：任务访问校验基于 payload.user_id，任务创建方必须写入该字段。
+"""
+
 import uuid
 
-from backend.core.exceptions import ResourceNotFound
-from backend.domain.interfaces import AbstractUnitOfWork
+from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.core.exceptions import app_not_found
 from backend.models.orm.task import TaskJob, TaskStatus
 from backend.services.base import BaseService
 
 
 class TaskService(BaseService[AbstractUnitOfWork]):
-    def __init__(self, uow: AbstractUnitOfWork):
+    """TaskJob 创建、状态流转和访问校验服务。"""
+
+    def __init__(self, uow: AbstractUnitOfWork) -> None:
         super().__init__(uow)
 
     async def create_kb_ingestion_task(
@@ -29,6 +38,30 @@ class TaskService(BaseService[AbstractUnitOfWork]):
                 "file_path": file_path,
                 "filename": filename,
                 "user_id": str(user_id),
+            },
+        )
+
+    async def create_completed_kb_ingestion_task(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        file_id: uuid.UUID,
+        file_path: str,
+        filename: str,
+        user_id: uuid.UUID,
+        deduplicated: bool = False,
+    ) -> TaskJob:
+        return await self.uow.task_repo.create(
+            action_type="KB_INGESTION",
+            status=TaskStatus.COMPLETED,
+            progress=100,
+            payload={
+                "kb_id": str(kb_id),
+                "file_id": str(file_id),
+                "file_path": file_path,
+                "filename": filename,
+                "user_id": str(user_id),
+                "deduplicated": deduplicated,
             },
         )
 
@@ -70,6 +103,6 @@ class TaskService(BaseService[AbstractUnitOfWork]):
         payload = task.payload or {}
         payload_user_id = payload.get("user_id")
         if payload_user_id is None:
-            raise ResourceNotFound("任务关联用户不存在")
+            raise app_not_found("任务关联用户不存在", code="TASK_USER_NOT_FOUND")
         if str(user_id) != str(payload_user_id):
-            raise ResourceNotFound("任务不存在或无访问权限")
+            raise app_not_found("任务不存在或无访问权限", code="TASK_NOT_FOUND")

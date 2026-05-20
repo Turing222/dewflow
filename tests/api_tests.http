@@ -1,19 +1,105 @@
-### 定义变量（方便切换环境）
-@baseUrl = http://localhost:8000
+### Smoke / Manual API checks for local docker-compose environment
+### Usage:
+### 1. Start the stack: `make env-smoke-up`
+### 2. Register the user below, then create a KB:
+###    `make env-smoke-create-kb ARGS="--username smoke_manual_001"`
+### 3. Copy the printed `kb_id` into `@kbId`
+### 3. Run requests top-to-bottom in REST Client / IntelliJ HTTP Client
 
-### 1. 测试健康检查（确认 API 连上了数据库）
-GET {{baseUrl}}/health
+@baseUrl = http://localhost:8000
+@username = smoke_manual
+@email = smoke_manual@example.com
+@password = Password123
+@kbId = replace-with-created-kb-id
+
+
+### Health - live
+GET {{baseUrl}}/api/v1/health_check/live
 Accept: application/json
 
-### 2. 获取用户列表（对应你刚才的 SQL 操作）
-GET {{baseUrl}}/users
-Content-Type: application/json
 
-### 3. 创建一个新用户（模拟向数据库写数据）
-POST {{baseUrl}}/users
+### Health - ready
+GET {{baseUrl}}/api/v1/health_check/db_ready
+Accept: application/json
+
+
+### Auth - register
+POST {{baseUrl}}/api/v1/auth/register
 Content-Type: application/json
 
 {
-    "username": "AI_Mentor_User",
-    "email": "test@example.com"
+  "username": "{{username}}",
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "confirm_password": "{{password}}"
 }
+
+
+###
+# @name login
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{username}}&password={{password}}
+
+
+### Users - current user
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{login.response.body.$.access_token}}
+Accept: application/json
+
+
+###
+# @name querySentRealLlm1
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{login.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "手动真实 LLM 检查 1：请只回复一句自然中文，并包含标记 REAL_LLM_MANUAL_CHECK_1。不要说自己是 MockLLMService。"
+}
+
+
+###
+# @name querySentRealLlm2
+POST {{baseUrl}}/api/v1/chat/query_sent
+Authorization: Bearer {{login.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "query": "手动真实 LLM 检查 2：请基于上一轮对话，回复一个很短的 JSON，字段包含 marker 和 summary，其中 marker 必须是 REAL_LLM_MANUAL_CHECK_2。",
+  "session_id": "{{querySentRealLlm1.response.body.$.session_id}}"
+}
+
+
+### Knowledge - upload to KB
+### Note: replace `@kbId` with a real knowledge base ID before running.
+### If you do not have one yet, create/seed one first, or use the smoke pytest
+### that seeds a KB automatically.
+###
+# @name uploadToKb
+POST {{baseUrl}}/api/v1/knowledge/bases/{{kbId}}/upload
+Authorization: Bearer {{login.response.body.$.access_token}}
+Content-Type: multipart/form-data; boundary=SmokeBoundary
+
+--SmokeBoundary
+Content-Disposition: form-data; name="file"; filename="demo.md"
+Content-Type: text/markdown
+
+# Demo
+
+hello knowledge upload
+this file is for manual smoke verification
+--SmokeBoundary--
+
+
+### Knowledge - task status
+GET {{baseUrl}}/api/v1/knowledge/tasks/{{uploadToKb.response.body.$.task_id}}
+Authorization: Bearer {{login.response.body.$.access_token}}
+Accept: application/json
+
+
+### Knowledge - file status
+GET {{baseUrl}}/api/v1/knowledge/files/{{uploadToKb.response.body.$.file_id}}
+Authorization: Bearer {{login.response.body.$.access_token}}
+Accept: application/json

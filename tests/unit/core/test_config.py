@@ -1,0 +1,244 @@
+"""Core configuration unit tests.
+
+职责：验证 settings 加载、环境覆盖和配置检查规则；边界：使用 monkeypatch 与临时配置目录，不读取开发者私有配置；副作用：修改进程环境并由 pytest 恢复。
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from backend.config.settings import Settings
+from backend.config.web_settings import DEFAULT_SECRET_KEY, get_web_settings
+from scripts.qa.config_check import run_checks
+
+
+def test_settings_can_load_without_explicit_secret_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEBUG", "false")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.delenv("SECRET_KEY_FILE", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.SECRET_KEY == DEFAULT_SECRET_KEY
+
+
+def test_non_local_web_config_rejects_default_secret_key(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("DEBUG", "false")
+    monkeypatch.setenv("SECRET_KEY", DEFAULT_SECRET_KEY)
+    get_web_settings.cache_clear()
+
+    exit_code = run_checks("web")
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "SECRET_KEY must not use the local default outside local" in captured.out
+
+
+def test_cors_defaults_are_wildcard_for_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
+    monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_METHODS == ["*"]
+    assert settings.BACKEND_CORS_HEADERS == ["*"]
+
+
+def test_cors_defaults_are_restricted_for_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
+    monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_METHODS == ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    assert settings.BACKEND_CORS_HEADERS == [
+        "Authorization",
+        "Content-Type",
+        "X-Request-ID",
+    ]
+
+
+def test_cors_env_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("BACKEND_CORS_METHODS", "GET,POST")
+    monkeypatch.setenv("BACKEND_CORS_HEADERS", "Authorization,Content-Type")
+    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_METHODS == ["GET", "POST"]
+    assert settings.BACKEND_CORS_HEADERS == ["Authorization", "Content-Type"]
+
+
+def test_cors_defaults_follow_yaml_app_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "configs"
+    app_dir = config_dir / "app"
+    app_dir.mkdir(parents=True)
+    (app_dir / "base.yaml").write_text("APP_ENV: production\n", encoding="utf-8")
+
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("SECRET_KEY", "prod-secret")
+
+    settings = Settings()
+
+    assert settings.APP_ENV == "production"
+    assert settings.BACKEND_CORS_METHODS == ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    assert settings.BACKEND_CORS_HEADERS == [
+        "Authorization",
+        "Content-Type",
+        "X-Request-ID",
+    ]
+
+
+def test_app_env_loads_layered_yaml_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "configs"
+    app_dir = config_dir / "app"
+    app_dir.mkdir(parents=True)
+    (app_dir / "base.yaml").write_text(
+        "STORAGE_BACKEND: local\nLOCAL_STORAGE_ROOT: base-files\n",
+        encoding="utf-8",
+    )
+    (app_dir / "test.yaml").write_text(
+        "APP_ENV: test\nLOCAL_STORAGE_ROOT: test-files\nLLM_PROVIDER: mock\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+
+    settings = Settings()
+
+    assert settings.APP_ENV == "test"
+    assert settings.STORAGE_BACKEND == "local"
+    assert settings.local_storage_root == Path("test-files")
+    assert settings.LLM_PROVIDER == "mock"
+
+
+def test_environment_overrides_app_yaml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "configs"
+    app_dir = config_dir / "app"
+    app_dir.mkdir(parents=True)
+    (app_dir / "base.yaml").write_text("STORAGE_BACKEND: local\n", encoding="utf-8")
+    (app_dir / "test.yaml").write_text(
+        "LOCAL_STORAGE_ROOT: yaml-files\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("LOCAL_STORAGE_ROOT", "env-files")
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+
+    settings = Settings()
+
+    assert settings.local_storage_root == Path("env-files")
+
+
+def test_database_url_overrides_postgres_parts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+
+    settings = Settings(
+        DATABASE_URL="postgresql+asyncpg://db-user:db-pass@rdc.example.com:5432/prod",
+        POSTGRES_SERVER="localhost",
+    )
+
+    assert "rdc.example.com" in settings.database_url
+    assert "localhost" not in settings.database_url
+    assert "db-pass" not in settings.database_url_safe
+
+
+def test_cors_empty_string_parses_to_empty_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("BACKEND_CORS_METHODS", "")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_METHODS == []
+
+
+def test_cors_whitespace_comma_parses_correctly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("BACKEND_CORS_HEADERS", " Authorization , Content-Type , ")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_CORS_HEADERS == ["Authorization", "Content-Type"]
+
+
+def test_rate_limit_settings_load_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("AUTH_REGISTER_RATE_LIMIT_TIMES", "101")
+    monkeypatch.setenv("AUTH_REGISTER_RATE_LIMIT_SECONDS", "61")
+    monkeypatch.setenv("AUTH_LOGIN_RATE_LIMIT_TIMES", "102")
+    monkeypatch.setenv("AUTH_LOGIN_RATE_LIMIT_SECONDS", "62")
+    monkeypatch.setenv("BUSINESS_RATE_LIMIT_TIMES", "103")
+    monkeypatch.setenv("BUSINESS_RATE_LIMIT_SECONDS", "63")
+    monkeypatch.setenv("CHAT_RATE_LIMIT_TIMES", "104")
+    monkeypatch.setenv("CHAT_RATE_LIMIT_SECONDS", "64")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.AUTH_REGISTER_RATE_LIMIT_TIMES == 101
+    assert settings.AUTH_REGISTER_RATE_LIMIT_SECONDS == 61
+    assert settings.AUTH_LOGIN_RATE_LIMIT_TIMES == 102
+    assert settings.AUTH_LOGIN_RATE_LIMIT_SECONDS == 62
+    assert settings.BUSINESS_RATE_LIMIT_TIMES == 103
+    assert settings.BUSINESS_RATE_LIMIT_SECONDS == 63
+    assert settings.CHAT_RATE_LIMIT_TIMES == 104
+    assert settings.CHAT_RATE_LIMIT_SECONDS == 64
+
+
+def test_rag_refusal_settings_can_load_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("RAG_REFUSAL_ENABLED", "false")
+    monkeypatch.setenv("RAG_MIN_HIT_COUNT", "2")
+    monkeypatch.setenv("RAG_MIN_RELEVANCE_SCORE", "0.35")
+    monkeypatch.setenv("RAG_MIN_RERANK_SCORE", "6.5")
+    monkeypatch.setenv("RAG_REFUSAL_MESSAGE", "资料不足，无法回答。")
+
+    settings = Settings()
+
+    assert settings.RAG_REFUSAL_ENABLED is False
+    assert settings.RAG_MIN_HIT_COUNT == 2
+    assert settings.RAG_MIN_RELEVANCE_SCORE == 0.35
+    assert settings.RAG_MIN_RERANK_SCORE == 6.5
+    assert settings.RAG_REFUSAL_MESSAGE == "资料不足，无法回答。"

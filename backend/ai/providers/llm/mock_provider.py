@@ -1,42 +1,90 @@
+"""Mock LLM provider.
+
+职责：为本地开发、烟测和压测提供确定性的 LLM 输出。
+边界：本模块不发起外部网络请求，也不模拟真实模型质量。
+副作用：通过 sleep 模拟流式延迟，便于观察 API/DB/Redis 链路压力。
+"""
+
 import asyncio
 from collections.abc import AsyncGenerator
 
-from backend.domain.interfaces import AbstractLLMService
-from backend.models.schemas.chat_schema import LLMQueryDTO, LLMResultDTO
+from backend.contracts.interfaces import AbstractLLMService
+from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
+from backend.observability.trace_utils import (
+    build_llm_span_attributes,
+    set_span_attributes,
+    trace_span,
+)
 
 
 class MockLLMService(AbstractLLMService):
-    """
-    专为极高并发压测设计的虚假 LLM 引擎。
-    它不会发起任何真实的网络请求，而是通过 asyncio.sleep 模拟生成延迟，
-    从而将性能瓶颈完全留给 FastAPI / 数据库 / Redis 进行检验。
-    """
-    
+    """用于本地和压测的确定性 LLM 实现。"""
+
     async def stream_response(
         self,
         query: LLMQueryDTO,
     ) -> AsyncGenerator[str, None]:
-        # 1. 模拟网络往返握手延迟 (0.2 秒)
-        await asyncio.sleep(0.2)
-        
-        # 2. 模拟大模型缓慢吐字的过程
-        fake_response = "这是一段由 MockLLMService 自动生成的测试回复，用于极限压测场景，没有任何实际意义。祝压测顺利！" * 3
-        
-        for char in fake_response:
-            await asyncio.sleep(0.01) # 模拟每个字 10 毫秒的生成时间
-            yield char
+        with trace_span(
+            "llm.mock.stream",
+            {
+                **build_llm_span_attributes(
+                    provider="mock",
+                    model="mock",
+                    operation="generate",
+                    stream=True,
+                ),
+                "chat.session_id": query.session_id,
+                "llm.stream": True,
+            },
+        ) as span:
+            await asyncio.sleep(0.2)
+
+            fake_response = (
+                "这是一段由 MockLLMService 自动生成的测试回复，用于极限压测场景，没有任何实际意义。祝压测顺利！"
+                * 3
+            )
+
+            for char in fake_response:
+                await asyncio.sleep(0.01)
+                yield char
+            set_span_attributes(
+                span,
+                {
+                    "llm.response.chunk_count": len(fake_response),
+                    "llm.response.char_count": len(fake_response),
+                },
+            )
 
     async def generate_response(
         self,
         query: LLMQueryDTO,
     ) -> LLMResultDTO:
-        # 模拟全量生成的延迟
-        await asyncio.sleep(1.0)
-        
-        fake_response = "这是非流式接口返回的测试数据。"
+        with trace_span(
+            "llm.mock.generate",
+            {
+                **build_llm_span_attributes(
+                    provider="mock",
+                    model="mock",
+                    operation="generate",
+                    stream=False,
+                ),
+                "chat.session_id": query.session_id,
+                "llm.stream": False,
+            },
+        ) as span:
+            await asyncio.sleep(1.0)
+
+            fake_response = "这是非流式接口返回的测试数据。"
+            set_span_attributes(
+                span,
+                {
+                    "llm.response.char_count": len(fake_response),
+                    "llm.response.completion_tokens": len(fake_response),
+                },
+            )
         return LLMResultDTO(
             success=True,
             content=fake_response,
-            completion_tokens=len(fake_response), 
-            error_message=None
+            completion_tokens=len(fake_response),
+            error_message=None,
         )

@@ -1,10 +1,25 @@
+"""RAG embedding providers.
+
+职责：封装 OpenAI-compatible、Google GenAI 和本地 mock 的向量化调用。
+边界：本模块只返回向量，不写入索引；索引替换由 VectorIndexService 负责。
+失败处理：空输入、空响应和维度不匹配都会转换为统一业务错误。
+"""
+
+import asyncio
 import logging
 
 import openai
+from google import genai
+from google.genai import types
 
-from backend.core.config import settings
-from backend.core.exceptions import ServiceError
-from backend.domain.interfaces import AbstractRAGEmbedder
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractRAGEmbedder
+from backend.core.exceptions import AppException, app_service_error
+from backend.observability.trace_utils import (
+    build_llm_span_attributes,
+    set_span_attributes,
+    trace_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +34,7 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
         base_url: str,
         api_key: str,
         dimensions: int | None = None,
-    ):
+    ) -> None:
         self.model_name = model_name
         self.base_url = base_url
         self.api_key = api_key
@@ -34,47 +49,335 @@ class OpenAICompatibleEmbedder(AbstractRAGEmbedder):
             )
         return self._client
 
-    def encode_query(self, text: str) -> list[float]:
+    async def encode_query(self, text: str) -> list[float]:
+        return await asyncio.to_thread(self._encode_query_sync, text)
+
+    async def encode_document(self, text: str) -> list[float]:
+        return await self.encode_query(text)
+
+    async def encode_documents(self, texts: list[str]) -> list[list[float]]:
+        return await asyncio.to_thread(self._encode_documents_sync, texts)
+
+    def _encode_query_sync(self, text: str) -> list[float]:
         payload = text.strip()
         if not payload:
-            raise ServiceError("RAG embedding 输入不能为空")
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
+
+        return self._create_embeddings([payload])[0]
+
+    def _encode_documents_sync(self, texts: list[str]) -> list[list[float]]:
+        payloads = [text.strip() for text in texts]
+        if not payloads or any(not payload for payload in payloads):
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
+        return self._create_embeddings(payloads)
+
+    def _create_embeddings(self, payloads: list[str]) -> list[list[float]]:
+        if not payloads:
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
 
         request_kwargs: dict = {}
         if self.dimensions is not None:
             request_kwargs["dimensions"] = self.dimensions
 
         try:
-            response = self._get_client().embeddings.create(
-                model=self.model_name,
-                input=payload,
-                **request_kwargs,
-            )
-            if not response.data:
-                raise ServiceError("RAG embedding 服务未返回向量数据")
+            with trace_span(
+                "embedding.openai_compatible.encode",
+                {
+                    **build_llm_span_attributes(
+                        provider="openai-compatible",
+                        model=self.model_name,
+                        operation="embeddings",
+                    ),
+                    "embedding.base_url": self.base_url,
+                    "embedding.input.count": len(payloads),
+                    "embedding.input.char_count": sum(
+                        len(payload) for payload in payloads
+                    ),
+                    "embedding.expected_dim": self.dimensions,
+                },
+            ) as span:
+                response = self._get_client().embeddings.create(
+                    model=self.model_name,
+                    input=payloads,
+                    **request_kwargs,
+                )
+                if not response.data or len(response.data) != len(payloads):
+                    raise app_service_error(
+                        "RAG embedding 服务未返回向量数据",
+                        code="RAG_EMBEDDING_EMPTY_RESPONSE",
+                    )
 
-            embedding = response.data[0].embedding
-            if self.dimensions is not None and len(embedding) != self.dimensions:
-                raise ServiceError(
-                    "RAG embedding 维度不匹配",
-                    details={
-                        "expected_dim": self.dimensions,
-                        "actual_dim": len(embedding),
-                        "model": self.model_name,
+                data = sorted(
+                    response.data,
+                    key=lambda item: getattr(item, "index", 0),
+                )
+                embeddings: list[list[float]] = []
+                for item in data:
+                    embedding = item.embedding
+                    if (
+                        self.dimensions is not None
+                        and len(embedding) != self.dimensions
+                    ):
+                        raise app_service_error(
+                            "RAG embedding 维度不匹配",
+                            code="RAG_EMBEDDING_DIMENSION_MISMATCH",
+                            details={
+                                "expected_dim": self.dimensions,
+                                "actual_dim": len(embedding),
+                                "model": self.model_name,
+                            },
+                        )
+                    embeddings.append([float(value) for value in embedding])
+                set_span_attributes(
+                    span,
+                    {
+                        "embedding.output.count": len(embeddings),
+                        "embedding.output_dim": len(embeddings[0])
+                        if embeddings
+                        else None,
                     },
                 )
-            return [float(value) for value in embedding]
-        except ServiceError:
+            return embeddings
+        except AppException:
             raise
         except Exception as exc:
             logger.error("RAG embedding API 调用失败: %s", exc, exc_info=True)
-            raise ServiceError(
+            raise app_service_error(
                 "RAG embedding API 调用失败",
+                code="RAG_EMBEDDING_API_ERROR",
                 details={
                     "model": self.model_name,
                     "base_url": self.base_url,
                     "error": str(exc),
                 },
             ) from exc
+
+
+class GoogleGenAIEmbedder(AbstractRAGEmbedder):
+    """基于 Google GenAI embeddings API 的向量化实现。"""
+
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        api_key: str,
+        dimensions: int | None = None,
+    ) -> None:
+        self.model_name = model_name
+        self.api_key = api_key
+        self.dimensions = dimensions
+        self._client: genai.Client | None = None
+
+    def _get_client(self) -> genai.Client:
+        if self._client is None:
+            self._client = genai.Client(api_key=self.api_key)
+        return self._client
+
+    async def encode_query(self, text: str) -> list[float]:
+        return await asyncio.to_thread(
+            self._embed_sync, text, task_type="RETRIEVAL_QUERY"
+        )
+
+    async def encode_document(self, text: str) -> list[float]:
+        return await asyncio.to_thread(
+            self._embed_sync, text, task_type="RETRIEVAL_DOCUMENT"
+        )
+
+    async def encode_documents(self, texts: list[str]) -> list[list[float]]:
+        return await asyncio.to_thread(self._embed_documents_sync, texts)
+
+    def _embed_sync(self, text: str, *, task_type: str) -> list[float]:
+        payload = text.strip()
+        if not payload:
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
+
+        config_kwargs: dict = {"task_type": task_type}
+        if self.dimensions is not None:
+            config_kwargs["output_dimensionality"] = self.dimensions
+
+        try:
+            with trace_span(
+                "embedding.google_genai.encode",
+                {
+                    **build_llm_span_attributes(
+                        provider="google-genai",
+                        model=self.model_name,
+                        operation="embeddings",
+                    ),
+                    "embedding.task_type": task_type,
+                    "embedding.input.char_count": len(payload),
+                    "embedding.expected_dim": self.dimensions,
+                },
+            ) as span:
+                response = self._get_client().models.embed_content(
+                    model=self.model_name,
+                    contents=payload,
+                    config=types.EmbedContentConfig(**config_kwargs),
+                )
+                if not response.embeddings or not response.embeddings[0].values:
+                    raise app_service_error(
+                        "Google embedding 服务未返回向量数据",
+                        code="GOOGLE_EMBEDDING_EMPTY_RESPONSE",
+                    )
+
+                embedding = response.embeddings[0].values
+                set_span_attributes(
+                    span,
+                    {
+                        "embedding.output_dim": len(embedding),
+                    },
+                )
+                if self.dimensions is not None and len(embedding) != self.dimensions:
+                    raise app_service_error(
+                        "Google embedding 维度不匹配",
+                        code="GOOGLE_EMBEDDING_DIMENSION_MISMATCH",
+                        details={
+                            "expected_dim": self.dimensions,
+                            "actual_dim": len(embedding),
+                            "model": self.model_name,
+                        },
+                    )
+            return [float(value) for value in embedding]
+        except AppException:
+            raise
+        except Exception as exc:
+            logger.error("Google embedding API 调用失败: %s", exc, exc_info=True)
+            raise app_service_error(
+                "Google embedding API 调用失败",
+                code="GOOGLE_EMBEDDING_API_ERROR",
+                details={
+                    "model": self.model_name,
+                    "task_type": task_type,
+                    "error": str(exc),
+                },
+            ) from exc
+
+    def _embed_documents_sync(self, texts: list[str]) -> list[list[float]]:
+        payloads = [text.strip() for text in texts]
+        if not payloads or any(not payload for payload in payloads):
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
+
+        config_kwargs: dict = {"task_type": "RETRIEVAL_DOCUMENT"}
+        if self.dimensions is not None:
+            config_kwargs["output_dimensionality"] = self.dimensions
+
+        try:
+            with trace_span(
+                "embedding.google_genai.encode_batch",
+                {
+                    **build_llm_span_attributes(
+                        provider="google-genai",
+                        model=self.model_name,
+                        operation="embeddings",
+                    ),
+                    "embedding.task_type": "RETRIEVAL_DOCUMENT",
+                    "embedding.input.count": len(payloads),
+                    "embedding.input.char_count": sum(
+                        len(payload) for payload in payloads
+                    ),
+                    "embedding.expected_dim": self.dimensions,
+                },
+            ) as span:
+                response = self._get_client().models.embed_content(
+                    model=self.model_name,
+                    contents=payloads,
+                    config=types.EmbedContentConfig(**config_kwargs),
+                )
+                if not response.embeddings or len(response.embeddings) != len(payloads):
+                    raise app_service_error(
+                        "Google embedding 服务未返回向量数据",
+                        code="GOOGLE_EMBEDDING_EMPTY_RESPONSE",
+                    )
+
+                embeddings: list[list[float]] = []
+                for item in response.embeddings:
+                    embedding = item.values
+                    if not embedding:
+                        raise app_service_error(
+                            "Google embedding 服务未返回向量数据",
+                            code="GOOGLE_EMBEDDING_EMPTY_RESPONSE",
+                        )
+                    if (
+                        self.dimensions is not None
+                        and len(embedding) != self.dimensions
+                    ):
+                        raise app_service_error(
+                            "Google embedding 维度不匹配",
+                            code="GOOGLE_EMBEDDING_DIMENSION_MISMATCH",
+                            details={
+                                "expected_dim": self.dimensions,
+                                "actual_dim": len(embedding),
+                                "model": self.model_name,
+                            },
+                        )
+                    embeddings.append([float(value) for value in embedding])
+                set_span_attributes(
+                    span,
+                    {
+                        "embedding.output.count": len(embeddings),
+                        "embedding.output_dim": len(embeddings[0])
+                        if embeddings
+                        else None,
+                    },
+                )
+            return embeddings
+        except AppException:
+            raise
+        except Exception as exc:
+            logger.error("Google embedding API 调用失败: %s", exc, exc_info=True)
+            raise app_service_error(
+                "Google embedding API 调用失败",
+                code="GOOGLE_EMBEDDING_API_ERROR",
+                details={
+                    "model": self.model_name,
+                    "task_type": "RETRIEVAL_DOCUMENT",
+                    "error": str(exc),
+                },
+            ) from exc
+
+
+class MockRAGEmbedder(AbstractRAGEmbedder):
+    """Deterministic local embedder for smoke tests and offline development."""
+
+    def __init__(self, *, dimensions: int = 768) -> None:
+        self.dimensions = max(1, dimensions)
+
+    async def encode_query(self, text: str) -> list[float]:
+        payload = text.strip()
+        if not payload:
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
+        return self._vector()
+
+    async def encode_document(self, text: str) -> list[float]:
+        payload = text.strip()
+        if not payload:
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
+        return self._vector()
+
+    async def encode_documents(self, texts: list[str]) -> list[list[float]]:
+        payloads = [text.strip() for text in texts]
+        if not payloads or any(not payload for payload in payloads):
+            raise app_service_error(
+                "RAG embedding 输入不能为空", code="RAG_EMBEDDING_INPUT_EMPTY"
+            )
+        return [self._vector() for _ in payloads]
+
+    def _vector(self) -> list[float]:
+        return [1.0, *([0.0] * (self.dimensions - 1))]
 
 
 class RAGEmbedderFactory:
@@ -84,27 +387,62 @@ class RAGEmbedderFactory:
     def create(
         provider: str,
         model_name: str,
-        device: str = "cpu",
         *,
         base_url: str | None = None,
         api_key: str | None = None,
         dimensions: int | None = None,
     ) -> AbstractRAGEmbedder:
-        _ = device  # 保留参数签名兼容旧调用点
         normalized = provider.strip().lower()
-        if normalized in {"openai", "openai-compatible", "api", "external-api"}:
-            resolved_base_url = base_url or settings.RAG_EMBED_BASE_URL or settings.LLM_BASE_URL
-            resolved_api_key = api_key or settings.RAG_EMBED_API_KEY or settings.LLM_API_KEY
+        resolved_dimensions = (
+            dimensions if dimensions is not None else settings.RAG_EMBED_DIM
+        )
+
+        if normalized in {"mock", "fake", "deterministic"}:
+            return MockRAGEmbedder(dimensions=resolved_dimensions)
+
+        if normalized in {"google", "gemini", "google-genai"}:
+            resolved_api_key = (
+                api_key
+                or settings.RAG_EMBED_API_KEY
+                or settings.GEMINI_API_KEY
+                or settings.GOOGLE_API_KEY
+            )
+            if not resolved_api_key:
+                raise ValueError(
+                    "Google RAG embedding API Key 未配置，请检查 "
+                    "RAG_EMBED_API_KEY/GEMINI_API_KEY/GOOGLE_API_KEY"
+                )
+            return GoogleGenAIEmbedder(
+                model_name=model_name,
+                api_key=resolved_api_key,
+                dimensions=resolved_dimensions,
+            )
+
+        if normalized in {
+            "openai",
+            "openai-compatible",
+            "api",
+            "external-api",
+            "dashscope",
+            "aliyun",
+        }:
+            resolved_base_url = (
+                base_url or settings.RAG_EMBED_BASE_URL or settings.LLM_BASE_URL
+            )
+            resolved_api_key = (
+                api_key or settings.RAG_EMBED_API_KEY or settings.LLM_API_KEY
+            )
             if not resolved_base_url or not resolved_api_key:
-                raise ValueError("RAG embedding API 配置不完整，请检查 BASE_URL/API_KEY")
+                raise ValueError(
+                    "RAG embedding API 配置不完整，请检查 BASE_URL/API_KEY"
+                )
             return OpenAICompatibleEmbedder(
                 model_name=model_name,
                 base_url=resolved_base_url,
                 api_key=resolved_api_key,
-                dimensions=dimensions if dimensions is not None else settings.RAG_EMBED_DIM,
+                dimensions=resolved_dimensions,
             )
-        if normalized in {"sentence-transformers", "st"}:
-            raise ValueError(
-                "sentence-transformers 本地向量化已禁用，请改用 openai-compatible provider"
-            )
-        raise ValueError(f"Unsupported RAG embedding provider: {provider}")
+        raise ValueError(
+            f"Unsupported RAG embedding provider: {provider}. "
+            "Supported providers: mock, google/gemini, dashscope/aliyun, openai-compatible."
+        )

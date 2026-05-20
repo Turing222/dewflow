@@ -1,18 +1,79 @@
-from backend.core.config import settings
-from backend.domain.interfaces import AbstractLLMService
+"""LLM provider factory.
 
-from .llm_service import LLMService
+职责：按配置文件选择 LLM provider，并在多 profile 或多 key 时构造路由服务。
+边界：本模块只创建服务实例，不执行模型请求。
+失败处理：未知 provider 在启动或依赖注入阶段尽早暴露。
+"""
+
+from backend.config.llm import LLMProfile, get_llm_model_config
+from backend.config.settings import settings
+from backend.contracts.interfaces import AbstractLLMService
+
 from .mock_provider import MockLLMService
+from .pydantic_ai_models import SUPPORTED_PROVIDERS
+from .pydantic_ai_service import PydanticAILLMService
+from .routing_service import LLMRouteCandidate, LLMRoutingService
 
 
 class LLMProviderFactory:
-    """负责按配置选择并构建 LLM provider。"""
+    """按配置构建 LLM 服务实例。"""
 
     @staticmethod
     def create(provider: str | None = None) -> AbstractLLMService:
-        normalized = (provider or settings.LLM_PROVIDER).strip().lower()
-        if normalized in {"mock", "mock-llm", "fake"}:
+        model_config = get_llm_model_config()
+        profiles = model_config.resolve_route(provider or settings.LLM_PROVIDER)
+
+        expanded_profiles: list[tuple[LLMProfile, str | None, int]] = []
+        for profile in profiles:
+            api_keys = profile.resolve_api_keys() or (None,)
+            expanded_profiles.extend(
+                (profile, api_key, key_index)
+                for key_index, api_key in enumerate(api_keys, start=1)
+            )
+
+        use_route = len(expanded_profiles) > 1
+        candidates: list[LLMRouteCandidate] = []
+        for profile, api_key, key_index in expanded_profiles:
+            service = LLMProviderFactory._create_profile_service(
+                profile=profile,
+                api_key=api_key,
+                max_retries=0 if use_route else None,
+            )
+            candidates.append(
+                LLMRouteCandidate(
+                    label=_candidate_label(profile.provider, profile.model, key_index),
+                    service=service,
+                )
+            )
+
+        if len(candidates) == 1:
+            return candidates[0].service
+
+        return LLMRoutingService(candidates)
+
+    @staticmethod
+    def _create_profile_service(
+        *,
+        profile: LLMProfile,
+        api_key: str | None,
+        max_retries: int | None,
+    ) -> AbstractLLMService:
+        normalized_provider = profile.provider.strip().lower()
+
+        if normalized_provider == "mock":
             return MockLLMService()
-        if normalized in {"openai", "openai-compatible", "ollama"}:
-            return LLMService()
-        raise ValueError(f"Unsupported LLM provider: {provider or settings.LLM_PROVIDER}")
+
+        if normalized_provider in SUPPORTED_PROVIDERS:
+            return PydanticAILLMService(
+                profile=profile,
+                provider_name=profile.provider,
+                api_key=api_key,
+                max_retries=max_retries,
+                extra_body=profile.extra_body,
+            )
+
+        raise ValueError(f"Unsupported LLM provider: {profile.provider}")
+
+
+def _candidate_label(provider: str, model: str, key_index: int) -> str:
+    return f"{provider}/{model}#key{key_index}"

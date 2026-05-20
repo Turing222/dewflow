@@ -1,17 +1,28 @@
+"""HTTP rate limiting middleware dependency.
+
+职责：基于 Redis sorted set 实现滑动窗口限流。
+边界：只限制单路径/单客户端 IP 的请求频率，不提供全局配额或分布式锁。
+风险：只有来源 IP 在可信代理网段内时才读取代理头，避免伪造客户端 IP。
+"""
+
 import ipaddress
+import os
 import time
-import uuid
+from collections.abc import Awaitable
+from typing import cast
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request
 
-from backend.core.config import settings
-from backend.core.redis import redis_client
+from backend.config.settings import settings
+from backend.core.exceptions import app_too_many_requests
+from backend.infra.redis import redis_client
+from backend.observability.trace_utils import (
+    set_current_span_attributes,
+    set_span_attributes,
+    trace_span,
+)
 
-# Lua 脚本：实现滑动窗口算法
-# KEYS[1]: 限流路径的 Key
-# ARGV[1]: 当前时间戳 (毫秒)
-# ARGV[2]: 窗口大小 (毫秒)
-# ARGV[3]: 允许的最大请求数
+# Lua 在 Redis 端原子执行，避免并发请求在计数和写入之间穿透限流。
 LUA_SLIDING_WINDOW = """
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
@@ -38,13 +49,16 @@ else
 end
 """
 
+
 class RateLimiter:
+    """FastAPI dependency 形式的 Redis 滑动窗口限流器。"""
+
     def __init__(
         self,
         times: int = 10,
         seconds: int = 60,
         trusted_proxy_cidrs: str | None = None,
-    ):
+    ) -> None:
         self.times = times
         self.window_ms = seconds * 1000
         raw_cidrs = (
@@ -54,41 +68,55 @@ class RateLimiter:
         )
         self.trusted_proxy_networks = self._parse_cidr_list(raw_cidrs)
 
-    async def __call__(self, request: Request):
-        # 1. 识别客户端 IP（仅当来源是可信代理时才信任代理头）
+    async def __call__(self, request: Request) -> None:
         client_ip = self._get_client_ip(request)
-        key = f"rate_limit_sliding:{client_ip}:{request.url.path}"
-        
-        # 2. 获取 Redis 连接
-        conn = await redis_client.init()
-        
-        # 3. 使用当前毫秒级时间戳和随机 member 保证唯一性
-        now_ms = int(time.time() * 1000)
-        request_id = str(uuid.uuid4())
-        
-        # 4. 执行 Lua 脚本 (返回 [status, count])
-        # status 1 为成功, 0 为失败
-        res = await conn.eval(
-            LUA_SLIDING_WINDOW, 
-            1, 
-            key, 
-            now_ms, 
-            self.window_ms, 
-            self.times,
-            request_id
-        )
-        
-        is_passed, current_count = res[0], res[1]
-        
-        if not is_passed:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "error": "访问太频繁了（动态窗口）",
-                    "limit_count": self.times,
-                    "current_count": current_count
-                }
+        path = request.url.path
+        rate_limit_key = f"rate_limit_sliding:{client_ip}:{path}"
+        trace_attrs = {
+            "rate_limit.algorithm": "redis_sliding_window",
+            "rate_limit.limit": self.times,
+            "rate_limit.window_ms": self.window_ms,
+            "rate_limit.client_ip": client_ip,
+            "http.target": path,
+        }
+
+        with trace_span("http.rate_limit", trace_attrs) as span:
+            redis_connection = await redis_client.init()
+
+            now_ms = int(time.time() * 1000)
+            rate_limit_member = f"{now_ms}:{os.urandom(4).hex()}"
+
+            eval_result = await cast(
+                Awaitable[list[int]],
+                redis_connection.eval(
+                    LUA_SLIDING_WINDOW,
+                    1,
+                    rate_limit_key,
+                    now_ms,
+                    self.window_ms,
+                    self.times,
+                    rate_limit_member,
+                ),
             )
+
+            is_allowed = bool(eval_result[0])
+            current_count = int(eval_result[1])
+            result_attrs = {
+                "rate_limit.allowed": is_allowed,
+                "rate_limit.current_count": current_count,
+            }
+            request.state.rate_limit = result_attrs
+            set_span_attributes(span, result_attrs)
+            set_current_span_attributes(result_attrs)
+
+            if not is_allowed:
+                raise app_too_many_requests(
+                    "访问太频繁，请稍后再试",
+                    details={
+                        "limit_count": self.times,
+                        "current_count": current_count,
+                    },
+                )
 
     def _get_client_ip(self, request: Request) -> str:
         peer_ip = request.client.host if request.client else ""
@@ -118,7 +146,9 @@ class RateLimiter:
             return False
 
     @staticmethod
-    def _parse_cidr_list(raw_cidrs: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    def _parse_cidr_list(
+        raw_cidrs: str,
+    ) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
         cidr_items = [item.strip() for item in raw_cidrs.split(",") if item.strip()]
         networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
         for item in cidr_items:

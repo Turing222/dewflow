@@ -1,111 +1,115 @@
-# app/core/exceptions.py
+"""Application exception classes — framework-agnostic.
 
-import logging
+职责：定义统一业务异常类和工厂函数，供 web 和 worker 层共用。
+边界：不含任何 FastAPI/Starlette 依赖，worker 可直接使用。
+副作用：无。
+"""
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-
-# 获取我们在 setup_logging 中配置好的 logger
-# 这里用 "uvicorn.error" 或者 __name__ 都可以，只要是根记录器的子集就能继承配置
-logger = logging.getLogger(__name__)
+from typing import Any
 
 
-def setup_exception_handlers(app: FastAPI):
+class AppException(Exception):
+    """可映射为统一 HTTP 错误响应的业务异常。"""
 
-    # --- 1. 处理业务异常 (AppError 系列) ---
-    @app.exception_handler(AppError)
-    async def app_error_handler(request: Request, exc: AppError):
-        request_id = getattr(request.state, "request_id", None)
-        # 直接从异常对象获取状态码，不再写 if-else
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "code": exc.status_code,
-                "message": exc.message,
-                "details": exc.details,
-                "request_id": request_id,  # tracing 中间件缺失时回落为 None
-            },
-        )
-
-    # --- 2. 处理意料之外的系统异常 (真正的 Bug) ---
-    @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception):
-        request_id = getattr(request.state, "request_id", None)
-        # 如果走到这一步，说明是没捕获的 1/0, AttributeError 等
-        # 这里才需要记录 exc_info=True (堆栈)
-        logger.error(f"系统崩溃: {str(exc)}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "message": "服务器开小差了",
-                "request_id": request_id,
-            },
-        )
-
-
-# ---  定义异常类 (Domain Layer) ---
-
-
-class AppError(Exception):
-    """所有业务异常的基类"""
-
-    status_code = 400  # 默认 400
-
-    def __init__(self, message: str, details: dict | None = None):
-        super().__init__(message)
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status_code: int = 400,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.code = code
         self.message = message
+        self.status_code = status_code
         self.details = details or {}
+        super().__init__(message)
 
 
-class ValidationError(AppError):
-    """参数校验失败"""
-
-    status_code = 422
-
-
-class ResourceNotFound(AppError):
-    """资源不存在"""
-
-    status_code = 404
+def app_bad_request(
+    message: str,
+    *,
+    code: str = "BAD_REQUEST",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 400 Bad Request 业务异常。"""
+    return AppException(code=code, message=message, status_code=400, details=details)
 
 
-class FileParseException(AppError):
-    """文件读取操作失败"""
-
-    status_code = 400
-
-
-class ServiceError(AppError):
-    """服务层发生的逻辑错误"""
-
-    status_code = 500
+def app_validation_error(
+    message: str,
+    *,
+    code: str = "VALIDATION_ERROR",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 422 Validation Error 业务异常。"""
+    return AppException(code=code, message=message, status_code=422, details=details)
 
 
-class DatabaseOperationError(AppError):
-    """数据库操作失败"""
-
-    status_code = 500
-
-
-class DatabaseConnectionError(AppError):
-    """DBA 专属：数据库挂了"""
-
-    status_code = 503
+def app_unauthorized(
+    message: str,
+    *,
+    code: str = "UNAUTHORIZED",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 401 Unauthorized 业务异常。"""
+    return AppException(code=code, message=message, status_code=401, details=details)
 
 
-class DependencyUnavailable(AppError):
-    """外部依赖暂不可用（队列/缓存/第三方服务）"""
-
-    status_code = 503
-
-
-class LLMError(ServiceError):
-    """LLM 相关错误的基类"""
-
-    status_code = 503
+def app_forbidden(
+    message: str,
+    *,
+    code: str = "PERMISSION_DENIED",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 403 Forbidden 业务异常。"""
+    return AppException(code=code, message=message, status_code=403, details=details)
 
 
-class TokenLimitExceeded(LLMError):
-    """Token 超出模型上下文窗口限制"""
+def app_not_found(
+    message: str,
+    *,
+    code: str = "RESOURCE_NOT_FOUND",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 404 Not Found 业务异常。"""
+    return AppException(code=code, message=message, status_code=404, details=details)
 
-    status_code = 413
+
+def app_payload_too_large(
+    message: str,
+    *,
+    code: str = "PAYLOAD_TOO_LARGE",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 413 Payload Too Large 业务异常。"""
+    return AppException(code=code, message=message, status_code=413, details=details)
+
+
+def app_too_many_requests(
+    message: str,
+    *,
+    code: str = "TOO_MANY_REQUESTS",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 429 Too Many Requests 业务异常。"""
+    return AppException(code=code, message=message, status_code=429, details=details)
+
+
+def app_service_error(
+    message: str,
+    *,
+    code: str = "SERVICE_ERROR",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 500 Service Error 业务异常。"""
+    return AppException(code=code, message=message, status_code=500, details=details)
+
+
+def app_dependency_unavailable(
+    message: str,
+    *,
+    code: str = "DEPENDENCY_UNAVAILABLE",
+    details: dict[str, Any] | None = None,
+) -> AppException:
+    """创建 503 Dependency Unavailable 业务异常。"""
+    return AppException(code=code, message=message, status_code=503, details=details)

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add Tests"
+  short_description: "Add targeted pytest coverage"
+  default_prompt: "Add or update pytest coverage at the smallest useful test layer."

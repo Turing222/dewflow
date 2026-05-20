@@ -1,3 +1,9 @@
+"""Chat API load scenario for Locust.
+
+职责：模拟注册、登录和非流式聊天压测路径。
+边界：只作为 L3 性能入口运行，不参与默认 pytest 或 smoke 契约。
+"""
+
 import random
 import string
 
@@ -27,21 +33,21 @@ class AiTutorUser(HttpUser):
 
         # 1. 自动注册
         self.client.post(
-            "/v1/auth/register",
+            "/api/v1/auth/register",
             json={
                 "username": self.username,
                 "password": self.password,
                 "confirm_password": self.password,
                 "email": f"{self.username}@test.com",
             },
-            name="/v1/auth/register",
+            name="/api/v1/auth/register",
         )
 
         # 2. 自动登录获取 Token
         resp = self.client.post(
-            "/v1/auth/login",
+            "/api/v1/auth/login",
             data={"username": self.username, "password": self.password},
-            name="/v1/auth/login",
+            name="/api/v1/auth/login",
         )
 
         if resp.status_code == 200:
@@ -58,11 +64,11 @@ class AiTutorUser(HttpUser):
 
         # 发送到真实的 chat 路由（使用 query_sent 避免 Locust 难以验证 SSE 流式结果）
         with self.client.post(
-            "/v1/chat/query_sent",
+            "/api/v1/chat/query_sent",
             json={
                 k: v for k, v in payload.items() if v is not None
             },  # 如果 session_id 为 None 则不传
-            name="/v1/chat/query_sent",
+            name="/api/v1/chat/query_sent",
             catch_response=True,
         ) as response:
             if response.status_code == 200:
@@ -79,7 +85,7 @@ class AiTutorUser(HttpUser):
     @task(1)
     def health_check(self):
         """低频率检查系统存活，权重为 1"""
-        self.client.get("/v1/health_check/live", name="Health Check")
+        self.client.get("/api/v1/health_check/live", name="Health Check")
 
     @task(2)
     def get_root(self):

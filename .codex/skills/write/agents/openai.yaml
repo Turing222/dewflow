@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write"
+  short_description: "Create new repository assets safely"
+  default_prompt: "Create new code, docs, config, or skill assets following project rules."

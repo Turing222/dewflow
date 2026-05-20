@@ -1,16 +1,25 @@
-import uuid
+"""Knowledge base, file, and chunk persistence repository.
 
-from sqlalchemy import delete, func, insert, select
+职责：封装知识库文件 CRUD、切片管理以及向量/全文双路检索。
+边界：本模块不负责文件解析、向量化或对象存储读写。
+"""
+
+import uuid
+from collections.abc import Collection, Sequence
+from datetime import datetime
+
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 
 from backend.models.orm.chunk import DocumentChunk
-from backend.models.orm.knowledge import File, FileStatus, KnowledgeBase
+from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
 
 
 class KnowledgeRepository:
-    """知识库聚合仓储（多模型组合，不继承 CRUDBase）。"""
+    """知识库聚合仓储，直接管理 KnowledgeBase/File/DocumentChunk 三表。"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_kb(self, kb_id: uuid.UUID) -> KnowledgeBase | None:
@@ -28,6 +37,38 @@ class KnowledgeRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def get_kb_by_name_for_user(
+        self,
+        *,
+        name: str,
+        user_id: uuid.UUID,
+    ) -> KnowledgeBase | None:
+        stmt = select(KnowledgeBase).where(
+            KnowledgeBase.name == name,
+            KnowledgeBase.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def create_kb(
+        self,
+        *,
+        name: str,
+        description: str | None,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID | None = None,
+    ) -> KnowledgeBase:
+        kb = KnowledgeBase(
+            name=name,
+            description=description,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
+        self.session.add(kb)
+        await self.session.flush()
+        await self.session.refresh(kb)
+        return kb
+
     async def create_file(
         self,
         kb_id: uuid.UUID,
@@ -35,51 +76,121 @@ class KnowledgeRepository:
         file_path: str,
         file_size: int,
         status: FileStatus = FileStatus.UPLOADED,
+        owner_id: uuid.UUID | None = None,
+        workspace_id: uuid.UUID | None = None,
+        visibility: FileVisibility = FileVisibility.WORKSPACE,
+        storage_backend: str = "local",
+        storage_bucket: str | None = None,
+        storage_key: str | None = None,
+        content_sha256: str | None = None,
     ) -> File:
-        file_obj = File(
+        knowledge_file = File(
             kb_id=kb_id,
             filename=filename,
             file_path=file_path,
             file_size=file_size,
             status=status,
+            owner_id=owner_id,
+            workspace_id=workspace_id,
+            visibility=visibility,
+            storage_backend=storage_backend,
+            storage_bucket=storage_bucket,
+            storage_key=storage_key,
+            content_sha256=content_sha256,
         )
-        self.session.add(file_obj)
+        self.session.add(knowledge_file)
         await self.session.flush()
-        await self.session.refresh(file_obj)
-        return file_obj
+        await self.session.refresh(knowledge_file)
+        return knowledge_file
 
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         return await self.session.get(File, file_id)
+
+    async def get_file_by_hash_and_status(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        content_sha256: str,
+        status: FileStatus,
+    ) -> File | None:
+        """按内容哈希和文件状态查询最早的匹配文件。"""
+        stmt = (
+            select(File)
+            .where(File.kb_id == kb_id)
+            .where(File.content_sha256 == content_sha256)
+            .where(File.status == status)
+            .order_by(File.created_at.asc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
     async def update_file_status(
         self,
         file_id: uuid.UUID,
         status: FileStatus,
     ) -> File | None:
-        file_obj = await self.get_file(file_id)
-        if not file_obj:
+        knowledge_file = await self.get_file(file_id)
+        if not knowledge_file:
             return None
-        file_obj.status = status
-        self.session.add(file_obj)
+        knowledge_file.status = status
+        self.session.add(knowledge_file)
         await self.session.flush()
-        await self.session.refresh(file_obj)
-        return file_obj
+        await self.session.refresh(knowledge_file)
+        return knowledge_file
+
+    async def try_transition_file_status(
+        self,
+        *,
+        file_id: uuid.UUID,
+        expected_previous_statuses: Collection[FileStatus],
+        target_status: FileStatus,
+    ) -> bool:
+        """条件更新：只有当当前状态处于 expected_previous_statuses 中时，才更新为 target_status。
+
+        返回 True 表示状态流转成功，返回 False 表示并发冲突或状态不匹配。
+        """
+        stmt = (
+            update(File)
+            .where(
+                File.id == file_id,
+                File.status.in_(list(expected_previous_statuses)),
+            )
+            .values(status=target_status)
+            .returning(File.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def mark_stale_ingestion_files_failed(
+        self,
+        *,
+        older_than: datetime,
+    ) -> int:
+        stmt = (
+            update(File)
+            .where(File.status.in_([FileStatus.PARSING, FileStatus.CHUNKING]))
+            .where(File.updated_at < older_than)
+            .values(status=FileStatus.FAILED)
+        )
+        result = await self.session.execute(stmt)
+        return int(getattr(result, "rowcount", 0) or 0)
 
     async def delete_chunks_for_file(self, file_id: uuid.UUID) -> None:
         stmt = delete(DocumentChunk).where(DocumentChunk.file_id == file_id)
         await self.session.execute(stmt)
 
-    async def add_chunks(self, chunks_data: list[dict]):
-        # chunks_data 包含 content 和 embedding(list)
+    async def add_chunks(self, chunks_data: list[dict]) -> None:
         if not chunks_data:
             return
         stmt = insert(DocumentChunk).values(chunks_data)
         await self.session.execute(stmt)
 
-    async def vector_search(self, query_vector: list[float], limit=5):
-        # 利用 pgvector 的 <=> 符号进行余弦相似度搜索
-        from sqlalchemy import select
-
+    async def vector_search(
+        self,
+        query_vector: list[float],
+        limit: int = 5,
+    ) -> Sequence[DocumentChunk]:
         stmt = (
             select(DocumentChunk)
             .order_by(DocumentChunk.embedding.cosine_distance(query_vector))
@@ -95,14 +206,13 @@ class KnowledgeRepository:
         limit: int = 5,
     ) -> list[tuple[DocumentChunk, float]]:
         """在指定知识库内做向量检索，返回 (chunk, distance)。"""
-        from sqlalchemy import select
-
         distance = DocumentChunk.embedding.cosine_distance(query_vector).label(
             "distance"
         )
         stmt = (
             select(DocumentChunk, distance)
             .join(File, DocumentChunk.file_id == File.id)
+            .options(contains_eager(DocumentChunk.file))
             .where(File.kb_id == kb_id)
             .order_by(distance)
             .limit(limit)
@@ -113,38 +223,27 @@ class KnowledgeRepository:
     async def search_chunks_for_kb_fulltext(
         self,
         *,
-        query_text: str,
+        normalized_query: str,
         kb_id: uuid.UUID,
         limit: int = 5,
     ) -> list[tuple[DocumentChunk, float]]:
-        """在指定知识库内做全文检索，返回 (chunk, distance)。"""
-        if not query_text.strip() or limit <= 0:
+        """在指定知识库内做 PostgreSQL 全文检索，返回 (chunk, rank)。"""
+        if not normalized_query.strip() or limit <= 0:
             return []
 
-        normalized_query = query_text.strip()
-        ts_vector = func.to_tsvector("simple", DocumentChunk.content)
         ts_query = func.plainto_tsquery("simple", normalized_query)
-        rank = func.ts_rank_cd(ts_vector, ts_query).label("rank")
+        rank = func.ts_rank_cd(DocumentChunk.search_vector, ts_query).label("rank")
         stmt = (
             select(DocumentChunk, rank)
             .join(File, DocumentChunk.file_id == File.id)
+            .options(contains_eager(DocumentChunk.file))
             .where(File.kb_id == kb_id)
-            .where(ts_vector.op("@@")(ts_query))
+            .where(DocumentChunk.search_vector.op("@@")(ts_query))
             .order_by(rank.desc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        rows = result.all()
         return [
-            (
-                row[0],
-                self._rank_to_distance(float(row[1]) if row[1] is not None else 0.0),
-            )
-            for row in rows
+            (row[0], float(row[1]) if row[1] is not None else 0.0)
+            for row in result.all()
         ]
-
-    @staticmethod
-    def _rank_to_distance(rank: float) -> float:
-        # 与向量检索保持同方向：值越小越相关
-        safe_rank = max(0.0, rank)
-        return 1.0 / (1.0 + safe_rank)

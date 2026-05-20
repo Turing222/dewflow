@@ -1,15 +1,22 @@
+"""Knowledge base and file ORM models.
+
+职责：定义知识库、上传文件、存储位置和文件处理状态。
+边界：本模块不处理文件解析、切片或对象存储读写。
+"""
+
 from __future__ import annotations
 
 import uuid
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.orm.base import AuditMixin, Base, BaseIdModel
 
 if TYPE_CHECKING:
+    from backend.models.orm.access import Workspace
     from backend.models.orm.chunk import DocumentChunk
     from backend.models.orm.user import User
 
@@ -22,8 +29,13 @@ class FileStatus(StrEnum):
     FAILED = "failed"  # 处理失败
 
 
+class FileVisibility(StrEnum):
+    PRIVATE = "private"
+    WORKSPACE = "workspace"
+
+
 class KnowledgeBase(Base, BaseIdModel, AuditMixin):
-    """知识库：文件的逻辑集合"""
+    """知识文件的逻辑集合。"""
 
     __tablename__ = "knowledge_bases"
 
@@ -32,9 +44,14 @@ class KnowledgeBase(Base, BaseIdModel, AuditMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
 
-    # 关联
     user: Mapped[User] = relationship(back_populates="knowledge_bases")
+    workspace: Mapped[Workspace | None] = relationship(back_populates="knowledge_bases")
     files: Mapped[list[File]] = relationship(
         back_populates="kb",
         cascade="all, delete-orphan",
@@ -42,22 +59,57 @@ class KnowledgeBase(Base, BaseIdModel, AuditMixin):
 
 
 class File(Base, BaseIdModel, AuditMixin):
-    """
-    文件表（依附于知识库）
-    """
+    """知识库文件及其存储元数据。"""
 
     __tablename__ = "knowledge_files"
+    __table_args__ = (
+        CheckConstraint(
+            "storage_backend IN ('local', 's3')",
+            name="ck_knowledge_files_storage_backend",
+        ),
+        Index(
+            "ix_knowledge_files_kb_content_sha256",
+            "kb_id",
+            "content_sha256",
+        ),
+    )
 
     kb_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("knowledge_bases.id", ondelete="CASCADE"), index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    # 物理路径或 S3 Key
-    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    storage_backend: Mapped[str] = mapped_column(
+        String(20),
+        default="local",
+        server_default="local",
+        nullable=False,
+    )
+    storage_bucket: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[FileStatus] = mapped_column(String(20), default=FileStatus.UPLOADED)
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    visibility: Mapped[FileVisibility] = mapped_column(
+        String(20),
+        default=FileVisibility.WORKSPACE,
+        server_default=FileVisibility.WORKSPACE,
+        nullable=False,
+    )
 
     kb: Mapped[KnowledgeBase] = relationship(back_populates="files")
+    owner: Mapped[User | None] = relationship()
+    workspace: Mapped[Workspace | None] = relationship(back_populates="files")
     chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="file",
         cascade="all, delete-orphan",

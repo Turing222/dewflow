@@ -1,3 +1,8 @@
+"""Security helper unit tests.
+
+职责：验证密码哈希校验和 JWT 载荷生成；边界：使用本地加密函数与测试配置，不访问外部认证服务；副作用：无。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -5,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 import jwt
 import pytest
 
-from backend.core.config import settings
+from backend.config.settings import settings
 from backend.core.security import (
     create_access_token,
     get_password_hash,
@@ -14,7 +19,7 @@ from backend.core.security import (
 
 
 @pytest.mark.asyncio
-async def test_get_password_hash_and_verify_password_round_trip():
+async def test_get_password_hash_and_verify_password_round_trip() -> None:
     hashed = await get_password_hash("Password123")
 
     assert hashed != "Password123"
@@ -22,18 +27,18 @@ async def test_get_password_hash_and_verify_password_round_trip():
 
 
 @pytest.mark.asyncio
-async def test_verify_password_returns_false_for_wrong_password():
+async def test_verify_password_returns_false_for_wrong_password() -> None:
     hashed = await get_password_hash("Password123")
 
     assert await verify_password("WrongPassword123", hashed) is False
 
 
 @pytest.mark.asyncio
-async def test_verify_password_returns_false_for_invalid_hash():
+async def test_verify_password_returns_false_for_invalid_hash() -> None:
     assert await verify_password("Password123", "not-a-valid-hash") is False
 
 
-def test_create_access_token_contains_subject_iat_and_exp():
+def test_create_access_token_contains_subject_iat_and_exp() -> None:
     expires_delta = timedelta(minutes=15)
 
     token = create_access_token("user-123", expires_delta=expires_delta)
