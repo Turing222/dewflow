@@ -2,7 +2,8 @@ import React from 'react';
 import { Modal, Tabs, Form, Input, Button, message } from 'antd';
 import { User, Lock, Mail } from 'lucide-react';
 import { useAuth } from '../../context/useAuth';
-import { loginAPI, registerAPI } from '../../api/auth';
+import { loginAPI } from '../../api/auth';
+import { useRegisterUserMutation } from '../../query/hooks/users';
 import type { LoginCredentials, UserRegistrationPayload } from '../../types/user';
 
 type RegisterFormValues = Omit<UserRegistrationPayload, 'max_tokens'>;
@@ -10,7 +11,8 @@ type RegisterFormValues = Omit<UserRegistrationPayload, 'max_tokens'>;
 const AuthModal: React.FC = () => {
     const { showAuthModal, setShowAuthModal, authTab, setAuthTab, login } = useAuth();
     const [loginLoading, setLoginLoading] = React.useState(false);
-    const [registerLoading, setRegisterLoading] = React.useState(false);
+    const registerMutation = useRegisterUserMutation();
+    const registerLoading = registerMutation.isPending;
     const [loginForm] = Form.useForm<LoginCredentials>();
     const [registerForm] = Form.useForm<RegisterFormValues>();
 
@@ -29,16 +31,13 @@ const AuthModal: React.FC = () => {
     };
 
     const handleRegister = async (values: RegisterFormValues) => {
-        setRegisterLoading(true);
         try {
-            await registerAPI(values);
+            await registerMutation.mutateAsync({ ...values, confirm_password: values.password, max_tokens: undefined });
             message.success('注册成功，请登录');
             registerForm.resetFields();
             setAuthTab('login');
         } catch (error) {
             console.error(error);
-        } finally {
-            setRegisterLoading(false);
         }
     };
 

@@ -17,8 +17,11 @@ import {
 import type { TableColumnsType } from 'antd';
 import { Users, ArrowLeft, Search, UserPlus, Upload as UploadIcon, Edit, Trash2, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/useAuth';
-import { queryUserAPI, updateUserAPI, registerUserAPI, uploadUsersCSVAPI } from '../../api/users';
+import { queryUserAPI } from '../../api/users';
+import { useUpdateUserMutation, useRegisterUserMutation, useUploadUsersCSVMutation } from '../../query/hooks/users';
+import { userKeys } from '../../query/keys/users';
 import type {
     User,
     UserImportResponse,
@@ -43,6 +46,7 @@ type CreateUserFormValues = Required<Pick<UserFormValues, 'username' | 'email' |
 const AdminDashboard: React.FC = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(false);
     const [searchValue, setSearchValue] = useState('');
@@ -52,6 +56,10 @@ const AdminDashboard: React.FC = () => {
     const [createForm] = Form.useForm<CreateUserFormValues>();
     const [editForm] = Form.useForm<UserFormValues>();
 
+    const updateUserMutation = useUpdateUserMutation();
+    const registerUserMutation = useRegisterUserMutation();
+    const uploadCSVMutation = useUploadUsersCSVMutation();
+
     const handleSearch = async () => {
         if (!searchValue.trim()) {
             message.warning('请输入用户名或邮箱');
@@ -60,9 +68,11 @@ const AdminDashboard: React.FC = () => {
         setLoading(true);
         try {
             const isEmail = searchValue.includes('@');
-            const res = await queryUserAPI(
-                isEmail ? { email: searchValue } : { username: searchValue }
-            );
+            const params = isEmail ? { email: searchValue } : { username: searchValue };
+            const res = await queryClient.fetchQuery({
+                queryKey: userKeys.query(params),
+                queryFn: () => queryUserAPI(params),
+            });
             setUsers(res ? [res] : []);
             if (!res) message.info('未找到用户');
         } catch {
@@ -79,7 +89,7 @@ const AdminDashboard: React.FC = () => {
                 confirm_password: values.password,
                 max_tokens: values.max_tokens !== undefined ? Number(values.max_tokens) : undefined,
             };
-            await registerUserAPI(payload);
+            await registerUserMutation.mutateAsync(payload);
             message.success('用户创建成功');
             setCreateModalOpen(false);
             createForm.resetFields();
@@ -109,7 +119,7 @@ const AdminDashboard: React.FC = () => {
             if (values.max_tokens !== undefined) updateData.max_tokens = Number(values.max_tokens);
             if (values.is_active !== undefined) updateData.is_active = values.is_active;
 
-            const updated = await updateUserAPI(editingUser.id, updateData);
+            const updated = await updateUserMutation.mutateAsync({ id: editingUser.id, data: updateData });
             setUsers((prev) => prev.map((u) => (u.id === editingUser.id ? updated : u)));
             message.success('用户更新成功');
             setEditModalOpen(false);
@@ -121,7 +131,7 @@ const AdminDashboard: React.FC = () => {
 
     const handleDeactivate = async (record: User) => {
         try {
-            const updated = await updateUserAPI(record.id, { is_active: false });
+            const updated = await updateUserMutation.mutateAsync({ id: record.id, data: { is_active: false } });
             setUsers((prev) => prev.map((u) => (u.id === record.id ? updated : u)));
             message.success('用户已停用');
         } catch {
@@ -131,7 +141,7 @@ const AdminDashboard: React.FC = () => {
 
     const handleUpload = async (file: File) => {
         try {
-            const res: UserImportResponse = await uploadUsersCSVAPI(file);
+            const res: UserImportResponse = await uploadCSVMutation.mutateAsync(file);
             message.success(res?.message || '批量导入成功');
         } catch {
             // handled

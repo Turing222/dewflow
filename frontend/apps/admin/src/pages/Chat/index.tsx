@@ -1,10 +1,13 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Dropdown, message as antdMessage, Tooltip } from 'antd';
 import { LogOut, LogIn, UserPlus, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/useAuth';
 import { resolveIdempotencyKey } from '../../lib/http/idempotency';
 import { chatStreamEventSchema } from '../../schemas/chat';
+import { chatKeys } from '../../query/keys/chat';
+import { useSessionDetailQuery } from '../../query/hooks/chat';
 import Sidebar from './Sidebar';
 import MessageList from './MessageList';
 import type { ChatMessage, ChatSession } from '../../types/chat';
@@ -29,14 +32,28 @@ type SendMessageOptions = {
 const ChatPage: React.FC = () => {
     const { user, isAuthenticated, logout, setShowAuthModal, setAuthTab, refreshUser } = useAuth();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
 
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [streamingText, setStreamingText] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
-    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+    // Track whether the current session was entered by selecting history
+    // vs. being created during streaming — prevents detail query from
+    // overwriting optimistic/local messages mid-stream.
+    const isSessionFromHistoryRef = useRef(false);
+
+    // Only fetch session detail when selecting from history (not during/after streaming).
+    // During streaming, messages are managed locally; after [DONE] we invalidate
+    // but don't sync detail back to messages to avoid overwriting local state.
+    const detailSessionId = isSessionFromHistoryRef.current ? activeSessionId : null;
+    const { data: sessionDetailData, isLoading: detailLoading } =
+        useSessionDetailQuery(detailSessionId);
+
+    const isLoadingHistory = detailLoading && isSessionFromHistoryRef.current;
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const retryCacheRef = useRef<Map<string, RetryCacheEntry>>(new Map());
@@ -50,6 +67,14 @@ const ChatPage: React.FC = () => {
         }
     }, []);
 
+    // Sync session detail data to local state — only for history selection path
+    useEffect(() => {
+        if (sessionDetailData && isSessionFromHistoryRef.current) {
+            setActiveSession(sessionDetailData.session);
+            setMessages(sessionDetailData.messages || []);
+        }
+    }, [sessionDetailData]);
+
     // 发送消息（SSE 真流式）
     const handleSend = useCallback(async (text: string, options?: SendMessageOptions) => {
         const normalizedText = text.trim();
@@ -58,6 +83,7 @@ const ChatPage: React.FC = () => {
         }
 
         pruneRetryCache();
+        isSessionFromHistoryRef.current = false;
         const addUserMessage = options?.addUserMessage ?? true;
         const clientRequestId = resolveIdempotencyKey(options?.clientRequestId);
         if (options?.retryMessageId) {
@@ -126,13 +152,19 @@ const ChatPage: React.FC = () => {
                         setMessages((prev) => [...prev, assistantMsg]);
                         setStreamingText('');
                         setIsStreaming(false);
-                        // 异步刷新用户信息和会话详情（用于更新 Token 统计）
+                        // Mark that this session is no longer from history selection
+                        isSessionFromHistoryRef.current = false;
+                        // Force-refresh user profile (token usage) and session detail
                         refreshUser();
                         if (runtimeSessionId) {
+                            queryClient.invalidateQueries({ queryKey: chatKeys.sessionDetail(runtimeSessionId) });
+                            // Fetch updated session metadata (e.g. token count) without
+                            // overwriting local messages — only update activeSession.
                             getSessionDetailAPI(runtimeSessionId).then((detail) => {
                                 setActiveSession(detail.session);
                             });
                         }
+                        queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
                         return;
                     }
 
@@ -153,7 +185,7 @@ const ChatPage: React.FC = () => {
                                     updated_at: new Date().toISOString(),
                                     total_tokens: 0
                                 });
-                                void window.__refreshSidebar?.();
+                                queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
                             }
                         } else if (parsed.type === 'chunk') {
                             accumulatedContent += parsed.content;
@@ -206,7 +238,7 @@ const ChatPage: React.FC = () => {
                 createdAt: Date.now(),
             });
         }
-    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id]);
+    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient]);
 
     const handleRetryFailedMessage = useCallback((messageId: string) => {
         if (isStreaming) {
@@ -227,20 +259,11 @@ const ChatPage: React.FC = () => {
     }, [handleSend, isStreaming, pruneRetryCache]);
 
     // 选择历史会话
-    const handleSelectSession = useCallback(async (session: ChatSession) => {
+    const handleSelectSession = useCallback((session: ChatSession) => {
+        isSessionFromHistoryRef.current = true;
         setActiveSessionId(session.id);
-        setIsLoadingHistory(true);
         retryCacheRef.current.clear();
         setMessages([]);
-        try {
-            const detail = await getSessionDetailAPI(session.id);
-            setActiveSession(detail.session);
-            setMessages(detail.messages || []);
-        } catch {
-            antdMessage.error('加载历史消息失败');
-        } finally {
-            setIsLoadingHistory(false);
-        }
     }, []);
 
     // 新建对话
@@ -249,6 +272,7 @@ const ChatPage: React.FC = () => {
             abortControllerRef.current.abort();
         }
         retryCacheRef.current.clear();
+        isSessionFromHistoryRef.current = false;
         setActiveSessionId(null);
         setActiveSession(null);
         setMessages([]);

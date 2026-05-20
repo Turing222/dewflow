@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import { Button, Spin, Tooltip } from 'antd';
 import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ChatSession } from '../../types/chat';
-import { getSessionsAPI } from '../../api/chat';
+import { useChatSessionsQuery } from '../../query/hooks/chat';
 import { useAuth } from '../../context/useAuth';
 import './Sidebar.css';
 
@@ -22,33 +22,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     onToggle,
 }) => {
     const { isAuthenticated } = useAuth();
-    const [sessions, setSessions] = useState<ChatSession[]>([]);
-    const [loading, setLoading] = useState(false);
-
-    const loadSessions = useCallback(async () => {
-        if (!isAuthenticated) return;
-        setLoading(true);
-        try {
-            const res = await getSessionsAPI(0, 50);
-            setSessions(res.items || []);
-        } catch {
-            // handled
-        } finally {
-            setLoading(false);
-        }
-    }, [isAuthenticated]);
-
-    useEffect(() => {
-        void loadSessions();
-    }, [loadSessions]);
-
-    // Expose refresh
-    useEffect(() => {
-        window.__refreshSidebar = loadSessions;
-        return () => {
-            delete window.__refreshSidebar;
-        };
-    }, [loadSessions]);
+    const { data, isLoading: loading } = useChatSessionsQuery();
+    const sessions = data?.items || [];
 
     const formatTime = (dateStr: string) => {
         const d = new Date(dateStr);

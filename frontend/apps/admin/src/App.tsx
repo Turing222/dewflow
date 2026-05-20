@@ -2,6 +2,8 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider, Spin } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './query/query-client';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/useAuth';
 import ChatPage from './pages/Chat';
@@ -44,20 +46,22 @@ const App: React.FC = () => {
         },
       }}
     >
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* 聊天页（不需要登录，弹窗登录） */}
-            <Route path="/" element={<ChatPage />} />
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* 聊天页（不需要登录，弹窗登录） */}
+              <Route path="/" element={<ChatPage />} />
 
-            {/* 管理员后台 */}
-            <Route path="/admin" element={<AdminRouteGuard />} />
+              {/* 管理员后台 */}
+              <Route path="/admin" element={<AdminRouteGuard />} />
 
-            {/* 404 跳转 */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+              {/* 404 跳转 */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </QueryClientProvider>
     </ConfigProvider>
   );
 };
