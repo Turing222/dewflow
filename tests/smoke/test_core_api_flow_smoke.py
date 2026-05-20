@@ -21,15 +21,15 @@ async def test_core_auth_workspace_permission_and_audit_denial_flow(
     await smoke_helpers.ensure_ready_environment(smoke_client)
     owner_headers, owner_suffix = await smoke_helpers.auth_headers_for_new_user(
         smoke_client,
-        prefix="core_owner",
+        prefix="c_owner",
     )
     member_headers, _member_suffix = await smoke_helpers.auth_headers_for_new_user(
         smoke_client,
-        prefix="core_member",
+        prefix="c_member",
     )
     admin_headers, _admin_suffix = await smoke_helpers.auth_headers_for_new_user(
         smoke_client,
-        prefix="core_admin",
+        prefix="c_admin",
     )
 
     owner = await smoke_helpers.get_current_user(smoke_client, headers=owner_headers)
@@ -85,3 +85,78 @@ async def test_core_auth_workspace_permission_and_audit_denial_flow(
         params={"workspace_id": workspace["id"]},
     )
     assert audit_denied_response.status_code == 403, audit_denied_response.text
+
+
+async def test_core_auth_and_workspace_negative_flow(
+    smoke_client: httpx.AsyncClient,
+) -> None:
+    await smoke_helpers.ensure_ready_environment(smoke_client)
+
+    unauthenticated_response = await smoke_client.get("/api/v1/users/me")
+    smoke_helpers.assert_error_response(unauthenticated_response, 401, "HTTP_401")
+
+    invalid_token_response = await smoke_client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": "Bearer invalid-smoke-token"},
+    )
+    smoke_helpers.assert_error_response(
+        invalid_token_response,
+        403,
+        "INVALID_TOKEN",
+    )
+
+    (
+        _duplicate_headers,
+        duplicate_suffix,
+    ) = await smoke_helpers.auth_headers_for_new_user(
+        smoke_client,
+        prefix="c_dup",
+    )
+    duplicate_username = f"c_dup_{duplicate_suffix}"
+    duplicate_response = await smoke_client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": duplicate_username,
+            "email": f"{duplicate_username}@example.com",
+            "password": "Password123",
+            "confirm_password": "Password123",
+        },
+    )
+    smoke_helpers.assert_error_response(
+        duplicate_response,
+        422,
+        "EMAIL_ALREADY_REGISTERED",
+    )
+
+    owner_headers, owner_suffix = await smoke_helpers.auth_headers_for_new_user(
+        smoke_client,
+        prefix="c_acl_own",
+    )
+    member_headers, _member_suffix = await smoke_helpers.auth_headers_for_new_user(
+        smoke_client,
+        prefix="c_acl_mem",
+    )
+    target_headers, _target_suffix = await smoke_helpers.auth_headers_for_new_user(
+        smoke_client,
+        prefix="c_acl_tgt",
+    )
+    member = await smoke_helpers.get_current_user(smoke_client, headers=member_headers)
+    target = await smoke_helpers.get_current_user(smoke_client, headers=target_headers)
+    workspace = await smoke_helpers.create_workspace(
+        smoke_client,
+        headers=owner_headers,
+        suffix=owner_suffix,
+    )
+    await smoke_helpers.add_workspace_member(
+        smoke_client,
+        headers=owner_headers,
+        workspace_id=workspace["id"],
+        user_id=member["id"],
+    )
+
+    member_add_response = await smoke_client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members",
+        headers=member_headers,
+        json={"user_id": target["id"], "role": "member"},
+    )
+    smoke_helpers.assert_error_response(member_add_response, 403, "PERMISSION_DENIED")

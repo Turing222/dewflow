@@ -7,11 +7,12 @@ Chat API — 对话相关的 HTTP 端点
 - 结构化日志记录请求生命周期
 """
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from backend.api.dependencies import (
@@ -50,6 +51,8 @@ chat_limiter = RateLimiter(
 )
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 SessionQueryServiceDep = Annotated[
@@ -103,6 +106,7 @@ async def query_sent(
 
 @router.post("/query_stream")
 async def query_stream(
+    http_request: Request,
     request: QuerySentRequest,
     current_user: CurrentUserDep,
     workflow: StreamWorkflowDep,
@@ -148,6 +152,13 @@ async def query_stream(
                 extra_body=extra_body,
             )
             async for event in workflow.handle_query_stream(command):
+                if await http_request.is_disconnected():
+                    logger.warning(
+                        "SSE 客户端已断开，提前终止流: user_id=%s, session_id=%s",
+                        current_user.id,
+                        request.session_id,
+                    )
+                    return
                 # 仅在首个 meta 事件时更新 audit resource_id（session_id / message_id）
                 if not meta_captured and event["type"] == "meta":
                     meta_captured = True

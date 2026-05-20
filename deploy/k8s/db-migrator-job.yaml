@@ -10,7 +10,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: db-migrator
-          image: ai-tutor-backend:web-v1
+          image: dewflow-backend:2.0.0-web
           imagePullPolicy: IfNotPresent
           command:
             - alembic

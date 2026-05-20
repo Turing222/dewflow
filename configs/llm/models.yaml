@@ -93,6 +93,7 @@ embeddings:
       dimensions: 768
       api_key_envs:
         - RAG_EMBED_API_KEY
+        - DASHSCOPE_API_KEY
         - GEMINI_API_KEY
         - GOOGLE_API_KEY
       aliases:

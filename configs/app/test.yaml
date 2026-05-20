@@ -1,4 +1,4 @@
 APP_ENV: test
-POSTGRES_DB: mentor_ai_test
+POSTGRES_DB: dewflow_test
 STORAGE_BACKEND: local
 LOCAL_STORAGE_ROOT: .files/test_knowledge_files

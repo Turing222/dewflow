@@ -54,7 +54,7 @@ services:
     networks:
       - app_net
   api:
-    image: ai-tutor-backend:web-v1
+    image: dewflow-backend:2.0.0-web
     container_name: api
     stop_grace_period: 40s
     volumes:
@@ -235,7 +235,7 @@ services:
   # 1. 专门负责“更新数据库”的工具人
 
   db_migrator:
-    image: ai-tutor-backend:web-v1
+    image: dewflow-backend:2.0.0-web
     depends_on:
       postgres:
         condition: service_healthy
@@ -274,7 +274,7 @@ services:
 
   # 5. 异步长连接任务队列 Taskiq Worker
   task_worker:
-    image: ai-tutor-backend:ai-v1
+    image: dewflow-backend:2.0.0-ai
     container_name: task_worker
     stop_grace_period: 120s
     volumes:

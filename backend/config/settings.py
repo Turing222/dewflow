@@ -47,7 +47,7 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     POSTGRES_PASSWORD: str = ""
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str = "mentor_ai"
+    POSTGRES_DB: str = "dewflow"
     POSTGRES_DB_ECHO: bool = False
     POSTGRES_POOL_SIZE: int = 10
     POSTGRES_MAX_OVERFLOW: int = 20

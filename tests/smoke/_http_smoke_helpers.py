@@ -32,21 +32,46 @@ TASK_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/tasks/{task_id}"
 FILE_STATUS_PATH_TEMPLATE = "/api/v1/knowledge/files/{file_id}"
 
 
+def smoke_skip_or_fail(message: str) -> None:
+    if os.getenv("SMOKE_STRICT", "false").lower() in {"1", "true", "yes", "on"}:
+        pytest.fail(message)
+    pytest.skip(message)
+
+
+def assert_error_response(
+    response: httpx.Response,
+    status_code: int,
+    error_code: str | None = None,
+) -> dict[str, Any]:
+    assert response.status_code == status_code, response.text
+    body = response.json()
+    assert "error_code" in body
+    assert "message" in body
+    assert "request_id" in body
+    if error_code is not None:
+        assert body["error_code"] == error_code
+    return body
+
+
 async def ensure_live_environment(client: httpx.AsyncClient) -> None:
     try:
         response = await client.get(SMOKE_LIVE_PATH, timeout=2.0)
     except httpx.HTTPError as exc:
-        pytest.skip(f"Smoke environment is not reachable at {SMOKE_BASE_URL}: {exc}")
+        smoke_skip_or_fail(
+            f"Smoke environment is not reachable at {SMOKE_BASE_URL}: {exc}"
+        )
 
     if response.status_code != 200:
-        pytest.skip(
+        smoke_skip_or_fail(
             "Smoke live endpoint is unavailable: "
             f"{SMOKE_BASE_URL}{SMOKE_LIVE_PATH} -> {response.status_code}"
         )
 
     body = response.json()
     if body.get("status") != "alive":
-        pytest.skip(f"Smoke live endpoint returned an unexpected payload: {body!r}")
+        smoke_skip_or_fail(
+            f"Smoke live endpoint returned an unexpected payload: {body!r}"
+        )
 
 
 async def ensure_ready_environment(client: httpx.AsyncClient) -> None:
@@ -109,7 +134,7 @@ async def auth_headers_for_new_user(
     *,
     prefix: str = "smoke",
 ) -> tuple[dict[str, str], str]:
-    suffix = uuid.uuid4().hex[:12]
+    suffix = uuid.uuid4().hex[:8]
     username = f"{prefix}_{suffix}"
     email = f"{username}@example.com"
     password = "Password123"
@@ -192,7 +217,7 @@ async def chat_query_stream_collect(
         QUERY_STREAM_PATH,
         headers=headers,
         json=payload,
-        timeout=30.0,
+        timeout=httpx.Timeout(30.0, read=60.0),
     ) as response:
         assert response.status_code == 200, await response.aread()
 

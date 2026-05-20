@@ -1,8 +1,8 @@
 # ==========================================
 # Multi-target Dockerfile: 一个文件出两个镜像
 #
-#   docker build --target web    -t ai-tutor-backend:web-v1 .
-#   docker build --target worker -t ai-tutor-backend:ai-v1 .
+#   docker build --target web    -t dewflow-backend:2.0.0-web .
+#   docker build --target worker -t dewflow-backend:2.0.0-ai .
 #
 #   web    → api + db_migrator (base + web extras)
 #   worker → task_worker         (base + ai + worker extras)

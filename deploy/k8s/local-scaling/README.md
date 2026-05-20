@@ -41,8 +41,8 @@ helm install keda kedacore/keda --namespace keda --create-namespace
 构建并导入镜像：
 
 ```bash
-docker build --target worker -t ai-tutor-backend:ai-v1 .
-kind load docker-image ai-tutor-backend:ai-v1
+docker build --target worker -t dewflow-backend:2.0.0-ai .
+kind load docker-image dewflow-backend:2.0.0-ai
 ```
 
 应用本地扩缩容演示：

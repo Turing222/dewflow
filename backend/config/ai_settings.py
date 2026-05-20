@@ -87,7 +87,7 @@ class AISettings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     GOOGLE_API_KEY: str | None = None
     DEEPSEEK_API_KEY: str | None = None
-
+    DASHSCOPE_API_KEY: str | None = None
     # ── LLM Provider Config ───────────────────────────────────────
     LLM_PROVIDER: str = "mock"
     LLM_BASE_URL: str = "https://api.deepseek.com"
@@ -126,7 +126,7 @@ class AISettings(BaseSettings):
     RAG_REFUSAL_MESSAGE: str = "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
 
     # ── RAG Embedding ─────────────────────────────────────────────
-    RAG_EMBED_PROVIDER: str = "google"
+    RAG_EMBED_PROVIDER: str = "dashscope"
     RAG_EMBED_BASE_URL: str | None = None
     RAG_EMBED_API_KEY: str | None = None
     RAG_EMBED_DIM: int = Field(default=768, ge=1)

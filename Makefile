@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
-DOCKER_IMAGE_NAME_WEB ?= ai-tutor-backend:web-v1
-DOCKER_IMAGE_NAME_AI ?= ai-tutor-backend:ai-v1
+DOCKER_IMAGE_NAME_WEB ?= dewflow-backend:2.0.0-web
+DOCKER_IMAGE_NAME_AI ?= dewflow-backend:2.0.0-ai
 SMOKE_COMPOSE_FILE ?= docker-compose.db.yml
 DEBUG_COMPOSE_FILE ?= docker-compose.debug.yml
 SMOKE_ENV_FILE ?= .env.smoke

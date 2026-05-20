@@ -200,6 +200,31 @@ def test_cors_whitespace_comma_parses_correctly(
     assert settings.BACKEND_CORS_HEADERS == ["Authorization", "Content-Type"]
 
 
+def test_rate_limit_settings_load_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("AUTH_REGISTER_RATE_LIMIT_TIMES", "101")
+    monkeypatch.setenv("AUTH_REGISTER_RATE_LIMIT_SECONDS", "61")
+    monkeypatch.setenv("AUTH_LOGIN_RATE_LIMIT_TIMES", "102")
+    monkeypatch.setenv("AUTH_LOGIN_RATE_LIMIT_SECONDS", "62")
+    monkeypatch.setenv("BUSINESS_RATE_LIMIT_TIMES", "103")
+    monkeypatch.setenv("BUSINESS_RATE_LIMIT_SECONDS", "63")
+    monkeypatch.setenv("CHAT_RATE_LIMIT_TIMES", "104")
+    monkeypatch.setenv("CHAT_RATE_LIMIT_SECONDS", "64")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.AUTH_REGISTER_RATE_LIMIT_TIMES == 101
+    assert settings.AUTH_REGISTER_RATE_LIMIT_SECONDS == 61
+    assert settings.AUTH_LOGIN_RATE_LIMIT_TIMES == 102
+    assert settings.AUTH_LOGIN_RATE_LIMIT_SECONDS == 62
+    assert settings.BUSINESS_RATE_LIMIT_TIMES == 103
+    assert settings.BUSINESS_RATE_LIMIT_SECONDS == 63
+    assert settings.CHAT_RATE_LIMIT_TIMES == 104
+    assert settings.CHAT_RATE_LIMIT_SECONDS == 64
+
+
 def test_rag_refusal_settings_can_load_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

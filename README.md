@@ -114,7 +114,7 @@ uv run alembic upgrade head
 | `POSTGRES_PASSWORD` | — |
 | `POSTGRES_SERVER` | `localhost` |
 | `POSTGRES_PORT` | `5432` |
-| `POSTGRES_DB` | `mentor_ai` |
+| `POSTGRES_DB` | `dewflow` |
 | `POSTGRES_POOL_SIZE` | `10` |
 | `POSTGRES_MAX_OVERFLOW` | `20` |
 | `POSTGRES_SSL_MODE` | —（可选 `disable` / `require`） |
@@ -162,6 +162,12 @@ Provider 密钥：`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `DEEP
 
 | 变量 | 默认值 |
 |------|--------|
+| `AUTH_REGISTER_RATE_LIMIT_TIMES` | `10` |
+| `AUTH_REGISTER_RATE_LIMIT_SECONDS` | `60` |
+| `AUTH_LOGIN_RATE_LIMIT_TIMES` | `20` |
+| `AUTH_LOGIN_RATE_LIMIT_SECONDS` | `60` |
+| `BUSINESS_RATE_LIMIT_TIMES` | `100` |
+| `BUSINESS_RATE_LIMIT_SECONDS` | `60` |
 | `CHAT_RATE_LIMIT_TIMES` | `10` |
 | `CHAT_RATE_LIMIT_SECONDS` | `60` |
 | `CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS` | `30` |
@@ -172,7 +178,7 @@ Provider 密钥：`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `DEEP
 | 变量 | 说明 |
 |------|------|
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Langfuse LLM 观测 |
-| `LANGFUSE_BASE_URL` | 默认 `https://cloud.langfuse.com` |
+| `LANGFUSE_BASE_URL` | 默认 `https://us.cloud.langfuse.com` |
 | `ENABLE_OTEL_TRACES` | 开启 DB tracing（`true` / `1`） |
 
 说明：

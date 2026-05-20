@@ -47,7 +47,7 @@ class WebSettings(BaseSettings):
 
     # ── App Metadata ──────────────────────────────────────────────
     PROJECT_NAME: str = "Dewflow AI"
-    VERSION: str = "0.1.0"
+    VERSION: str = "2.0.0"
     DEBUG: bool = False
     API_ROOT_PATH: str = "/api"
     API_V1_STR: str = "/v1"
@@ -59,6 +59,12 @@ class WebSettings(BaseSettings):
 
     # ── Rate Limiting ─────────────────────────────────────────────
     RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = ""
+    AUTH_REGISTER_RATE_LIMIT_TIMES: int = 10
+    AUTH_REGISTER_RATE_LIMIT_SECONDS: int = 60
+    AUTH_LOGIN_RATE_LIMIT_TIMES: int = 20
+    AUTH_LOGIN_RATE_LIMIT_SECONDS: int = 60
+    BUSINESS_RATE_LIMIT_TIMES: int = 100
+    BUSINESS_RATE_LIMIT_SECONDS: int = 60
     CHAT_RATE_LIMIT_TIMES: int = 10
     CHAT_RATE_LIMIT_SECONDS: int = 60
 

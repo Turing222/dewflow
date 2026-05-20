@@ -24,7 +24,7 @@ spec:
       terminationGracePeriodSeconds: 130
       containers:
         - name: worker
-          image: ai-tutor-backend:ai-v1
+          image: dewflow-backend:2.0.0-ai
           imagePullPolicy: IfNotPresent
           command:
             - taskiq

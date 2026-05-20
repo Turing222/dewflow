@@ -71,6 +71,24 @@ def build_embedding_profiles(config: LLMModelsConfig) -> dict[str, EmbeddingProf
                 aliases=("mock", "fake", "deterministic"),
                 dimensions=768,
             ),
+            "qwen3_text_embedding_v4": EmbeddingProfile(
+                name="qwen3_text_embedding_v4",
+                provider="openai-compatible",
+                model="text-embedding-v4",
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                api_key_envs=(
+                    "DASHSCOPE_API_KEY",
+                    "RAG_EMBED_API_KEY",
+                ),
+                aliases=(
+                    "qwen3",
+                    "qwen3-embedding",
+                    "text-embedding-v4",
+                    "dashscope",
+                    "aliyun",
+                ),
+                dimensions=768,
+            ),
             "google": EmbeddingProfile(
                 name="google",
                 provider="google",

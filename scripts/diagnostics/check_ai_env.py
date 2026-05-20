@@ -116,7 +116,7 @@ def check_embedding(*, live: bool, text: str) -> bool:
             dimensions=profile.dimensions,
         )
         if live:
-            vector = embedder.encode_query(text)
+            vector = asyncio.run(embedder.encode_query(text))
             print(f"Embedding live call: ok (dim={len(vector)})")
         else:
             print("Embedding client: initialized")
@@ -129,7 +129,7 @@ def check_embedding(*, live: bool, text: str) -> bool:
 def check_langfuse(*, live: bool) -> bool:
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
     secret_key = os.getenv("LANGFUSE_SECRET_KEY")
-    base_url = os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
+    base_url = os.getenv("LANGFUSE_BASE_URL", "https://us.cloud.langfuse.com")
     if not public_key and not secret_key:
         print("Langfuse: not configured")
         return True

@@ -53,7 +53,7 @@ class PydanticAILLMService(AbstractLLMService):
         circuit_breaker_cooldown_seconds: int | None = None,
     ) -> None:
         resolved_profile = profile or get_llm_model_config().resolve_profile(
-            provider_name or "gemini"
+            provider_name or "deepseek"
         )
         self.profile = (
             resolved_profile

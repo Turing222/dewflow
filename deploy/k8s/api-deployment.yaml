@@ -24,7 +24,7 @@ spec:
       terminationGracePeriodSeconds: 45
       containers:
         - name: api
-          image: ai-tutor-backend:web-v1
+          image: dewflow-backend:2.0.0-web
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

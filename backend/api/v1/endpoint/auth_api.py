@@ -7,6 +7,7 @@ from backend.api.dependencies import get_audit_service, get_login_data, get_user
 from backend.config.settings import settings
 from backend.core.exceptions import app_bad_request
 from backend.core.security import create_access_token
+from backend.middleware.rate_limit import RateLimiter
 from backend.models.enums import AuditOutcome
 from backend.models.schemas.user_schema import (
     Token,
@@ -18,19 +19,27 @@ from backend.services.audit_service import AuditAction, AuditService, record_aud
 from backend.services.user_service import UserService
 
 router = APIRouter()
+register_limiter = RateLimiter(
+    times=settings.AUTH_REGISTER_RATE_LIMIT_TIMES,
+    seconds=settings.AUTH_REGISTER_RATE_LIMIT_SECONDS,
+)
+login_limiter = RateLimiter(
+    times=settings.AUTH_LOGIN_RATE_LIMIT_TIMES,
+    seconds=settings.AUTH_LOGIN_RATE_LIMIT_SECONDS,
+)
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 LoginDataDep = Annotated[UserLogin, Depends(get_login_data)]
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 
 
-@router.post("/register")
+@router.post("/register", dependencies=[Depends(register_limiter)])
 async def register(user_in: UserCreate, user_service: UserServiceDep) -> UserResponse:
     async with user_service.write():
         user = await user_service.user_register_with_personal_workspace(user_in)
     return UserResponse.model_validate(user)
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[Depends(login_limiter)])
 async def login(
     login_data: LoginDataDep,
     user_service: UserServiceDep,

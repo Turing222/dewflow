@@ -418,7 +418,8 @@ class RAGEmbedderFactory:
                 dimensions=resolved_dimensions,
             )
 
-        if normalized in {"openai", "openai-compatible", "api", "external-api"}:
+        if normalized in {"openai", "openai-compatible", "api", "external-api",
+                          "dashscope", "aliyun"}:
             resolved_base_url = (
                 base_url or settings.RAG_EMBED_BASE_URL or settings.LLM_BASE_URL
             )
@@ -437,5 +438,5 @@ class RAGEmbedderFactory:
             )
         raise ValueError(
             f"Unsupported RAG embedding provider: {provider}. "
-            "Supported providers: mock, google/gemini, openai-compatible."
+            "Supported providers: mock, google/gemini, dashscope/aliyun, openai-compatible."
         )

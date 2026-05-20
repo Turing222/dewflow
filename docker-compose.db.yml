@@ -15,6 +15,7 @@ x-app-secrets: &app-secrets
   - DEEPSEEK_API_KEY
   - LLM_API_KEY
   - RAG_EMBED_API_KEY
+  - LANGFUSE_PUBLIC_KEY
   - LANGFUSE_SECRET_KEY
   - S3_ACCESS_KEY_ID
   - S3_SECRET_ACCESS_KEY
@@ -30,6 +31,7 @@ x-secret-file-env: &secret-file-env
   DEEPSEEK_API_KEY_FILE: /run/secrets/DEEPSEEK_API_KEY
   LLM_API_KEY_FILE: /run/secrets/LLM_API_KEY
   RAG_EMBED_API_KEY_FILE: /run/secrets/RAG_EMBED_API_KEY
+  LANGFUSE_PUBLIC_KEY_FILE: /run/secrets/LANGFUSE_PUBLIC_KEY
   LANGFUSE_SECRET_KEY_FILE: /run/secrets/LANGFUSE_SECRET_KEY
   S3_ACCESS_KEY_ID_FILE: ${S3_ACCESS_KEY_ID_FILE:-}
   S3_SECRET_ACCESS_KEY_FILE: ${S3_SECRET_ACCESS_KEY_FILE:-}
@@ -51,10 +53,11 @@ x-infra-env: &infra-env
   S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
   S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
 
-x-feature-env: &feature-env
+x-feature-env:
   # ── LLM / Embedding ────────────────────────────────────────
-  LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
-  RAG_EMBED_PROVIDER: ${RAG_EMBED_PROVIDER:-google}
+  &feature-env
+  LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+  RAG_EMBED_PROVIDER: ${RAG_EMBED_PROVIDER:-dashscope}
   RAG_EMBED_BATCH_SIZE: ${RAG_EMBED_BATCH_SIZE:-10}
   # ── RAG Retrieval ──────────────────────────────────────────
   RAG_TOP_K: ${RAG_TOP_K:-4}
@@ -62,7 +65,7 @@ x-feature-env: &feature-env
   RAG_RERANK_CANDIDATE_COUNT: ${RAG_RERANK_CANDIDATE_COUNT:-20}
   RAG_RERANK_TOP_K: ${RAG_RERANK_TOP_K:-4}
   RAG_PLANNER_ENABLED: ${RAG_PLANNER_ENABLED:-false}
-  RAG_PLANNER_PROVIDER: ${RAG_PLANNER_PROVIDER:-gemini}
+  RAG_PLANNER_PROVIDER: ${RAG_PLANNER_PROVIDER:-deepseek}
   RAG_PLANNER_TIMEOUT_SECONDS: ${RAG_PLANNER_TIMEOUT_SECONDS:-8}
   RAG_REFUSAL_ENABLED: ${RAG_REFUSAL_ENABLED:-true}
   RAG_MIN_HIT_COUNT: ${RAG_MIN_HIT_COUNT:-1}
@@ -73,6 +76,12 @@ x-feature-env: &feature-env
   KNOWLEDGE_CHUNK_OVERLAP: ${KNOWLEDGE_CHUNK_OVERLAP:-120}
   KNOWLEDGE_MAX_UPLOAD_SIZE_MB: ${KNOWLEDGE_MAX_UPLOAD_SIZE_MB:-20}
   # ── Chat / Rate ────────────────────────────────────────────
+  AUTH_REGISTER_RATE_LIMIT_TIMES: ${AUTH_REGISTER_RATE_LIMIT_TIMES:-10}
+  AUTH_REGISTER_RATE_LIMIT_SECONDS: ${AUTH_REGISTER_RATE_LIMIT_SECONDS:-60}
+  AUTH_LOGIN_RATE_LIMIT_TIMES: ${AUTH_LOGIN_RATE_LIMIT_TIMES:-20}
+  AUTH_LOGIN_RATE_LIMIT_SECONDS: ${AUTH_LOGIN_RATE_LIMIT_SECONDS:-60}
+  BUSINESS_RATE_LIMIT_TIMES: ${BUSINESS_RATE_LIMIT_TIMES:-100}
+  BUSINESS_RATE_LIMIT_SECONDS: ${BUSINESS_RATE_LIMIT_SECONDS:-60}
   CHAT_RATE_LIMIT_TIMES: ${CHAT_RATE_LIMIT_TIMES:-10}
   CHAT_RATE_LIMIT_SECONDS: ${CHAT_RATE_LIMIT_SECONDS:-60}
   # ── Observability ─────────────────────────────────────────
@@ -81,7 +90,7 @@ x-feature-env: &feature-env
   OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
   PROMETHEUS_OTLP_ENDPOINT: ${PROMETHEUS_OTLP_ENDPOINT:-http://otel-collector:4318/v1/metrics}
   LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-  LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
+  LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
 
 services:
   postgres:
@@ -124,9 +133,7 @@ services:
           memory: 512M
     logging: *default-logging
     command: >
-      sh -c 'umask 077 &&
-      printf "maxmemory 384mb\nmaxmemory-policy allkeys-lru\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf &&
-      exec redis-server /tmp/redis.conf'
+      sh -c 'umask 077 && printf "maxmemory 384mb\nmaxmemory-policy allkeys-lru\nrequirepass %s\n" "$$(cat /run/secrets/REDIS_PASSWORD)" > /tmp/redis.conf && exec redis-server /tmp/redis.conf'
     healthcheck:
       test: [ "CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping" ]
       interval: 10s
@@ -135,7 +142,7 @@ services:
 
   minio:
     image: quay.io/minio/minio:latest
-    profiles: ["s3"]
+    profiles: [ "s3" ]
     logging: *default-logging
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -149,18 +156,14 @@ services:
 
   minio_init:
     image: quay.io/minio/mc:latest
-    profiles: ["s3"]
+    profiles: [ "s3" ]
     depends_on:
       minio:
         condition: service_started
     entrypoint: >
-      /bin/sh -c '
-      until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+      /bin/sh -c ' until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
         sleep 2;
-      done;
-      mc mb --ignore-existing local/"$${S3_BUCKET}";
-      mc anonymous set none local/"$${S3_BUCKET}";
-      '
+      done; mc mb --ignore-existing local/"$${S3_BUCKET}"; mc anonymous set none local/"$${S3_BUCKET}"; '
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
@@ -168,11 +171,11 @@ services:
     restart: "no"
 
   db_migrator:
-    image: ai-tutor-backend:web-v1
+    image: dewflow-backend:2.0.0-web
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     secrets: *app-secrets
     environment:
-      <<: [*infra-env, *feature-env, *secret-file-env]
+      <<: [ *infra-env, *feature-env, *secret-file-env ]
     volumes:
       - ./backend:/app/backend
       - ./alembic:/app/alembic
@@ -196,12 +199,11 @@ services:
     volumes:
       - knowledge_files_volume_test:/data/knowledge_files
     command: >
-      sh -c "mkdir -p /data/knowledge_files &&
-      chown -R ${CURRENT_UID:-1000}:${CURRENT_GID:-1000} /data/knowledge_files"
+      sh -c "mkdir -p /data/knowledge_files && chown -R ${CURRENT_UID:-1000}:${CURRENT_GID:-1000} /data/knowledge_files"
     restart: "no"
 
   api:
-    image: ai-tutor-backend:web-v1
+    image: dewflow-backend:2.0.0-web
     logging: *default-logging
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     stop_grace_period: 40s
@@ -212,7 +214,7 @@ services:
       - knowledge_files_volume_test:/data/knowledge_files
     secrets: *app-secrets
     environment:
-      <<: [*infra-env, *feature-env, *secret-file-env]
+      <<: [ *infra-env, *feature-env, *secret-file-env ]
       PYTHONMALLOC: default
       WEB_CONCURRENCY: "1"
     restart: unless-stopped
@@ -238,12 +240,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --timeout-graceful-shutdown 30
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --proxy-headers --timeout-graceful-shutdown 30
     ports:
       - "8000:8000"
 
   task_worker:
-    image: ai-tutor-backend:ai-v1
+    image: dewflow-backend:2.0.0-ai
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     logging: *default-logging
     stop_grace_period: 120s
@@ -254,7 +256,7 @@ services:
       - knowledge_files_volume_test:/data/knowledge_files
     secrets: *app-secrets
     environment:
-      <<: [*infra-env, *feature-env, *secret-file-env]
+      <<: [ *infra-env, *feature-env, *secret-file-env ]
       TASKIQ_HEALTH_MIN_PROCESSES: "2"
     healthcheck:
       test: [ "CMD-SHELL", "python -m backend.worker.tasks.healthcheck || exit 1" ]
@@ -282,11 +284,11 @@ services:
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.116.1
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     logging: *default-logging
     volumes:
       - ./deploy/monitoring/otel-collector-db.yml:/etc/otelcol-contrib/config.yml:ro
-    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    command: [ "--config=/etc/otelcol-contrib/config.yml" ]
     depends_on:
       tempo:
         condition: service_started
@@ -302,9 +304,9 @@ services:
 
   tempo:
     image: grafana/tempo:2.7.1
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     logging: *default-logging
-    command: ["-config.file=/etc/tempo.yml"]
+    command: [ "-config.file=/etc/tempo.yml" ]
     volumes:
       - ./deploy/monitoring/tempo-db.yml:/etc/tempo.yml:ro
       - tempo_data_db:/tmp/tempo
@@ -319,7 +321,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.1.0
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     logging: *default-logging
     volumes:
       - ./deploy/monitoring/prometheus-db.yml:/etc/prometheus/prometheus.yml:ro
@@ -347,7 +349,7 @@ services:
 
   grafana:
     image: grafana/grafana-oss:11.5.8-ubuntu
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     logging: *default-logging
     environment:
       - GF_ANALYTICS_REPORTING_ENABLED=false
@@ -376,9 +378,9 @@ services:
 
   loki:
     image: grafana/loki:3.4.0
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     logging: *default-logging
-    command: ["-config.file=/etc/loki/local-config.yaml"]
+    command: [ "-config.file=/etc/loki/local-config.yaml" ]
     volumes:
       - ./deploy/monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data_db:/loki
@@ -393,7 +395,7 @@ services:
 
   vector:
     image: timberio/vector:0.50.0-debian
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     volumes:
       - ./deploy/logging/vector-db.yaml:/etc/vector/vector.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -410,7 +412,7 @@ services:
 
   postgres_exporter:
     image: prometheuscommunity/postgres-exporter:v0.17.1
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     logging: *default-logging
     secrets:
       - POSTGRES_PASSWORD
@@ -418,8 +420,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_DB=${POSTGRES_DB:-postgres}
     command: >
-      sh -c 'export DATA_SOURCE_NAME="postgresql://$${POSTGRES_USER}:$$(cat /run/secrets/POSTGRES_PASSWORD)@postgres:5432/$${POSTGRES_DB}?sslmode=disable";
-      exec /bin/postgres_exporter'
+      sh -c 'export DATA_SOURCE_NAME="postgresql://$${POSTGRES_USER}:$$(cat /run/secrets/POSTGRES_PASSWORD)@postgres:5432/$${POSTGRES_DB}?sslmode=disable"; exec /bin/postgres_exporter'
     depends_on:
       postgres:
         condition: service_healthy
@@ -430,15 +431,14 @@ services:
 
   redis_exporter:
     image: oliver006/redis_exporter:v1.67.0
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     logging: *default-logging
     secrets:
       - REDIS_PASSWORD
     environment:
       - REDIS_ADDR=redis:6379
     command: >
-      sh -c 'export REDIS_PASSWORD="$$(cat /run/secrets/REDIS_PASSWORD)";
-      exec /redis_exporter'
+      sh -c 'export REDIS_PASSWORD="$$(cat /run/secrets/REDIS_PASSWORD)"; exec /redis_exporter'
     depends_on:
       redis:
         condition: service_healthy
@@ -449,7 +449,7 @@ services:
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
-    profiles: ["observability"]
+    profiles: [ "observability" ]
     logging: *default-logging
     privileged: true
     volumes:
@@ -503,6 +503,8 @@ secrets:
     file: ${SMOKE_LLM_API_KEY_FILE:-./secrets/smoke/llm_api_key.txt}
   RAG_EMBED_API_KEY:
     file: ${SMOKE_RAG_EMBED_API_KEY_FILE:-./secrets/smoke/rag_embed_api_key.txt}
+  LANGFUSE_PUBLIC_KEY:
+    file: ${SMOKE_LANGFUSE_PUBLIC_KEY_FILE:-./secrets/smoke/langfuse_public_key.txt}
   LANGFUSE_SECRET_KEY:
     file: ${SMOKE_LANGFUSE_SECRET_KEY_FILE:-./secrets/smoke/langfuse_secret_key.txt}
   S3_ACCESS_KEY_ID:

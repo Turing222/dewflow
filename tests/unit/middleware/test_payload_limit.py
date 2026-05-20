@@ -66,6 +66,42 @@ async def test_replays_json_body_when_size_equals_limit(
     assert response.json() == {"size": 5, "body": "hello"}
 
 
+async def test_json_body_replay_delegates_subsequent_receive() -> None:
+    seen_messages: list[dict[str, object]] = []
+    receive_messages = [
+        {"type": "http.request", "body": b"hello", "more_body": False},
+        {"type": "http.disconnect"},
+    ]
+
+    async def receive() -> dict[str, object]:
+        return receive_messages.pop(0)
+
+    async def send(_message: dict[str, object]) -> None:
+        return None
+
+    async def inner_app(scope, receive, send) -> None:
+        seen_messages.append(await receive())
+        seen_messages.append(await receive())
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    app = PayloadLimitMiddleware(inner_app, max_payload_size=5)
+    await app(
+        {
+            "type": "http",
+            "method": "POST",
+            "headers": [(b"content-type", b"application/json")],
+        },
+        receive,
+        send,
+    )
+
+    assert seen_messages == [
+        {"type": "http.request", "body": b"hello", "more_body": False},
+        {"type": "http.disconnect"},
+    ]
+
+
 async def test_skips_get_requests_returns_200(payload_client: AsyncClient) -> None:
     response = await payload_client.get("/echo-get")
 

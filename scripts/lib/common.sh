@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME:-ai-tutor-backend:v1}"
+DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME:-dewflow-backend:2.0.0}"
 SMOKE_COMPOSE_FILE="${SMOKE_COMPOSE_FILE:-docker-compose.db.yml}"
 SMOKE_ENV_FILE="${SMOKE_ENV_FILE:-.env.smoke}"
 SMOKE_ENV_TEMPLATE="${SMOKE_ENV_TEMPLATE:-.env.smoke.template}"
@@ -200,7 +200,15 @@ wait_for_http_ok() {
     require_cmd curl
 
     while (( elapsed < timeout )); do
-        status="$(curl -sS -o /dev/null -w '%{http_code}' "$url" || true)"
+        status="$(
+            curl \
+                --connect-timeout 2 \
+                --max-time "$interval" \
+                -sS \
+                -o /dev/null \
+                -w '%{http_code}' \
+                "$url" || true
+        )"
         if [[ "$status" == "200" ]]; then
             return 0
         fi

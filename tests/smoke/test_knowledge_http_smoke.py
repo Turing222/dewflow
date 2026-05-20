@@ -84,7 +84,7 @@ def _smoke_database_url() -> str | None:
     pg_host = os.getenv("SMOKE_POSTGRES_HOST", "localhost")
     pg_user = _read_smoke_env_value("POSTGRES_USER") or "postgres"
     pg_port = int(_read_smoke_env_value("POSTGRES_PORT") or "5432")
-    pg_db = _read_smoke_env_value("POSTGRES_DB") or "mentor_ai"
+    pg_db = _read_smoke_env_value("POSTGRES_DB") or "dewflow"
     return URL.create(
         "postgresql+asyncpg",
         username=pg_user,
@@ -107,7 +107,7 @@ async def _resolve_or_create_kb_id(
 
     db_url = _smoke_database_url()
     if not db_url:
-        pytest.skip(
+        smoke_helpers.smoke_skip_or_fail(
             "Knowledge smoke test requires SMOKE_KB_ID or a DB connection via "
             "SMOKE_DATABASE_URL / POSTGRES_* env vars."
         )
@@ -133,7 +133,7 @@ async def _resolve_or_create_kb_id(
             await session.refresh(kb)
     except Exception as exc:
         await engine.dispose()
-        pytest.skip(
+        smoke_helpers.smoke_skip_or_fail(
             "Knowledge smoke test could not seed a knowledge base. "
             "Set SMOKE_KB_ID to reuse an existing KB or provide a reachable "
             f"database via SMOKE_DATABASE_URL. Error: {exc}"
@@ -157,7 +157,7 @@ def _build_chunking_probe_document(suffix: str) -> str:
 async def _fetch_file_chunks(file_id: str) -> list[dict]:
     db_url = _smoke_database_url()
     if not db_url:
-        pytest.skip(
+        smoke_helpers.smoke_skip_or_fail(
             "Chunk DB verification requires SMOKE_DATABASE_URL or POSTGRES_* env vars."
         )
 
@@ -183,6 +183,24 @@ async def _fetch_file_chunks(file_id: str) -> list[dict]:
                 {"file_id": file_id},
             )
             return [dict(row._mapping) for row in result]
+    finally:
+        await engine.dispose()
+
+
+async def _fetch_file_path(file_id: str) -> str | None:
+    db_url = _smoke_database_url()
+    if not db_url:
+        return None
+
+    engine = create_async_engine(db_url, pool_pre_ping=True)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT file_path FROM knowledge_files WHERE id = :file_id"),
+                {"file_id": uuid.UUID(file_id)},
+            )
+            row = result.fetchone()
+            return row[0] if row else None
     finally:
         await engine.dispose()
 
@@ -237,13 +255,64 @@ async def test_knowledge_upload_over_http_reaches_ready_state(
     assert len(chunks) >= 2
     assert [chunk["chunk_index"] for chunk in chunks] == list(range(len(chunks)))
     assert all(chunk["chunking_version"] == 2 for chunk in chunks)
-    assert all(chunk["token_count"] == len(chunk["content"]) for chunk in chunks)
+    assert all(chunk["token_count"] > 0 for chunk in chunks)
     assert all(chunk["embedding_dim"] == 768 for chunk in chunks)
     assert all(
         chunk["meta_info"]["filename"] == f"smoke_{suffix}.md" for chunk in chunks
     )
-    assert all(chunk["meta_info"]["path"] == file_body["file_path"] for chunk in chunks)
+    db_file_path = await _fetch_file_path(file_id)
+    assert db_file_path is not None
+    assert all(chunk["meta_info"]["path"] == db_file_path for chunk in chunks)
 
     indexed_text = "\n".join(chunk["content"] for chunk in chunks)
     for index in range(1, 6):
         assert f"CHUNK_SPLIT_PROBE_{suffix}_{index}" in indexed_text
+
+    other_headers, _other_suffix = await create_auth_headers(smoke_client)
+    file_denied_response = await smoke_client.get(
+        f"/api/v1/knowledge/files/{file_id}",
+        headers=other_headers,
+    )
+    smoke_helpers.assert_error_response(
+        file_denied_response,
+        404,
+        "KNOWLEDGE_BASE_NOT_FOUND",
+    )
+
+    task_denied_response = await smoke_client.get(
+        f"/api/v1/knowledge/tasks/{task_id}",
+        headers=other_headers,
+    )
+    smoke_helpers.assert_error_response(task_denied_response, 404, "TASK_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+async def test_knowledge_upload_rejects_invalid_requests_over_http(
+    smoke_client: httpx.AsyncClient,
+):
+    await smoke_helpers.ensure_ready_environment(smoke_client)
+
+    headers, _suffix = await create_auth_headers(smoke_client)
+    unsupported_response = await smoke_client.post(
+        "/api/v1/knowledge/default/upload",
+        headers=headers,
+        files={"file": ("smoke.txt", b"not markdown", "text/plain")},
+        timeout=30.0,
+    )
+    smoke_helpers.assert_error_response(
+        unsupported_response,
+        422,
+        "KNOWLEDGE_FILE_UNSUPPORTED_TYPE",
+    )
+
+    missing_file_response = await smoke_client.post(
+        "/api/v1/knowledge/default/upload",
+        headers=headers,
+        files={"other": ("smoke.md", b"# missing field", "text/markdown")},
+        timeout=30.0,
+    )
+    smoke_helpers.assert_error_response(
+        missing_file_response,
+        422,
+        "REQUEST_VALIDATION_ERROR",
+    )

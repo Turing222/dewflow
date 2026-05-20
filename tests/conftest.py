@@ -17,6 +17,9 @@ def pytest_configure() -> None:
     get_test_profile()
     os.environ.setdefault("APP_ENV", "test")
     os.environ.setdefault("SECRET_KEY", "test-secret")
+    os.environ.setdefault("AUTH_REGISTER_RATE_LIMIT_TIMES", "100000")
+    os.environ.setdefault("AUTH_LOGIN_RATE_LIMIT_TIMES", "100000")
+    os.environ.setdefault("BUSINESS_RATE_LIMIT_TIMES", "100000")
     os.environ.setdefault("CHAT_RATE_LIMIT_TIMES", "100000")
 
 
