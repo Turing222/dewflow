@@ -148,6 +148,7 @@ ensure_smoke_required_secrets() {
     ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_FILE" "./secrets/smoke/deepseek_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_LLM_API_KEY_FILE" "./secrets/smoke/llm_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_RAG_EMBED_API_KEY_FILE" "./secrets/smoke/rag_embed_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_LANGFUSE_PUBLIC_KEY_FILE" "./secrets/smoke/langfuse_public_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_LANGFUSE_SECRET_KEY_FILE" "./secrets/smoke/langfuse_secret_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_S3_ACCESS_KEY_ID_FILE" "./secrets/smoke/s3_access_key_id.txt" "empty"
     ensure_smoke_secret_file "SMOKE_S3_SECRET_ACCESS_KEY_FILE" "./secrets/smoke/s3_secret_access_key.txt" "empty"
