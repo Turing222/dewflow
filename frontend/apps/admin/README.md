@@ -4,8 +4,9 @@
 
 ## 文档
 
-- [架构约定](../../ARCHITECTURE.md)
-- [逐步改造计划](../../MIGRATION_PLAN.md)
+- [前端文档索引](../../docs/README.md)
+- [架构约定](../../docs/architecture.md)
+- [逐步改造计划](../../docs/migration-plan.md)
 
 ## 常用命令
 

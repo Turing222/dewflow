@@ -35,6 +35,15 @@
 - 聊天 SSE 不强行塞进 `TanStack Query`
 - `axios` 继续保留，但必须升级成统一 HTTP client
 
+相关标准：
+
+- [API Standard](standards/api.md)
+- [State Standard](standards/state.md)
+- [Streaming Standard](standards/streaming.md)
+- [Component Standard](standards/components.md)
+- [Testing Standard](standards/testing.md)
+- [Styling Standard](standards/styling.md)
+
 当前已落地：
 
 - `src/lib/http/client.ts`: 统一 axios client、`Authorization`、`X-Request-ID`、错误归一化

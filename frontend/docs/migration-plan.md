@@ -215,8 +215,9 @@
 
 建议输出：
 
-- `frontend/ARCHITECTURE.md`
-- `frontend/MIGRATION_PLAN.md`
+- `frontend/docs/architecture.md`
+- `frontend/docs/migration-plan.md`
+- `frontend/docs/standards/`
 - `frontend/templates/` 或内部样例文件
 
 ## 推荐执行顺序
