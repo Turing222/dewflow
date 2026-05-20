@@ -4,8 +4,9 @@ import {
     clearAccessToken,
     notifyUnauthorized,
 } from '../lib/http/auth';
-import { resolveIdempotencyKey } from '../lib/http/idempotency';
+import { resolveIdempotencyKey, IDEMPOTENCY_KEY_HEADER } from '../lib/http/idempotency';
 import { getRequestIdFromHeaders } from '../lib/http/trace';
+import { queryClient } from '../query/query-client';
 import {
     chatQueryRequestSchema,
     chatQueryResponseSchema,
@@ -29,7 +30,9 @@ export const sendQueryAPI = (
         client_request_id: resolvedClientRequestId,
     });
     return request
-        .post<unknown, unknown>(API_URLS.CHAT.QUERY, payload)
+        .post<unknown, unknown>(API_URLS.CHAT.QUERY, payload, {
+            headers: { [IDEMPOTENCY_KEY_HEADER]: resolvedClientRequestId },
+        })
         .then((response) => parseWithSchema(chatQueryResponseSchema, response, '聊天响应格式无效'));
 };
 
@@ -42,6 +45,7 @@ export const sendQueryStreamAPI = async (
     sessionId?: string,
     kbId?: string,
     clientRequestId?: string,
+    signal?: AbortSignal,
 ): Promise<Response> => {
     const resolvedClientRequestId = resolveIdempotencyKey(clientRequestId);
     const payload = chatQueryRequestSchema.parse({
@@ -56,6 +60,7 @@ export const sendQueryStreamAPI = async (
             'Content-Type': 'application/json',
         }, { idempotencyKey: resolvedClientRequestId }),
         body: JSON.stringify(payload),
+        signal,
     });
 
     if (!res.ok) {
@@ -68,6 +73,7 @@ export const sendQueryStreamAPI = async (
         if (error.code === 'unauthorized') {
             clearAccessToken();
             notifyUnauthorized();
+            queryClient.removeQueries({ queryKey: ['auth'] });
         }
 
         throw error;

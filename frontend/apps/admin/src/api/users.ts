@@ -12,6 +12,7 @@ import type {
     UserRegistrationPayload,
     UserUpdatePayload,
 } from '../types/user';
+import { resolveIdempotencyKey, IDEMPOTENCY_KEY_HEADER } from '../lib/http/idempotency';
 
 export const queryUserAPI = (params: { username?: string; email?: string }) => {
     return request
@@ -29,12 +30,16 @@ export const registerUserAPI = (data: UserRegistrationPayload) =>
         .post<unknown, unknown>(API_URLS.AUTH.REGISTER, userRegistrationPayloadSchema.parse(data))
         .then((response) => parseWithSchema(userSchema, response, '用户创建响应格式无效'));
 
-export const uploadUsersCSVAPI = (file: File) => {
+export const uploadUsersCSVAPI = (file: File, idempotencyKey?: string) => {
+    const resolvedKey = resolveIdempotencyKey(idempotencyKey);
     const formData = new FormData();
     formData.append('file', file);
     return request
         .post<unknown, unknown>(API_URLS.USER.CSV_UPLOAD, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
+            headers: {
+                'Content-Type': 'multipart/form-data',
+                [IDEMPOTENCY_KEY_HEADER]: resolvedKey,
+            },
         })
         .then((response) =>
             parseWithSchema(userImportResponseSchema, response, '批量导入响应格式无效'),

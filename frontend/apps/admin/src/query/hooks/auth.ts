@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { getUserProfileAPI } from '../../api/auth';
 import { authKeys } from '../keys/auth';
-import { getAccessToken } from '../../lib/http/auth';
+import { useAuthStore } from '../../stores/auth-store';
 
-export function useAuthMeQuery() {
-  const token = getAccessToken();
+export function useMeQuery() {
+  const token = useAuthStore((s) => s.token);
   return useQuery({
     queryKey: authKeys.me(),
     queryFn: getUserProfileAPI,

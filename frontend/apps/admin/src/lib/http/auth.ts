@@ -1,16 +1,17 @@
-export const AUTH_TOKEN_STORAGE_KEY = 'token';
+import { useAuthStore } from '../../stores/auth-store';
+
 export const AUTH_UNAUTHORIZED_EVENT = 'app:http:unauthorized';
 
 export const getAccessToken = (): string | null => {
-    return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+    return useAuthStore.getState().token;
 };
 
 export const setAccessToken = (token: string): void => {
-    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    useAuthStore.getState().setToken(token);
 };
 
 export const clearAccessToken = (): void => {
-    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    useAuthStore.getState().clearAuth();
 };
 
 export const notifyUnauthorized = (): void => {

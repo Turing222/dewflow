@@ -2,6 +2,8 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
+import { useAuthStore } from '../stores/auth-store';
+
 Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -20,6 +22,7 @@ afterEach(() => {
     cleanup();
     localStorage.clear();
     sessionStorage.clear();
+    useAuthStore.getState().resetAll();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     window.history.pushState({}, '', '/');

@@ -5,6 +5,7 @@ import { clearAccessToken, getAccessToken, notifyUnauthorized } from './auth';
 import { AppHttpError, normalizeHttpError } from './errors';
 import { IDEMPOTENCY_KEY_HEADER, resolveIdempotencyKey } from './idempotency';
 import { createRequestId, REQUEST_ID_HEADER } from './trace';
+import { queryClient } from '../../query/query-client';
 
 const httpClient = axios.create({
     timeout: 30000,
@@ -78,6 +79,7 @@ httpClient.interceptors.response.use(
         if (normalized.code === 'unauthorized') {
             clearAccessToken();
             notifyUnauthorized();
+            queryClient.removeQueries({ queryKey: ['auth'] });
         }
 
         notifyHttpError(normalized);

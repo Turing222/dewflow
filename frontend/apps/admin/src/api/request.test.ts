@@ -7,6 +7,7 @@ import { AUTH_UNAUTHORIZED_EVENT, notifyUnauthorized } from '../lib/http/auth';
 import { normalizeHttpError } from '../lib/http/errors';
 import { IDEMPOTENCY_KEY_HEADER, resolveIdempotencyKey } from '../lib/http/idempotency';
 import { REQUEST_ID_HEADER } from '../lib/http/trace';
+import { useAuthStore } from '../stores/auth-store';
 
 describe('request configuration', () => {
     it('uses explicit /api/v1 routes without duplicating the api prefix', () => {
@@ -15,7 +16,7 @@ describe('request configuration', () => {
     });
 
     it('injects authorization and request id headers for outgoing requests', () => {
-        localStorage.setItem('token', 'test-token');
+        useAuthStore.getState().setToken('test-token');
 
         const headers = createAuthorizedHeaders({ 'Content-Type': 'application/json' });
 
@@ -45,7 +46,7 @@ describe('request configuration', () => {
             }),
         );
 
-        localStorage.setItem('token', 'test-token');
+        useAuthStore.getState().setToken('test-token');
         vi.stubGlobal('fetch', fetchMock);
 
         await sendQueryStreamAPI('hello', 'session-1', undefined, 'cid-1');
