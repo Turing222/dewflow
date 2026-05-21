@@ -84,6 +84,7 @@ const ChatPage: React.FC = () => {
                             <Button
                                 type="text"
                                 className="user-menu-btn"
+                                data-testid="user-menu-btn"
                                 icon={
                                     isAuthenticated
                                         ? <div className="avatar-badge">{user?.username?.[0]?.toUpperCase()}</div>

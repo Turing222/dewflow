@@ -93,6 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         <div
                             key={s.id}
                             className={`session-item ${s.id === activeSessionId ? 'active' : ''}`}
+                            data-testid="session-item"
                             onClick={() => onSelectSession(s)}
                         >
                             <MessageSquare size={14} className="session-icon" />

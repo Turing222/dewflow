@@ -174,6 +174,7 @@ const MessageList: React.FC<MessageListProps> = ({
                     </Upload>
                     <TextArea
                         className="chat-input"
+                        data-testid="chat-input"
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
@@ -184,6 +185,7 @@ const MessageList: React.FC<MessageListProps> = ({
                     <Button
                         className="send-btn"
                         type="primary"
+                        data-testid="send-btn"
                         icon={<Send size={18} />}
                         onClick={handleSend}
                         disabled={!inputValue.trim() || isStreaming}
