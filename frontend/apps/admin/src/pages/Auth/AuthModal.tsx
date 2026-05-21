@@ -164,7 +164,7 @@ const AuthModal: React.FC = () => {
                 <div style={{
                     fontSize: 28,
                     fontWeight: 700,
-                    background: 'linear-gradient(135deg, #1677ff, #722ed1)',
+                    background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-gradient-end))',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     marginBottom: 4,

@@ -205,4 +205,65 @@ describe('Sidebar', () => {
         await user.click(toggleBtn!);
         expect(props.onToggle).toHaveBeenCalledOnce();
     });
+
+    it('updates the brand color in store when preset is clicked', async () => {
+        const user = userEvent.setup();
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        
+        renderSidebar();
+        
+        const presetIndigo = screen.getByTitle('靛蓝');
+        expect(presetIndigo).toBeInTheDocument();
+        
+        await user.click(presetIndigo);
+        
+        const { useThemeStore } = await import('../../stores/theme-store');
+        expect(useThemeStore.getState().brandColor).toBe('#4f46e5');
+    });
+
+    it('toggles language and translates UI elements correctly when language switch is clicked', async () => {
+        const user = userEvent.setup();
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        
+        renderSidebar();
+        
+        expect(screen.getByText('新对话')).toBeInTheDocument();
+        
+        const langBtn = screen.getByRole('button', { name: 'EN' });
+        await user.click(langBtn);
+        
+        expect(await screen.findByText('New Chat')).toBeInTheDocument();
+        
+        const backBtn = screen.getByRole('button', { name: '中文' });
+        await user.click(backBtn);
+        expect(await screen.findByText('新对话')).toBeInTheDocument();
+    });
+
+    it('localizes relative session timestamps after language switch', async () => {
+        const user = userEvent.setup();
+        vi.setSystemTime(new Date('2026-05-21T12:00:00.000Z'));
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        mockUseChatSessionsQuery.mockReturnValue(makeQueryResult({
+            data: {
+                items: [{
+                    ...fakeSessions[0],
+                    updated_at: '2026-05-20T12:00:00.000Z',
+                }],
+                total: 1,
+                skip: 0,
+                limit: 50,
+            } as ChatSessionsReturn['data'],
+            isSuccess: true,
+            isPending: false,
+            status: 'success',
+        }));
+
+        renderSidebar();
+
+        expect(screen.getByText('昨天')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'EN' }));
+
+        expect(await screen.findByText('Yesterday')).toBeInTheDocument();
+    });
 });

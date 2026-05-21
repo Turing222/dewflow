@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Input, Button, Spin, Avatar, Upload, message as antdMessage } from 'antd';
 import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ChatMessage } from '../../types/chat';
 import { uploadCSVAPI } from '../../api/upload';
 import styles from './MessageList.module.css';
@@ -26,6 +27,7 @@ const MessageList: React.FC<MessageListProps> = ({
 }) => {
     const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const { t } = useTranslation();
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,7 +54,7 @@ const MessageList: React.FC<MessageListProps> = ({
     const handleUpload = async (file: File) => {
         try {
             await uploadCSVAPI(file);
-            antdMessage.success(`文件 ${file.name} 上传成功`);
+            antdMessage.success(t('chat.upload_success', { name: file.name }));
         } catch {
             // error handled by interceptor
         }
@@ -73,7 +75,7 @@ const MessageList: React.FC<MessageListProps> = ({
                         <>
                             <div className={styles['error-content']}>
                                 <AlertCircle size={14} />
-                                <span>{msg.content || '请求处理失败'}</span>
+                                <span>{msg.content || t('chat.request_failed')}</span>
                             </div>
                             {!isUser && onRetryFailedMessage && (
                                 <div className={styles['error-actions']}>
@@ -84,7 +86,7 @@ const MessageList: React.FC<MessageListProps> = ({
                                         onClick={() => onRetryFailedMessage(msg.id)}
                                         disabled={isStreaming}
                                     >
-                                        重试
+                                        {t('chat.retry')}
                                     </Button>
                                 </div>
                             )}
@@ -106,15 +108,15 @@ const MessageList: React.FC<MessageListProps> = ({
                 {isLoading ? (
                     <div className={styles['messages-loading']}>
                         <Spin size="large" />
-                        <span className={styles['loading-label']}>加载历史消息...</span>
+                        <span className={styles['loading-label']}>{t('chat.loading_history')}</span>
                     </div>
                 ) : messages.length === 0 && !isStreaming ? (
                     <div className={styles['messages-empty']}>
                         <div className={styles['empty-hint']}>
                             <Bot size={40} className={styles['empty-hint-icon']} />
-                            <h3>开始你的对话</h3>
-                            <p>在下方输入框中输入你的问题</p>
-                            <p className={styles['empty-sub-prompt']}>支持文字对话与文件上传</p>
+                            <h3>{t('chat.empty_title')}</h3>
+                            <p>{t('chat.empty_desc1')}</p>
+                            <p className={styles['empty-sub-prompt']}>{t('chat.empty_desc2')}</p>
                         </div>
                     </div>
                 ) : (
@@ -166,7 +168,7 @@ const MessageList: React.FC<MessageListProps> = ({
                             className={styles['upload-btn']}
                             icon={<Paperclip size={18} />}
                             type="text"
-                            title="上传文件"
+                            title={t('chat.upload_file')}
                             disabled={isStreaming}
                         />
                     </Upload>
@@ -176,7 +178,7 @@ const MessageList: React.FC<MessageListProps> = ({
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="输入消息... (Shift+Enter 换行)"
+                        placeholder={t('chat.input_tip')}
                         autoSize={{ minRows: 1, maxRows: 4 }}
                         disabled={isStreaming}
                     />

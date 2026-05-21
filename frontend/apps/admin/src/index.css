@@ -9,15 +9,41 @@
 }
 
 :root {
+  /* Dynamic Palette Custom Properties (Managed dynamically by JS theme store, fallbacks declared here) */
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
+  --color-primary-shadow: rgba(22, 119, 255, 0.15);
+  
+  --color-bg-page: #fafbfc;
+  --color-bg-container: #ffffff;
+  --color-bg-subtle: #fafafa;
+  --color-border: #f0f0f0;
+  
+  --color-text-main: #1a1a2e;
+  --color-text-desc: #999999;
+  --color-text-light: #ffffff;
+  --color-icon-muted: #bfbfbf;
+
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #1a1a2e;
-  background-color: #fafbfc;
+  color: var(--color-text-main);
+  background-color: var(--color-bg-page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme='dark'] {
+  --color-bg-page: #141414;
+  --color-bg-container: #1f1f1f;
+  --color-bg-subtle: #262626;
+  --color-border: #303030;
+  
+  --color-text-main: #e5e7eb;
+  --color-text-desc: #8c8c8c;
+  --color-icon-muted: #595959;
 }
 
 body {
@@ -33,21 +59,21 @@ body {
 
 a {
   font-weight: 500;
-  color: #1677ff;
+  color: var(--color-primary);
   text-decoration: none;
 }
 
 a:hover {
-  color: #4096ff;
+  color: var(--color-primary-hover);
 }
 
-/* Antd overrides for light theme */
+/* Antd overrides */
 .ant-btn-primary {
-  box-shadow: 0 1px 3px rgba(22, 119, 255, 0.15) !important;
+  box-shadow: 0 1px 3px var(--color-primary-shadow) !important;
 }
 
 .ant-spin-dot-item {
-  background-color: #1677ff !important;
+  background-color: var(--color-primary) !important;
 }
 
 /* Scrollbar styling */

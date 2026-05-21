@@ -2,7 +2,7 @@
     display: flex;
     height: 100vh;
     overflow: hidden;
-    background: #fafbfc;
+    background: var(--color-bg-page);
 }
 
 .chat-main {
@@ -22,8 +22,8 @@
     justify-content: space-between;
     height: 56px;
     padding: 0 20px;
-    background: #fff;
-    border-bottom: 1px solid #f0f0f0;
+    background: var(--color-bg-container);
+    border-bottom: 1px solid var(--color-border);
     flex-shrink: 0;
 }
 
@@ -35,7 +35,7 @@
 .chat-header-title {
     font-weight: 600;
     font-size: 15px;
-    color: #1a1a2e;
+    color: var(--color-text-main);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -43,7 +43,7 @@
 
 .chat-header-tokens {
     font-size: 11px;
-    color: #999;
+    color: var(--color-text-desc);
     margin-top: -2px;
 }
 
@@ -56,26 +56,26 @@
 }
 
 .user-menu-btn:hover {
-    background: #f5f5f5 !important;
+    background: var(--color-bg-subtle) !important;
 }
 
 .avatar-badge {
     width: 32px;
     height: 32px;
     border-radius: 10px;
-    background: #4f46e5;
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-text-light);
     font-size: 14px;
     font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 1px 4px rgba(79, 70, 229, 0.2);
+    box-shadow: 0 1px 4px var(--color-primary-shadow);
 }
 
 .avatar-badge.guest {
-    background: #e5e7eb;
-    color: #999;
+    background: var(--color-bg-subtle);
+    color: var(--color-text-desc);
     box-shadow: none;
 }
 
@@ -97,19 +97,19 @@
     justify-content: space-between;
     font-size: 11px;
     margin-bottom: 4px;
-    color: #94a3b8;
+    color: var(--color-text-desc);
 }
 
 .token-progress-bar {
     height: 6px;
-    background: #333;
+    background: var(--color-bg-subtle);
     border-radius: 3px;
     overflow: hidden;
 }
 
 .token-progress-fill {
     height: 100%;
-    background: #4f46e5;
+    background: var(--color-primary);
     border-radius: 3px;
     transition: width 0.3s ease;
 }

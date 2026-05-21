@@ -1,0 +1,45 @@
+{
+  "sidebar": {
+    "new_chat": "New Chat",
+    "history": "History",
+    "login_hint": "Log in to view history",
+    "empty_hint": "No chat records yet",
+    "light_mode": "Light Mode",
+    "dark_mode": "Dark Mode",
+    "time": {
+      "yesterday": "Yesterday",
+      "days_ago": "{{count}} days ago"
+    },
+    "brand_colors": {
+      "blue": "Classic Blue",
+      "indigo": "Indigo",
+      "purple": "Royal Purple",
+      "teal": "Mint Green",
+      "orange": "Sunset Orange"
+    }
+  },
+  "chat": {
+    "default_title": "AI Assistant",
+    "tokens_consumed": "Consumed {{tokens}} tokens in this chat",
+    "input_placeholder": "Type your message here...",
+    "input_placeholder_guest": "Please log in to send messages...",
+    "send": "Send",
+    "loading_history": "Loading chat history...",
+    "empty_title": "Start your conversation",
+    "empty_desc1": "Type your question in the input box below",
+    "empty_desc2": "Supports text chat and file uploads",
+    "upload_file": "Upload file",
+    "input_tip": "Type a message... (Shift+Enter for newline)",
+    "retry": "Retry",
+    "request_failed": "Request processing failed",
+    "upload_success": "File {{name}} uploaded successfully",
+    "user_menu": {
+      "login": "Log In",
+      "register": "Register",
+      "logout": "Log Out",
+      "admin_panel": "Admin Dashboard",
+      "token_quota": "Account Token Quota",
+      "used": "Used"
+    }
+  }
+}

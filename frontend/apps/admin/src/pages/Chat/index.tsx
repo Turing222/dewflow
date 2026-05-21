@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button, Dropdown, message as antdMessage, Tooltip } from 'antd';
 import { LogOut, LogIn, UserPlus, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/useAuth';
 import { useChatController } from '../../features/chat/use-chat-controller';
 import Sidebar from './Sidebar';
@@ -13,22 +14,26 @@ const ChatPage: React.FC = () => {
     const { user, isAuthenticated, logout, setShowAuthModal, setAuthTab } = useAuth();
     const navigate = useNavigate();
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const { t } = useTranslation();
 
     const controller = useChatController();
 
     const userMenuItems = isAuthenticated
         ? [
-            { key: 'user', label: user?.username || '用户', disabled: true },
-            ...(user?.is_superuser ? [{ key: 'admin', label: '后台管理', icon: <Shield size={14} /> }] : []),
-            { key: 'logout', label: '退出登录', icon: <LogOut size={14} />, danger: true },
+            { key: 'user', label: user?.username || 'User', disabled: true },
+            ...(user?.is_superuser ? [{ key: 'admin', label: t('chat.user_menu.admin_panel'), icon: <Shield size={14} /> }] : []),
+            { key: 'logout', label: t('chat.user_menu.logout'), icon: <LogOut size={14} />, danger: true },
         ]
         : [
-            { key: 'login', label: '登录', icon: <LogIn size={14} /> },
-            { key: 'register', label: '注册', icon: <UserPlus size={14} /> },
+            { key: 'login', label: t('chat.user_menu.login'), icon: <LogIn size={14} /> },
+            { key: 'register', label: t('chat.user_menu.register'), icon: <UserPlus size={14} /> },
         ];
 
     const handleMenuClick = ({ key }: { key: string }) => {
-        if (key === 'logout') { logout(); antdMessage.success('已退出'); }
+        if (key === 'logout') {
+            logout();
+            antdMessage.success(t('chat.user_menu.logout'));
+        }
         if (key === 'login') { setAuthTab('login'); setShowAuthModal(true); }
         if (key === 'register') { setAuthTab('register'); setShowAuthModal(true); }
         if (key === 'admin') navigate('/admin');
@@ -47,11 +52,11 @@ const ChatPage: React.FC = () => {
                 <div className={styles['chat-header']}>
                     <div className={styles['chat-header-title-container']}>
                         <div className={styles['chat-header-title']}>
-                            {controller.activeSession?.title || 'AI 助手'}
+                            {controller.activeSession?.title || t('chat.default_title')}
                         </div>
                         {controller.activeSession && controller.activeSession.total_tokens !== undefined && (
                             <div className={styles['chat-header-tokens']}>
-                                本次对话已消耗 {controller.activeSession.total_tokens} tokens
+                                {t('chat.tokens_consumed', { tokens: controller.activeSession.total_tokens })}
                             </div>
                         )}
                     </div>
@@ -65,9 +70,9 @@ const ChatPage: React.FC = () => {
                             placement="left"
                             title={isAuthenticated ? (
                                 <div className={styles['token-tooltip']}>
-                                    <div className={styles['token-tooltip-title']}>账号 Token 额度</div>
+                                    <div className={styles['token-tooltip-title']}>{t('chat.user_menu.token_quota')}</div>
                                     <div className={styles['token-usage-text']}>
-                                        <span>已使用</span>
+                                        <span>{t('chat.user_menu.used')}</span>
                                         <span>{user?.used_tokens || 0} / {user?.max_tokens || 0}</span>
                                     </div>
                                     <div className={styles['token-progress-bar']}>

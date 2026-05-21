@@ -17,12 +17,12 @@
     justify-content: space-between;
     font-size: 12px;
     margin-bottom: 4px;
-    color: #666;
+    color: var(--color-text-desc);
 }
 
 .token-cell-track {
     height: 6px;
-    background: #f0f0f0;
+    background: var(--color-bg-subtle);
     border-radius: 3px;
     overflow: hidden;
 }
@@ -34,7 +34,7 @@
 }
 
 .token-cell-fill.level-low {
-    background: #1677ff;
+    background: var(--color-primary);
 }
 
 .token-cell-fill.level-mid {
@@ -48,15 +48,15 @@
 .user-table-empty {
     padding: 40px 0;
     text-align: center;
-    color: #999;
+    color: var(--color-text-desc);
 }
 
 .user-table-empty-icon {
-    color: #d9d9d9;
+    color: var(--color-icon-muted);
     margin-bottom: 8px;
 }
 
 .user-table-empty-text {
     font-size: 14px;
-    color: #999;
+    color: var(--color-text-desc);
 }

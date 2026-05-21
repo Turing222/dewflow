@@ -1,0 +1,45 @@
+{
+  "sidebar": {
+    "new_chat": "新对话",
+    "history": "历史记录",
+    "login_hint": "登录后可查看历史记录",
+    "empty_hint": "暂无对话记录",
+    "light_mode": "浅色模式",
+    "dark_mode": "深色模式",
+    "time": {
+      "yesterday": "昨天",
+      "days_ago": "{{count}}天前"
+    },
+    "brand_colors": {
+      "blue": "经典蓝",
+      "indigo": "靛蓝",
+      "purple": "皇家紫",
+      "teal": "薄荷绿",
+      "orange": "落日橙"
+    }
+  },
+  "chat": {
+    "default_title": "AI 助手",
+    "tokens_consumed": "本次对话已消耗 {{tokens}} tokens",
+    "input_placeholder": "请输入您的问题...",
+    "input_placeholder_guest": "请先登录以发送消息...",
+    "send": "发送",
+    "loading_history": "加载历史消息...",
+    "empty_title": "开始你的对话",
+    "empty_desc1": "在下方输入框中输入你的问题",
+    "empty_desc2": "支持文字对话与文件上传",
+    "upload_file": "上传文件",
+    "input_tip": "输入消息... (Shift+Enter 换行)",
+    "retry": "重试",
+    "request_failed": "请求处理失败",
+    "upload_success": "文件 {{name}} 上传成功",
+    "user_menu": {
+      "login": "登录",
+      "register": "注册",
+      "logout": "退出登录",
+      "admin_panel": "后台管理",
+      "token_quota": "账号 Token 额度",
+      "used": "已使用"
+    }
+  }
+}
