@@ -68,6 +68,12 @@ export function useChatController(): UseChatControllerReturn {
         const normalizedText = text.trim();
         if (!normalizedText) return;
 
+        // Abort any in-flight stream before starting a new one
+        abortControllerRef.current?.abort();
+
+        const newController = new AbortController();
+        abortControllerRef.current = newController;
+
         pruneRetryCache();
         setIsSessionFromHistory(false);
 
@@ -98,14 +104,16 @@ export function useChatController(): UseChatControllerReturn {
         let messageId = '';
         let accumulatedContent = '';
 
-        const controller = streamChatQuery(
+        streamChatQuery(
             {
                 query: normalizedText,
                 sessionId: activeSessionId || undefined,
                 clientRequestId,
+                signal: newController.signal,
             },
             {
                 onMeta(event) {
+                    if (newController.signal.aborted) return;
                     if (metaReceived) return;
                     metaReceived = true;
                     messageId = event.message_id || '';
@@ -124,10 +132,12 @@ export function useChatController(): UseChatControllerReturn {
                     }
                 },
                 onChunk(event) {
+                    if (newController.signal.aborted) return;
                     accumulatedContent += event.content;
                     setStreamingText((prev) => prev + event.content);
                 },
                 onDone() {
+                    if (newController.signal.aborted) return;
                     const assistantMsg: ChatMessage = {
                         id: messageId || `msg-${Date.now()}`,
                         session_id: runtimeSessionId || '',
@@ -141,16 +151,21 @@ export function useChatController(): UseChatControllerReturn {
                     setStreamingText('');
                     setIsStreaming(false);
                     setIsSessionFromHistory(false);
-                    refreshUser();
+                    refreshUser().catch(() => {});
                     if (runtimeSessionId) {
                         queryClient.invalidateQueries({ queryKey: chatKeys.sessionDetail(runtimeSessionId) });
-                        getSessionDetailAPI(runtimeSessionId).then((detail) => {
-                            setActiveSession(detail.session);
-                        });
+                        getSessionDetailAPI(runtimeSessionId)
+                            .then((detail) => {
+                                if (!newController.signal.aborted) {
+                                    setActiveSession(detail.session);
+                                }
+                            })
+                            .catch(() => {});
                     }
                     queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
                 },
                 onError(err) {
+                    if (newController.signal.aborted) return;
                     setIsStreaming(false);
                     setStreamingText('');
                     const errorMessage = err.message || '请求处理失败，请稍后重试';
@@ -173,8 +188,6 @@ export function useChatController(): UseChatControllerReturn {
                 },
             },
         );
-
-        abortControllerRef.current = controller;
     }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient]);
 
     const retryFailedMessage = useCallback((messageId: string) => {

@@ -87,6 +87,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     className={styles['toggle-btn']}
                     type="text"
                     icon={<ChevronRight size={18} />}
+                    aria-label={t('sidebar.expand')}
                     onClick={onToggle}
                 />
                 <Tooltip title={t('sidebar.new_chat')} placement="right">
@@ -130,6 +131,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     className={styles['toggle-btn']}
                     type="text"
                     icon={<ChevronLeft size={18} />}
+                    aria-label={t('sidebar.collapse')}
                     onClick={onToggle}
                 />
             </div>
@@ -156,8 +158,18 @@ const Sidebar: React.FC<SidebarProps> = ({
                         <div
                             key={s.id}
                             className={`${styles['session-item']} session-item ${s.id === activeSessionId ? `${styles.active} active` : ''}`}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={s.title}
+                            aria-pressed={s.id === activeSessionId}
                             data-testid="session-item"
                             onClick={() => onSelectSession(s)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    onSelectSession(s);
+                                }
+                            }}
                         >
                             <MessageSquare size={14} className={styles['session-icon']} />
                             <div className={styles['session-info']}>
@@ -193,6 +205,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                             className={`${styles['color-preset-btn']} ${brandColor === color.value ? styles['color-preset-active'] : ''}`}
                             style={{ backgroundColor: color.value }}
                             title={t(`sidebar.brand_colors.${color.key}`)}
+                            aria-label={t(`sidebar.brand_colors.${color.key}`)}
+                            aria-pressed={brandColor === color.value}
                             onClick={() => setBrandColor(color.value)}
                         />
                     ))}

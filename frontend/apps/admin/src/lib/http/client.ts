@@ -1,11 +1,9 @@
 import axios, { AxiosHeaders } from 'axios';
-import { message } from 'antd';
 
-import { clearAccessToken, getAccessToken, notifyUnauthorized } from './auth';
-import { AppHttpError, normalizeHttpError } from './errors';
+import { getAccessToken, handleUnauthorized } from './auth';
+import { normalizeHttpError, notifyHttpError } from './errors';
 import { IDEMPOTENCY_KEY_HEADER, resolveIdempotencyKey } from './idempotency';
 import { createRequestId, REQUEST_ID_HEADER } from './trace';
-import { queryClient } from '../../query/query-client';
 
 const httpClient = axios.create({
     timeout: 30000,
@@ -36,22 +34,6 @@ export const createAuthorizedHeaders = (
     return nextHeaders;
 };
 
-const notifyHttpError = (error: AppHttpError): void => {
-    switch (error.code) {
-        case 'unauthorized':
-            message.warning('请登录以使用完整功能');
-            return;
-        case 'forbidden':
-            message.error('没有权限执行此操作');
-            return;
-        case 'network':
-            message.error('网络连接失败');
-            return;
-        default:
-            message.error(error.message || '网络请求错误');
-    }
-};
-
 httpClient.interceptors.request.use(
     (config) => {
         const headers = AxiosHeaders.from(config.headers);
@@ -77,9 +59,7 @@ httpClient.interceptors.response.use(
         const normalized = normalizeHttpError(error);
 
         if (normalized.code === 'unauthorized') {
-            clearAccessToken();
-            notifyUnauthorized();
-            queryClient.removeQueries({ queryKey: ['auth'] });
+            handleUnauthorized();
         }
 
         notifyHttpError(normalized);

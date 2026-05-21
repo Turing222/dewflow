@@ -10,6 +10,7 @@ export type StreamCallbacks = {
     onChunk: (event: ChunkEvent) => void;
     onDone: () => void;
     onError: (error: Error) => void;
+    onAbort?: () => void;
 };
 
 export type StreamOptions = {
@@ -26,8 +27,11 @@ export function streamChatQuery(
 ): AbortController {
     const abortController = new AbortController();
 
+    let parentAbortHandler: (() => void) | null = null;
+
     if (options.signal) {
-        options.signal.addEventListener('abort', () => abortController.abort(), { once: true });
+        parentAbortHandler = () => abortController.abort();
+        options.signal.addEventListener('abort', parentAbortHandler, { once: true });
     }
 
     (async () => {
@@ -52,6 +56,7 @@ export function streamChatQuery(
             while (true) {
                 if (abortController.signal.aborted) {
                     reader.cancel().catch(() => {});
+                    callbacks.onAbort?.();
                     return;
                 }
                 const { done, value } = await reader.read();
@@ -90,11 +95,15 @@ export function streamChatQuery(
                 }
             }
 
-            // Stream ended without [DONE] — caller decides what to do
-            callbacks.onDone();
+            // Stream ended without [DONE] — treat as error
+            callbacks.onError(new Error('流式响应异常结束'));
         } catch (err: unknown) {
             if (abortController.signal.aborted) return;
             callbacks.onError(err instanceof Error ? err : new Error('请求处理失败，请稍后重试'));
+        } finally {
+            if (parentAbortHandler && options.signal) {
+                options.signal.removeEventListener('abort', parentAbortHandler);
+            }
         }
     })();
 

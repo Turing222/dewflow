@@ -189,4 +189,17 @@ describe('AuthProvider', () => {
         expect(queryClient.getQueryData(authKeys.me())).toBeUndefined();
         expect(queryClient.getQueryData(['chat', 'sessions'])).toBeUndefined();
     });
+
+    it('login function reference is stable across re-renders', () => {
+        const refetch = vi.fn().mockResolvedValue({ data: { id: '1' }, error: null });
+        mockUseMeQuery.mockReturnValue(mockMeQuery({ refetch }));
+
+        const { result, rerender } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+        const firstLoginRef = result.current.login;
+        rerender();
+        const secondLoginRef = result.current.login;
+
+        expect(firstLoginRef).toBe(secondLoginRef);
+    });
 });

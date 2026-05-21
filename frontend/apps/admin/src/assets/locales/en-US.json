@@ -6,6 +6,8 @@
     "empty_hint": "No chat records yet",
     "light_mode": "Light Mode",
     "dark_mode": "Dark Mode",
+    "expand": "Expand sidebar",
+    "collapse": "Collapse sidebar",
     "time": {
       "yesterday": "Yesterday",
       "days_ago": "{{count}} days ago"

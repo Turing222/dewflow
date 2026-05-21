@@ -2,7 +2,9 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider, Spin, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import enUS from 'antd/locale/en_US';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { queryClient } from './query/query-client';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/useAuth';
@@ -123,12 +125,17 @@ const BRAND_PALETTES = {
 const AdminRouteGuard: React.FC = () => {
   const { isAuthenticated, isLoading, user, setShowAuthModal } = useAuth();
 
+  React.useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      setShowAuthModal(true);
+    }
+  }, [isLoading, isAuthenticated, setShowAuthModal]);
+
   if (isLoading) {
     return <div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>;
   }
 
   if (!isAuthenticated) {
-    setShowAuthModal(true);
     return <Navigate to="/" replace />;
   }
 
@@ -145,6 +152,9 @@ const AdminRouteGuard: React.FC = () => {
 
 const App: React.FC = () => {
   const { theme, brandColor } = useThemeStore();
+  const { i18n } = useTranslation();
+
+  const antdLocale = i18n.language === 'en-US' ? enUS : zhCN;
 
   React.useEffect(() => {
     const palette = BRAND_PALETTES[brandColor as keyof typeof BRAND_PALETTES] ?? BRAND_PALETTES['#1677ff'];
@@ -168,7 +178,7 @@ const App: React.FC = () => {
 
   return (
     <ConfigProvider
-      locale={zhCN}
+      locale={antdLocale}
       theme={{
         algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {

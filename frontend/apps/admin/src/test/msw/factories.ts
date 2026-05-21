@@ -16,32 +16,29 @@ import type {
     SessionListResponse,
     SessionDetailResponse,
 } from '../../types/chat';
+import {
+    buildMockAuthResponse,
+    buildMockSession,
+    buildMockSuperuser,
+} from '../mock-data';
 
 let userIdCounter = 1;
 let sessionIdCounter = 1;
 let msgIdCounter = 1;
 
 export function buildUser(overrides: Partial<User> = {}): User {
-    const base: User = {
+    const base = buildMockSuperuser({
         id: String(userIdCounter++),
-        username: 'admin',
-        email: 'admin@example.com',
-        role: 'admin',
-        is_superuser: true,
-        is_active: true,
-        max_tokens: 10000,
-        used_tokens: 500,
         created_at: '2025-01-01T00:00:00Z',
         updated_at: '2025-01-01T00:00:00Z',
-    };
+    });
     return userSchema.parse({ ...base, ...overrides });
 }
 
 export function buildAuthResponse(overrides: { username?: string } = {}): AuthResponse {
     const user = buildUser({ username: overrides.username ?? 'admin' });
     return authResponseSchema.parse({
-        access_token: 'test-access-token',
-        token_type: 'bearer',
+        ...buildMockAuthResponse({ access_token: 'test-access-token' }),
         user,
     });
 }
@@ -60,14 +57,14 @@ export function buildUserImportResponse(
 
 export function buildChatSession(overrides: Partial<ChatSession> = {}): ChatSession {
     const id = String(sessionIdCounter++);
-    return chatSessionSchema.parse({
+    return chatSessionSchema.parse(buildMockSession({
         id,
         title: `Session ${id}`,
         user_id: '1',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         ...overrides,
-    });
+    }));
 }
 
 export function buildChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {

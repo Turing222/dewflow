@@ -1,12 +1,8 @@
 import request, { createAuthorizedHeaders } from '../lib/http/client';
-import { createFetchHttpError } from '../lib/http/errors';
-import {
-    clearAccessToken,
-    notifyUnauthorized,
-} from '../lib/http/auth';
+import { createFetchHttpError, notifyHttpError } from '../lib/http/errors';
+import { handleUnauthorized } from '../lib/http/auth';
 import { resolveIdempotencyKey, IDEMPOTENCY_KEY_HEADER } from '../lib/http/idempotency';
 import { getRequestIdFromHeaders } from '../lib/http/trace';
-import { queryClient } from '../query/query-client';
 import {
     chatQueryRequestSchema,
     chatQueryResponseSchema,
@@ -73,9 +69,8 @@ export const sendQueryStreamAPI = async (
         });
 
         if (error.code === 'unauthorized') {
-            clearAccessToken();
-            notifyUnauthorized();
-            queryClient.removeQueries({ queryKey: ['auth'] });
+            handleUnauthorized();
+            notifyHttpError(error);
         }
 
         throw error;

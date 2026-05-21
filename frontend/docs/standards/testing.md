@@ -33,9 +33,18 @@ Build verification：
 ## 常用命令
 
 ```bash
+make frontend-lint
+make frontend-typecheck
 make frontend-test
 make frontend-build
-pnpm --dir frontend --filter admin lint
+make frontend-e2e-mock
+make frontend-check
+```
+
+真实后端 smoke e2e 不作为 PR 默认阻塞项。需要先启动后端并提供账号：
+
+```bash
+E2E_SMOKE_USER=... E2E_SMOKE_PASS=... make frontend-e2e-smoke
 ```
 
 ## 新增功能的最低测试建议
@@ -45,8 +54,7 @@ pnpm --dir frontend --filter admin lint
 - 新表单：关键校验和 submit payload。
 - 新流式逻辑：chunk parser、error event、done event、abort。
 
-## TODO
+## Mock 数据
 
-- 明确是否引入 MSW。
-- 明确 hook 测试工具和样例。
-- 补充 stream parser 测试样例。
+- Vitest/MSW 和 Playwright mock e2e 共享 `src/test/mock-data` 中的基础响应数据。
+- Playwright 仍使用 `page.route`，不强制迁移到浏览器侧 MSW。

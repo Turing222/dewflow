@@ -1,4 +1,4 @@
-import React, { useEffect, type ReactNode } from 'react';
+import React, { useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { AUTH_UNAUTHORIZED_EVENT } from '../lib/http/auth';
@@ -20,18 +20,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const queryClient = useQueryClient();
 
     useEffect(() => {
-        const handleUnauthorized = () => {
+        const handleUnauthorizedEvent = () => {
             clearAuth();
             queryClient.removeQueries({ queryKey: authKeys.all() });
         };
 
-        window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
+        window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorizedEvent);
         return () => {
-            window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
+            window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorizedEvent);
         };
     }, [clearAuth, queryClient]);
 
-    const login = async (newToken: string) => {
+    const login = useCallback(async (newToken: string) => {
         setToken(newToken);
         const result = await refetch();
         if (result.error) {
@@ -39,31 +39,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw result.error;
         }
         setShowAuthModal(false);
-    };
+    }, [setToken, refetch, clearAuth, setShowAuthModal]);
 
-    const logout = () => {
+    const logout = useCallback(() => {
         clearAuth();
         queryClient.clear();
-    };
+    }, [clearAuth, queryClient]);
 
-    const refreshUser = async () => {
+    const refreshUser = useCallback(async () => {
         await refetch();
-    };
+    }, [refetch]);
+
+    const contextValue = useMemo(() => ({
+        user: user ?? null,
+        token,
+        login,
+        logout,
+        isLoading: isLoading && !!token,
+        isAuthenticated: !!user,
+        showAuthModal,
+        setShowAuthModal,
+        refreshUser,
+        authTab,
+        setAuthTab,
+    }), [user, token, login, logout, isLoading, showAuthModal, setShowAuthModal, refreshUser, authTab, setAuthTab]);
 
     return (
-        <AuthContext.Provider value={{
-            user: user ?? null,
-            token,
-            login,
-            logout,
-            isLoading: isLoading && !!token,
-            isAuthenticated: !!user,
-            showAuthModal,
-            setShowAuthModal,
-            refreshUser,
-            authTab,
-            setAuthTab,
-        }}>
+        <AuthContext.Provider value={contextValue}>
             {children}
         </AuthContext.Provider>
     );

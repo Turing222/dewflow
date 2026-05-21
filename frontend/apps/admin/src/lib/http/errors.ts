@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { message } from 'antd';
 
 import { getRequestIdFromHeaders } from './trace';
 
@@ -110,9 +111,17 @@ export const normalizeHttpError = (error: unknown): AppHttpError => {
     }
 
     if (error instanceof Error) {
+        const isLikelyNetworkError =
+            error.name === 'TypeError' ||
+            error.message.includes('fetch') ||
+            error.message.includes('network') ||
+            error.message.includes('Failed to fetch');
+
         return new AppHttpError({
-            code: 'network',
-            message: error.message || '网络连接失败',
+            code: isLikelyNetworkError ? 'network' : 'unknown',
+            message: isLikelyNetworkError
+                ? (error.message || '网络连接失败')
+                : (error.message || '未知错误'),
         });
     }
 
@@ -141,4 +150,20 @@ export const createFetchHttpError = (params: {
         details: params.details,
         message: extractMessage(params.details, `HTTP ${params.status}: ${params.statusText}`),
     });
+};
+
+export const notifyHttpError = (error: AppHttpError): void => {
+    switch (error.code) {
+        case 'unauthorized':
+            message.warning('请登录以使用完整功能');
+            return;
+        case 'forbidden':
+            message.error('没有权限执行此操作');
+            return;
+        case 'network':
+            message.error('网络连接失败');
+            return;
+        default:
+            message.error(error.message || '网络请求错误');
+    }
 };

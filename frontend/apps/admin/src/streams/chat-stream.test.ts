@@ -31,6 +31,7 @@ type MockCallbacks = StreamCallbacks & {
     onChunk: Mock<StreamCallbacks['onChunk']>;
     onDone: Mock<StreamCallbacks['onDone']>;
     onError: Mock<StreamCallbacks['onError']>;
+    onAbort: Mock<NonNullable<StreamCallbacks['onAbort']>>;
 };
 
 function createCallbacks(): MockCallbacks {
@@ -39,6 +40,7 @@ function createCallbacks(): MockCallbacks {
         onChunk: vi.fn(),
         onDone: vi.fn(),
         onError: vi.fn(),
+        onAbort: vi.fn(),
     };
 }
 
@@ -103,7 +105,7 @@ describe('streamChatQuery', () => {
         });
     });
 
-    it('calls onDone when stream ends without [DONE]', async () => {
+    it('calls onError when stream ends without [DONE]', async () => {
         const sseData = 'data: {"type":"chunk","content":"x"}\n\n';
         mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse([sseData]));
         const callbacks = createCallbacks();
@@ -111,8 +113,9 @@ describe('streamChatQuery', () => {
         streamChatQuery({ query: 'test' }, callbacks);
 
         await vi.waitFor(() => {
-            expect(callbacks.onDone).toHaveBeenCalledOnce();
+            expect(callbacks.onError).toHaveBeenCalledOnce();
         });
+        expect(callbacks.onError.mock.calls[0][0].message).toBe('流式响应异常结束');
         expect(callbacks.onChunk).toHaveBeenCalledOnce();
     });
 
@@ -156,7 +159,7 @@ describe('streamChatQuery', () => {
         );
     });
 
-    it('silently warns on parse errors without calling onError', async () => {
+    it('silently warns on parse errors then calls onError when stream ends without [DONE]', async () => {
         const sseData = 'data: {invalid json}\n\n';
         mockSendQueryStreamAPI.mockResolvedValue(createFakeSSEResponse([sseData]));
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -167,7 +170,11 @@ describe('streamChatQuery', () => {
         await vi.waitFor(() => {
             expect(warnSpy).toHaveBeenCalled();
         });
-        expect(callbacks.onError).not.toHaveBeenCalled();
+        // Stream ends without [DONE] → onError is called with truncation error
+        await vi.waitFor(() => {
+            expect(callbacks.onError).toHaveBeenCalledOnce();
+        });
+        expect(callbacks.onError.mock.calls[0][0].message).toBe('流式响应异常结束');
     });
 
     it('calls onError when no reader available', async () => {
@@ -194,7 +201,7 @@ describe('streamChatQuery', () => {
         expect(callbacks.onError.mock.calls[0][0].message).toBe('network fail');
     });
 
-    it('silently returns on abort', async () => {
+    it('calls onAbort when stream is aborted', async () => {
         const stream = new ReadableStream({
             pull() {
                 // never resolves — stream stays open
@@ -207,6 +214,7 @@ describe('streamChatQuery', () => {
         controller.abort();
 
         await new Promise((r) => setTimeout(r, 50));
+        expect(callbacks.onAbort).toHaveBeenCalledOnce();
         expect(callbacks.onDone).not.toHaveBeenCalled();
         expect(callbacks.onError).not.toHaveBeenCalled();
     });

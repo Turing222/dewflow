@@ -6,6 +6,8 @@
     "empty_hint": "暂无对话记录",
     "light_mode": "浅色模式",
     "dark_mode": "深色模式",
+    "expand": "展开侧边栏",
+    "collapse": "收起侧边栏",
     "time": {
       "yesterday": "昨天",
       "days_ago": "{{count}}天前"
