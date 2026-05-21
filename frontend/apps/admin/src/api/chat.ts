@@ -68,6 +68,8 @@ export const sendQueryStreamAPI = async (
             status: res.status,
             statusText: res.statusText,
             requestId: getRequestIdFromHeaders(res.headers),
+            url: API_URLS.CHAT.QUERY_STREAM,
+            method: 'POST',
         });
 
         if (error.code === 'unauthorized') {

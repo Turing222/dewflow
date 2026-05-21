@@ -7,6 +7,7 @@ from backend.api.v1.endpoint import (
     health_check,
     knowledge_api,
     permission_api,
+    telemetry_api,
     user_api,
     workspace_api,
 )
@@ -17,6 +18,10 @@ api_router = APIRouter()
 business_limiter = RateLimiter(
     times=settings.BUSINESS_RATE_LIMIT_TIMES,
     seconds=settings.BUSINESS_RATE_LIMIT_SECONDS,
+)
+frontend_telemetry_limiter = RateLimiter(
+    times=settings.FRONTEND_TELEMETRY_RATE_LIMIT_TIMES,
+    seconds=settings.FRONTEND_TELEMETRY_RATE_LIMIT_SECONDS,
 )
 
 api_router.include_router(
@@ -54,6 +59,12 @@ api_router.include_router(
     prefix="/permissions",
     tags=["permissions"],
     dependencies=[Depends(business_limiter)],
+)
+api_router.include_router(
+    telemetry_api.router,
+    prefix="/telemetry",
+    tags=["telemetry"],
+    dependencies=[Depends(frontend_telemetry_limiter)],
 )
 api_router.include_router(
     health_check.router, prefix="/health_check", tags=["health_check"]

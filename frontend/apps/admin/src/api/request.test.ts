@@ -84,11 +84,17 @@ describe('request configuration', () => {
                 data: { detail: 'Token 无效或已过期' },
                 headers: { 'x-request-id': 'req-123' },
             },
+            config: {
+                url: API_URLS.USER.ME,
+                method: 'get',
+            },
         });
 
         expect(normalized.code).toBe('unauthorized');
         expect(normalized.status).toBe(401);
         expect(normalized.requestId).toBe('req-123');
+        expect(normalized.url).toBe(API_URLS.USER.ME);
+        expect(normalized.method).toBe('GET');
         expect(normalized.message).toBe('Token 无效或已过期');
     });
 

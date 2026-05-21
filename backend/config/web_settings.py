@@ -67,6 +67,8 @@ class WebSettings(BaseSettings):
     BUSINESS_RATE_LIMIT_SECONDS: int = 60
     CHAT_RATE_LIMIT_TIMES: int = 10
     CHAT_RATE_LIMIT_SECONDS: int = 60
+    FRONTEND_TELEMETRY_RATE_LIMIT_TIMES: int = 300
+    FRONTEND_TELEMETRY_RATE_LIMIT_SECONDS: int = 60
 
     # ── CORS ──────────────────────────────────────────────────────
     BACKEND_CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(default_factory=list)

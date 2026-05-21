@@ -20,4 +20,7 @@ export const API_URLS = {
         SESSIONS: `${API_PREFIX}/chat/sessions`,
         SESSION_DETAIL: (id: string) => `${API_PREFIX}/chat/sessions/${id}`,
     },
+    TELEMETRY: {
+        ERRORS: `${API_PREFIX}/telemetry/errors`,
+    },
 } as const;

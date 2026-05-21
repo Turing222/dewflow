@@ -15,6 +15,8 @@ type AppHttpErrorParams = {
     message: string;
     status?: number;
     requestId?: string;
+    url?: string;
+    method?: string;
     details?: unknown;
 };
 
@@ -22,14 +24,18 @@ export class AppHttpError extends Error {
     code: AppHttpErrorCode;
     status?: number;
     requestId?: string;
+    url?: string;
+    method?: string;
     details?: unknown;
 
-    constructor({ code, message, status, requestId, details }: AppHttpErrorParams) {
+    constructor({ code, message, status, requestId, url, method, details }: AppHttpErrorParams) {
         super(message);
         this.name = 'AppHttpError';
         this.code = code;
         this.status = status;
         this.requestId = requestId;
+        this.url = url;
+        this.method = method;
         this.details = details;
     }
 }
@@ -93,6 +99,8 @@ export const normalizeHttpError = (error: unknown): AppHttpError => {
             code,
             status,
             requestId,
+            url: error.config?.url,
+            method: error.config?.method?.toUpperCase(),
             details: error.response?.data,
             message: extractMessage(
                 error.response?.data,
@@ -119,6 +127,8 @@ export const createFetchHttpError = (params: {
     status: number;
     statusText: string;
     requestId?: string;
+    url?: string;
+    method?: string;
     details?: unknown;
 }): AppHttpError => {
     const code = getHttpErrorCode(params.status);
@@ -126,6 +136,8 @@ export const createFetchHttpError = (params: {
         code,
         status: params.status,
         requestId: params.requestId,
+        url: params.url,
+        method: params.method,
         details: params.details,
         message: extractMessage(params.details, `HTTP ${params.status}: ${params.statusText}`),
     });
