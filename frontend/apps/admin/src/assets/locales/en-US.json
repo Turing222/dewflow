@@ -63,5 +63,22 @@
       "confirm_password_required": "Please enter your password again",
       "password_mismatch": "The two passwords do not match"
     }
+  },
+  "trace": {
+    "title": "Agent Execution",
+    "empty_hint": "Send a message to see the execution trace",
+    "citations_count": "Citations ({{count}})",
+    "no_citations": "No citations returned for this query",
+    "chunk_id": "Chunk",
+    "score": "Relevance",
+    "steps": {
+      "receive-query": "Receive Query",
+      "router-judge": "Router Decision",
+      "knowledge-path": "Knowledge Path",
+      "retrieve-docs": "Retrieve Documents",
+      "generate-answer": "Generate Answer",
+      "organize-citations": "Organize Citations",
+      "complete": "Complete"
+    }
   }
 }

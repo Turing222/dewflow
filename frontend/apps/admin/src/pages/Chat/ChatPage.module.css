@@ -5,6 +5,14 @@
     background: var(--color-bg-page);
 }
 
+.chat-workspace {
+    flex: 1;
+    display: flex;
+    min-width: 0;
+    height: 100vh;
+    overflow: hidden;
+}
+
 .chat-main {
     flex: 1;
     display: flex;

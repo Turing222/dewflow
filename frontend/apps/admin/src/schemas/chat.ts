@@ -51,6 +51,17 @@ export const sessionDetailResponseSchema = z.object({
     total_messages: z.number().int().nonnegative(),
 });
 
+export const citationItemSchema = z.object({
+    document_name: z.string(),
+    chunk_id: z.string(),
+    score: z.number().min(0).max(1).optional().default(0),
+    summary: z.string().optional().default(''),
+});
+
+export const searchContextSchema = z.object({
+    citations: z.array(citationItemSchema).optional().default([]),
+});
+
 export const chatStreamMetaEventSchema = z.object({
     type: z.literal('meta'),
     session_id: requiredString,

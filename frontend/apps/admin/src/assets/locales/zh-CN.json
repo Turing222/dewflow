@@ -63,5 +63,22 @@
       "confirm_password_required": "请再次输入密码",
       "password_mismatch": "两次输入的密码不一致"
     }
+  },
+  "trace": {
+    "title": "智能执行",
+    "empty_hint": "发送消息后查看执行过程",
+    "citations_count": "引用来源 ({{count}})",
+    "no_citations": "本次未返回引用来源",
+    "chunk_id": "片段",
+    "score": "相关度",
+    "steps": {
+      "receive-query": "接收问题",
+      "router-judge": "Router 判断",
+      "knowledge-path": "知识路径",
+      "retrieve-docs": "检索资料",
+      "generate-answer": "生成回答",
+      "organize-citations": "整理引用",
+      "complete": "完成"
+    }
   }
 }

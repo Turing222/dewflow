@@ -72,3 +72,13 @@ export function buildMockMetaEvent(overrides: MockOverrides = {}) {
 export function buildMockChunkEvent(content: string) {
     return { type: 'chunk', content };
 }
+
+export function buildMockRawSearchContext(overrides: MockOverrides = {}) {
+    return {
+        citations: [
+            { document_name: 'doc1.pdf', chunk_id: 'c1', score: 0.92, summary: 'Relevant passage from document one.' },
+            { document_name: 'report.docx', chunk_id: 'c2', score: 0.78, summary: 'Another passage from the report.' },
+        ],
+        ...overrides,
+    };
+}

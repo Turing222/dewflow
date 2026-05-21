@@ -24,6 +24,10 @@
   --color-text-light: #ffffff;
   --color-icon-muted: #bfbfbf;
 
+  --color-error: #cf1322;
+  --color-error-shadow: rgba(207, 19, 34, 0.15);
+  --color-error-bg: #fff1f0;
+
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -44,6 +48,10 @@
   --color-text-main: #e5e7eb;
   --color-text-desc: #8c8c8c;
   --color-icon-muted: #595959;
+
+  --color-error: #ff4d4f;
+  --color-error-shadow: rgba(255, 77, 79, 0.15);
+  --color-error-bg: #2a1215;
 }
 
 body {

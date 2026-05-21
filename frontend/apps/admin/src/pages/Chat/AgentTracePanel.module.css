@@ -1,0 +1,294 @@
+.trace-panel {
+    width: 340px;
+    height: 100vh;
+    background: var(--color-bg-container);
+    border-left: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+/* --- Header --- */
+
+.trace-panel-header {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.trace-panel-title {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--color-text-main);
+}
+
+/* --- Body --- */
+
+.trace-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+}
+
+.trace-panel-empty {
+    color: var(--color-text-desc);
+    font-size: 13px;
+    text-align: center;
+    padding: 32px 0;
+}
+
+/* --- Timeline --- */
+
+.trace-timeline {
+    display: flex;
+    flex-direction: column;
+}
+
+.trace-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 0;
+    animation: traceStepFadeIn 0.35s ease-out both;
+}
+
+.trace-step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    width: 20px;
+}
+
+.trace-step-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-border);
+    flex-shrink: 0;
+    transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.trace-step-line {
+    width: 2px;
+    flex: 1;
+    min-height: 20px;
+    background: var(--color-border);
+    transition: background 0.25s ease;
+}
+
+.trace-step-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.trace-step-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-desc);
+    transition: color 0.25s ease;
+}
+
+.trace-step-desc {
+    font-size: 12px;
+    color: var(--color-text-desc);
+    margin-top: 2px;
+}
+
+.trace-step-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-desc);
+}
+
+/* --- Status: done --- */
+
+.trace-step-done .trace-step-dot {
+    background: var(--color-primary);
+}
+
+.trace-step-done .trace-step-title {
+    color: var(--color-text-main);
+}
+
+.trace-step-done .trace-step-icon {
+    color: var(--color-primary);
+}
+
+.trace-step-done .trace-step-line {
+    background: var(--color-primary);
+}
+
+/* --- Status: running --- */
+
+.trace-step-running .trace-step-dot {
+    background: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-shadow);
+    animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.trace-step-running .trace-step-title {
+    color: var(--color-text-main);
+    font-weight: 600;
+}
+
+.trace-step-running .trace-step-icon {
+    color: var(--color-primary);
+}
+
+/* --- Status: error --- */
+
+.trace-step-error .trace-step-dot {
+    background: var(--color-error);
+    box-shadow: 0 0 0 3px var(--color-error-shadow);
+}
+
+.trace-step-error .trace-step-title {
+    color: var(--color-error);
+}
+
+.trace-step-error .trace-step-icon {
+    color: var(--color-error);
+}
+
+/* --- Status: skipped --- */
+
+.trace-step-skipped .trace-step-dot {
+    background: var(--color-border);
+    opacity: 0.5;
+}
+
+.trace-step-skipped .trace-step-title {
+    color: var(--color-text-desc);
+    opacity: 0.5;
+}
+
+/* --- Animations --- */
+
+@keyframes traceStepFadeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes pulseGlow {
+    0%,
+    100% {
+        box-shadow: 0 0 0 3px var(--color-primary-shadow);
+    }
+    50% {
+        box-shadow: 0 0 0 6px var(--color-primary-shadow);
+    }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.rotated {
+    transform: rotate(180deg);
+    transition: transform 0.2s ease;
+}
+
+/* --- Citations Section --- */
+
+.trace-citations {
+    margin-top: 20px;
+    border-top: 1px solid var(--color-border);
+    padding-top: 16px;
+}
+
+.trace-citations-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-main);
+    cursor: pointer;
+    padding: 4px 0;
+    user-select: none;
+}
+
+.trace-citations-header:hover {
+    color: var(--color-primary);
+}
+
+.trace-citations-list {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.trace-citations-empty {
+    font-size: 12px;
+    color: var(--color-text-desc);
+    padding: 8px 0;
+}
+
+.citation-card {
+    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    animation: traceStepFadeIn 0.3s ease-out both;
+}
+
+.citation-card-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.citation-card-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--color-text-desc);
+    margin-top: 4px;
+}
+
+.citation-card-snippet {
+    font-size: 12px;
+    color: var(--color-text-desc);
+    margin-top: 6px;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 900px) {
+    .trace-panel {
+        display: none;
+    }
+}

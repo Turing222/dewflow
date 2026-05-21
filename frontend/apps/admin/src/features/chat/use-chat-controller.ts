@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/useAuth';
 import { resolveIdempotencyKey } from '../../lib/http/idempotency';
@@ -7,6 +7,15 @@ import { useSessionDetailQuery } from '../../query/hooks/chat';
 import { getSessionDetailAPI } from '../../api/chat';
 import { streamChatQuery } from '../../streams/chat-stream';
 import type { ChatMessage, ChatSession } from '../../types/chat';
+import {
+    createInitialTraceSteps,
+    parseCitations,
+    TRACE_STEP_DEFS,
+} from '../../types/agent-trace';
+import type {
+    AgentTraceStep,
+    CitationItem,
+} from '../../types/agent-trace';
 
 const RETRY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -33,6 +42,8 @@ export type UseChatControllerReturn = {
     retryFailedMessage: (messageId: string) => void;
     selectSession: (session: ChatSession) => void;
     startNewChat: () => void;
+    traceSteps: AgentTraceStep[];
+    citations: CitationItem[];
 };
 
 export function useChatController(): UseChatControllerReturn {
@@ -45,6 +56,8 @@ export function useChatController(): UseChatControllerReturn {
     const [streamingText, setStreamingText] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
     const [isSessionFromHistory, setIsSessionFromHistory] = useState(false);
+    const [traceSteps, setTraceSteps] = useState<AgentTraceStep[]>([]);
+    const [citations, setCitations] = useState<CitationItem[]>([]);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const retryCacheRef = useRef<Map<string, RetryCacheEntry>>(new Map());
@@ -55,6 +68,16 @@ export function useChatController(): UseChatControllerReturn {
 
     const isLoadingHistory = detailLoading && isSessionFromHistory;
 
+    useEffect(() => {
+        if (!isSessionFromHistory || !sessionDetailData) return;
+        const lastAssistantMsg = [...(sessionDetailData.messages || [])]
+            .reverse()
+            .find((m) => m.role === 'assistant');
+        if (lastAssistantMsg?.search_context) {
+            setCitations(parseCitations(lastAssistantMsg.search_context));
+        }
+    }, [isSessionFromHistory, sessionDetailData]);
+
     const pruneRetryCache = useCallback(() => {
         const now = Date.now();
         for (const [messageId, entry] of retryCacheRef.current.entries()) {
@@ -62,6 +85,42 @@ export function useChatController(): UseChatControllerReturn {
                 retryCacheRef.current.delete(messageId);
             }
         }
+    }, []);
+
+    const advanceToStep = useCallback((targetStepId: string) => {
+        const targetIdx = TRACE_STEP_DEFS.findIndex((d) => d.id === targetStepId);
+        if (targetIdx === -1) {
+            if (import.meta.env.DEV) {
+                console.warn(`[advanceToStep] Unknown step id: "${targetStepId}"`);
+            }
+            return;
+        }
+
+        setTraceSteps((prev) => {
+            const now = Date.now();
+            return prev.map((step, idx) => {
+                if (
+                    idx < targetIdx &&
+                    step.status !== 'done' &&
+                    step.status !== 'error' &&
+                    step.status !== 'skipped'
+                ) {
+                    return { ...step, status: 'done' as const, finishedAt: now };
+                }
+                if (
+                    idx === targetIdx &&
+                    step.status !== 'done' &&
+                    step.status !== 'error'
+                ) {
+                    return {
+                        ...step,
+                        status: 'running' as const,
+                        startedAt: step.startedAt ?? now,
+                    };
+                }
+                return step;
+            });
+        });
     }, []);
 
     const sendQuery = useCallback(async (text: string, options?: SendMessageOptions) => {
@@ -98,9 +157,12 @@ export function useChatController(): UseChatControllerReturn {
         }
         setIsStreaming(true);
         setStreamingText('');
+        setTraceSteps(createInitialTraceSteps());
+        setCitations([]);
 
         let runtimeSessionId: string | null = activeSessionId;
         let metaReceived = false;
+        let firstChunkReceived = false;
         let messageId = '';
         let accumulatedContent = '';
 
@@ -118,6 +180,7 @@ export function useChatController(): UseChatControllerReturn {
                     metaReceived = true;
                     messageId = event.message_id || '';
                     runtimeSessionId = event.session_id || runtimeSessionId;
+                    advanceToStep('retrieve-docs');
                     if (!activeSessionId) {
                         setActiveSessionId(event.session_id);
                         setActiveSession({
@@ -133,6 +196,10 @@ export function useChatController(): UseChatControllerReturn {
                 },
                 onChunk(event) {
                     if (newController.signal.aborted) return;
+                    if (!firstChunkReceived) {
+                        firstChunkReceived = true;
+                        advanceToStep('generate-answer');
+                    }
                     accumulatedContent += event.content;
                     setStreamingText((prev) => prev + event.content);
                 },
@@ -151,6 +218,23 @@ export function useChatController(): UseChatControllerReturn {
                     setStreamingText('');
                     setIsStreaming(false);
                     setIsSessionFromHistory(false);
+                    setTraceSteps((prev) => {
+                        const now = Date.now();
+                        return prev.map((step) => {
+                            if (
+                                step.status !== 'done' &&
+                                step.status !== 'error' &&
+                                step.status !== 'skipped'
+                            ) {
+                                return {
+                                    ...step,
+                                    status: 'done' as const,
+                                    finishedAt: now,
+                                };
+                            }
+                            return step;
+                        });
+                    });
                     refreshUser().catch(() => {});
                     if (runtimeSessionId) {
                         queryClient.invalidateQueries({ queryKey: chatKeys.sessionDetail(runtimeSessionId) });
@@ -158,6 +242,18 @@ export function useChatController(): UseChatControllerReturn {
                             .then((detail) => {
                                 if (!newController.signal.aborted) {
                                     setActiveSession(detail.session);
+                                    const lastAssistantMsg = [
+                                        ...detail.messages,
+                                    ]
+                                        .reverse()
+                                        .find((m) => m.role === 'assistant');
+                                    if (lastAssistantMsg?.search_context) {
+                                        setCitations(
+                                            parseCitations(
+                                                lastAssistantMsg.search_context,
+                                            ),
+                                        );
+                                    }
                                 }
                             })
                             .catch(() => {});
@@ -168,6 +264,23 @@ export function useChatController(): UseChatControllerReturn {
                     if (newController.signal.aborted) return;
                     setIsStreaming(false);
                     setStreamingText('');
+                    setTraceSteps((prev) => {
+                        const now = Date.now();
+                        const runningIdx = prev.findIndex(
+                            (s) => s.status === 'running',
+                        );
+                        return prev.map((step, idx) => {
+                            if (idx === runningIdx)
+                                return {
+                                    ...step,
+                                    status: 'error' as const,
+                                    finishedAt: now,
+                                };
+                            if (idx > runningIdx && step.status === 'idle')
+                                return { ...step, status: 'skipped' as const };
+                            return step;
+                        });
+                    });
                     const errorMessage = err.message || '请求处理失败，请稍后重试';
                     const failedMessageId = `temp-err-${Date.now()}`;
                     const errorMsg: ChatMessage = {
@@ -209,6 +322,8 @@ export function useChatController(): UseChatControllerReturn {
         setActiveSession(session);
         retryCacheRef.current.clear();
         setMessages([]);
+        setTraceSteps([]);
+        setCitations([]);
     }, []);
 
     const startNewChat = useCallback(() => {
@@ -220,6 +335,8 @@ export function useChatController(): UseChatControllerReturn {
         setMessages([]);
         setStreamingText('');
         setIsStreaming(false);
+        setTraceSteps([]);
+        setCitations([]);
     }, []);
 
     const displayedActiveSession = isSessionFromHistory && sessionDetailData
@@ -240,5 +357,7 @@ export function useChatController(): UseChatControllerReturn {
         retryFailedMessage,
         selectSession,
         startNewChat,
+        traceSteps,
+        citations,
     };
 }
