@@ -83,6 +83,21 @@
     "score": "Relevance",
     "expand": "Expand execution panel",
     "collapse": "Collapse execution panel",
+    "summary": {
+      "first_token": "First token",
+      "total": "Total",
+      "tokens_per_second": "Tokens/s"
+    },
+    "metrics": {
+      "candidate_count": "Candidates",
+      "hit_count": "Hits",
+      "retrieval_mode": "Mode",
+      "rerank_used": "Rerank",
+      "first_token_latency_ms": "First token",
+      "llm_first_token_ms": "LLM first",
+      "tokens_per_second": "Tokens/s",
+      "queue_wait_ms": "Queue"
+    },
     "steps": {
       "receive-query": "Receive Query",
       "router-judge": "Router Decision",

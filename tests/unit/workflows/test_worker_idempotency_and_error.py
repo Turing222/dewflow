@@ -12,6 +12,7 @@ import pytest
 from backend.application.chat.stream_events import (
     encode_done_event,
     encode_error_event,
+    encode_started_event,
 )
 from backend.application.chat.worker_generation_workflow import (
     LLMGenerationWorkerWorkflow,
@@ -104,6 +105,7 @@ async def test_stream_error_publishes_error_and_done_and_cleans_lock(
     )
 
     assert redis.published == [
+        ("stream:err", encode_started_event()),
         ("stream:err", encode_error_event("provider failed")),
         ("stream:err", encode_done_event()),
     ]

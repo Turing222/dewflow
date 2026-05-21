@@ -83,6 +83,21 @@
     "score": "相关度",
     "expand": "展开执行面板",
     "collapse": "收起执行面板",
+    "summary": {
+      "first_token": "首字",
+      "total": "总耗时",
+      "tokens_per_second": "Tokens/s"
+    },
+    "metrics": {
+      "candidate_count": "候选",
+      "hit_count": "命中",
+      "retrieval_mode": "模式",
+      "rerank_used": "重排",
+      "first_token_latency_ms": "首字",
+      "llm_first_token_ms": "LLM 首字",
+      "tokens_per_second": "Tokens/s",
+      "queue_wait_ms": "排队"
+    },
     "steps": {
       "receive-query": "接收问题",
       "router-judge": "Router 判断",

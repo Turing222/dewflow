@@ -21,6 +21,7 @@ export const chatMessageSchema = z.object({
     status: z.enum(['thinking', 'streaming', 'success', 'failed']),
     latency_ms: z.number().nullable().optional(),
     search_context: z.record(z.string(), z.unknown()).nullable().optional(),
+    message_metadata: z.record(z.string(), z.unknown()).optional(),
     created_at: requiredString,
     updated_at: requiredString,
 });
@@ -58,8 +59,34 @@ export const citationItemSchema = z.object({
     summary: z.string().optional().default(''),
 });
 
+export const ragMetricsSchema = z.object({
+    planner_ms: z.number().optional(),
+    retrieve_ms: z.number().optional(),
+    rerank_ms: z.number().optional(),
+    context_build_ms: z.number().optional(),
+    citation_validate_ms: z.number().optional(),
+    candidate_count: z.number().optional(),
+    hit_count: z.number().optional(),
+    retrieval_mode: z.string().optional(),
+    planner_used: z.boolean().optional(),
+    rerank_used: z.boolean().optional(),
+}).partial();
+
+export const chatMessageMetricsSchema = z.object({
+    queue_wait_ms: z.number().optional(),
+    e2e_first_token_ms: z.number().optional(),
+    worker_total_latency_ms: z.number().optional(),
+    llm_first_token_ms: z.number().optional(),
+    first_token_latency_ms: z.number().optional(),
+    llm_generate_ms: z.number().optional(),
+    tokens_input: z.number().optional(),
+    tokens_output: z.number().optional(),
+    tokens_per_second: z.number().optional(),
+}).partial();
+
 export const searchContextSchema = z.object({
     citations: z.array(citationItemSchema).optional().default([]),
+    metrics: ragMetricsSchema.optional(),
 });
 
 export const chatStreamMetaEventSchema = z.object({
@@ -92,6 +119,8 @@ export type ChatQueryResponse = z.infer<typeof chatQueryResponseSchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionDetailResponse = z.infer<typeof sessionDetailResponseSchema>;
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+export type ChatMessageMetrics = z.infer<typeof chatMessageMetricsSchema>;
+export type RagMetrics = z.infer<typeof ragMetricsSchema>;
 
 export const knowledgeBaseResponseSchema = z.object({
     id: requiredString,
@@ -99,4 +128,3 @@ export const knowledgeBaseResponseSchema = z.object({
 });
 
 export type KnowledgeBaseResponse = z.infer<typeof knowledgeBaseResponseSchema>;
-

@@ -17,6 +17,7 @@ from backend.application.chat.stream_events import (
     encode_chunk_event,
     encode_done_event,
     encode_error_event,
+    encode_started_event,
 )
 from backend.application.chat.worker_generation_workflow import (
     LLMGenerationWorkerWorkflow,
@@ -221,6 +222,7 @@ async def test_worker_generation_persists_success_and_publishes_done(
     )
 
     assert redis.published == [
+        ("stream:test", encode_started_event()),
         ("stream:test", encode_chunk_event("hello")),
         ("stream:test", encode_chunk_event(" world")),
         ("stream:test", encode_done_event()),
@@ -234,6 +236,8 @@ async def test_worker_generation_persists_success_and_publishes_done(
     message_metadata = update_kwargs["message_metadata"]
     assert message_metadata["schema_version"] == 1
     assert message_metadata["response_outcome"] == "answered"
+    assert message_metadata["metrics"]["tokens_output"] == 7
+    assert "first_token_latency_ms" in message_metadata["metrics"]
     total_tokens = update_kwargs["tokens_input"] + 7
     uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
         user_id,
@@ -270,8 +274,11 @@ async def test_worker_generation_fetches_current_redis_connection(monkeypatch) -
         channel="stream:test",
     )
 
-    assert old_redis.published == [("stream:test", encode_chunk_event("hello"))]
-    assert current_redis.published == [("stream:test", encode_done_event())]
+    assert old_redis.published == [("stream:test", encode_started_event())]
+    assert current_redis.published == [
+        ("stream:test", encode_chunk_event("hello")),
+        ("stream:test", encode_done_event()),
+    ]
     assert redis_client.init_calls >= 2
 
 
@@ -304,6 +311,7 @@ async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -
     )
 
     assert redis.published == [
+        ("stream:test", encode_started_event()),
         ("stream:test", encode_error_event("provider failed")),
         ("stream:test", encode_done_event()),
     ]
@@ -342,6 +350,7 @@ async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -
 
     assert error == "服务暂时不可用，请稍后重试"
     assert redis.published == [
+        ("stream:test", encode_started_event()),
         ("stream:test", encode_error_event("服务暂时不可用，请稍后重试")),
         ("stream:test", encode_done_event()),
     ]
@@ -506,6 +515,7 @@ async def test_worker_stream_output_guardrail_blocks_chunk_before_publish(
 
     refusal = "抱歉，这个请求涉及安全或权限风险，暂时无法回答。"
     assert redis.published == [
+        ("stream:test", encode_started_event()),
         ("stream:test", encode_chunk_event(refusal)),
         ("stream:test", encode_done_event()),
     ]
@@ -597,6 +607,9 @@ async def test_worker_nonstream_refuses_when_rag_has_no_hits(monkeypatch) -> Non
     assert update_kwargs["content"] == result.content
     assert update_kwargs["search_context"]["rag_refusal"] is True
     assert update_kwargs["search_context"]["reason"] == "RAG 命中数量不足"
+    assert update_kwargs["search_context"]["metrics"]["candidate_count"] == 0
+    assert update_kwargs["search_context"]["metrics"]["hit_count"] == 0
+    assert "retrieve_ms" in update_kwargs["search_context"]["metrics"]
     message_metadata = update_kwargs["message_metadata"]
     assert message_metadata["response_outcome"] == "refused"
     assert message_metadata["badcase"]["is_badcase"] is True
@@ -634,6 +647,7 @@ async def test_worker_stream_refuses_when_rag_has_no_hits(monkeypatch) -> None:
 
     refusal = "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
     assert redis.published == [
+        ("stream:test", encode_started_event()),
         ("stream:test", encode_chunk_event(refusal)),
         ("stream:test", encode_done_event()),
     ]
@@ -642,6 +656,7 @@ async def test_worker_stream_refuses_when_rag_has_no_hits(monkeypatch) -> None:
     update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
     assert update_kwargs["content"] == refusal
     assert update_kwargs["search_context"]["rag_refusal"] is True
+    assert update_kwargs["search_context"]["metrics"]["hit_count"] == 0
     assert (
         update_kwargs["message_metadata"]["badcase"]["reason"]
         == "empty_retrieval_refusal"
@@ -1334,6 +1349,7 @@ async def test_worker_nonstream_citation_removes_invalid_markers(monkeypatch) ->
     metadata = update_kwargs["message_metadata"]
     assert metadata["citation"]["total"] == 2
     assert metadata["citation"]["removed_count"] == 1
+    assert "citation_validate_ms" in update_kwargs["search_context"]["metrics"]
 
 
 async def test_worker_stream_citation_removes_invalid_markers(monkeypatch) -> None:
@@ -1389,6 +1405,7 @@ async def test_worker_stream_citation_removes_invalid_markers(monkeypatch) -> No
     metadata = update_kwargs["message_metadata"]
     assert metadata["citation"]["total"] == 2
     assert metadata["citation"]["removed_count"] == 1
+    assert "citation_validate_ms" in update_kwargs["search_context"]["metrics"]
 
     # Verify published chunks contain no invalid markers
     from backend.application.chat.stream_events import decode_stream_event

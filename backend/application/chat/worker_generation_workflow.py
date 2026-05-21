@@ -12,6 +12,12 @@ from dataclasses import dataclass
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.ai.core.token_counter import count_tokens
+from backend.application.chat.timing import (
+    elapsed_ms,
+    merge_metrics,
+    perf_start,
+    tokens_per_second,
+)
 from backend.application.chat.worker_guardrail_handler import WorkerGuardrailHandler
 from backend.application.chat.worker_persistence_handler import WorkerPersistenceHandler
 from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
@@ -251,8 +257,10 @@ class LLMGenerationWorkerWorkflow:
         output_decision: GuardrailDecision | None = None
         output_blocked = False
         start_time = time.time()
+        worker_started = perf_start()
 
         try:
+            await self.stream_publisher.publish_started(channel)
             input_decision = evaluate_input_guardrail(payload.query_text)
             if input_decision.triggered:
                 await self.guardrail_handler.handle_stream_input_block(
@@ -297,6 +305,20 @@ class LLMGenerationWorkerWorkflow:
                     valid_ref_ids = extract_valid_ref_ids(search_context)
                     if valid_ref_ids:
                         citation_filter = StreamingCitationFilter(valid_ref_ids)
+                llm_started = perf_start()
+                # Worker first token: worker generation start -> first user-visible
+                # chunk publish. Web records e2e_first_token_ms from HTTP entry.
+                first_token_latency_ms: int | None = None
+                first_published_from_llm_ms: int | None = None
+
+                async def publish_user_chunk(content: str) -> None:
+                    nonlocal first_token_latency_ms
+                    nonlocal first_published_from_llm_ms
+                    if first_token_latency_ms is None:
+                        first_token_latency_ms = elapsed_ms(worker_started)
+                        first_published_from_llm_ms = elapsed_ms(llm_started)
+                    await self.stream_publisher.publish_chunk(channel, content)
+
                 async with llm_concurrency_slot(
                     {
                         "chat.session_id": payload.session_id,
@@ -310,26 +332,20 @@ class LLMGenerationWorkerWorkflow:
                         if output_decision.triggered:
                             accumulated_content.append(chunk)
                             output_blocked = True
-                            await self.stream_publisher.publish_chunk(
-                                channel,
-                                SAFETY_REFUSAL_MESSAGE,
-                            )
+                            await publish_user_chunk(SAFETY_REFUSAL_MESSAGE)
                             break
                         accumulated_content.append(chunk)
                         if citation_filter is not None:
                             cleaned = citation_filter.push(chunk)
                             if cleaned is not None:
-                                await self.stream_publisher.publish_chunk(
-                                    channel, cleaned
-                                )
+                                await publish_user_chunk(cleaned)
                         else:
-                            await self.stream_publisher.publish_chunk(channel, chunk)
+                            await publish_user_chunk(chunk)
                     if not output_blocked and citation_filter is not None:
                         remaining = citation_filter.flush()
                         if remaining:
-                            await self.stream_publisher.publish_chunk(
-                                channel, remaining
-                            )
+                            await publish_user_chunk(remaining)
+                llm_generate_ms = elapsed_ms(llm_started)
 
                 full_content = "".join(accumulated_content)
                 if output_blocked:
@@ -347,11 +363,21 @@ class LLMGenerationWorkerWorkflow:
                 ):
                     valid_ref_ids = extract_valid_ref_ids(search_context)
                     if valid_ref_ids:
+                        citation_validate_started = perf_start()
                         citation_result = validate_citations(
                             content_to_persist, valid_ref_ids
                         )
+                        search_context = merge_metrics(
+                            search_context,
+                            {
+                                "citation_validate_ms": elapsed_ms(
+                                    citation_validate_started
+                                )
+                            },
+                        )
                         content_to_persist = citation_result.cleaned_content
                 tokens_output = self._count_output_tokens(content_to_persist)
+                worker_total_latency_ms = elapsed_ms(worker_started)
                 await self._persist_success_and_idempotency(
                     assistant_message_id=assistant_message_id,
                     user_id=user_id,
@@ -360,12 +386,26 @@ class LLMGenerationWorkerWorkflow:
                     tokens_output=tokens_output,
                     search_context=search_context,
                     start_time=start_time,
-                    message_metadata=self._enrich_metadata_with_citation(
-                        build_guardrail_success_metadata(
-                            output_decision=output_decision,
-                            original_content=full_content,
+                    message_metadata=merge_metrics(
+                        self._enrich_metadata_with_citation(
+                            build_guardrail_success_metadata(
+                                output_decision=output_decision,
+                                original_content=full_content,
+                            ),
+                            citation_result=citation_result,
                         ),
-                        citation_result=citation_result,
+                        {
+                            "worker_total_latency_ms": worker_total_latency_ms,
+                            "llm_first_token_ms": first_published_from_llm_ms,
+                            "first_token_latency_ms": first_token_latency_ms,
+                            "llm_generate_ms": llm_generate_ms,
+                            "tokens_input": tokens_input,
+                            "tokens_output": tokens_output,
+                            "tokens_per_second": tokens_per_second(
+                                tokens_output,
+                                llm_generate_ms,
+                            ),
+                        },
                     ),
                     idempotency_lock_key=idempotency_lock_key,
                 )
@@ -383,6 +423,9 @@ class LLMGenerationWorkerWorkflow:
                     {
                         "llm.response.chunk_count": len(accumulated_content),
                         "llm.response.char_count": len(full_content),
+                        "llm.first_token_ms": first_published_from_llm_ms,
+                        "chat.first_token_latency_ms": first_token_latency_ms,
+                        "chat.worker_total_latency_ms": worker_total_latency_ms,
                         "chat.tokens_input": tokens_input,
                         "chat.tokens_output": tokens_output,
                         "gen_ai.usage.input_tokens": tokens_input,
@@ -415,6 +458,7 @@ class LLMGenerationWorkerWorkflow:
     ) -> GenerationResult:
         """Generate a non-streaming answer, persist final state, and return result."""
         start_time = time.time()
+        worker_started = perf_start()
 
         try:
             input_decision = evaluate_input_guardrail(payload.query_text)
@@ -458,12 +502,15 @@ class LLMGenerationWorkerWorkflow:
                         "chat.stream": False,
                     }
                 ):
+                    llm_started = perf_start()
                     result = await self.llm_service.generate_response(llm_query)
+                    llm_generate_ms = elapsed_ms(llm_started)
                 set_span_attributes(
                     span,
                     {
                         "llm.success": result.success,
                         "llm.latency_ms": result.latency_ms,
+                        "llm.generate_ms": llm_generate_ms,
                         "llm.response.completion_tokens": result.completion_tokens,
                         "llm.response.char_count": len(result.content),
                         "gen_ai.usage.input_tokens": result.prompt_tokens,
@@ -495,13 +542,23 @@ class LLMGenerationWorkerWorkflow:
             ):
                 valid_ref_ids = extract_valid_ref_ids(search_context)
                 if valid_ref_ids:
+                    citation_validate_started = perf_start()
                     citation_result = validate_citations(full_content, valid_ref_ids)
+                    search_context = merge_metrics(
+                        search_context,
+                        {
+                            "citation_validate_ms": elapsed_ms(
+                                citation_validate_started
+                            )
+                        },
+                    )
                     full_content = citation_result.cleaned_content
             tokens_output = (
                 self._count_output_tokens(full_content)
                 if output_decision.triggered
                 else result.completion_tokens or self._count_output_tokens(full_content)
             )
+            worker_total_latency_ms = elapsed_ms(worker_started)
 
             await self._persist_success_and_idempotency(
                 assistant_message_id=assistant_message_id,
@@ -511,12 +568,24 @@ class LLMGenerationWorkerWorkflow:
                 tokens_output=tokens_output,
                 search_context=search_context,
                 start_time=start_time,
-                message_metadata=self._enrich_metadata_with_citation(
-                    build_guardrail_success_metadata(
-                        output_decision=output_decision,
-                        original_content=original_content,
+                message_metadata=merge_metrics(
+                    self._enrich_metadata_with_citation(
+                        build_guardrail_success_metadata(
+                            output_decision=output_decision,
+                            original_content=original_content,
+                        ),
+                        citation_result=citation_result,
                     ),
-                    citation_result=citation_result,
+                    {
+                        "worker_total_latency_ms": worker_total_latency_ms,
+                        "llm_generate_ms": llm_generate_ms,
+                        "tokens_input": tokens_input,
+                        "tokens_output": tokens_output,
+                        "tokens_per_second": tokens_per_second(
+                            tokens_output,
+                            llm_generate_ms,
+                        ),
+                    },
                 ),
                 idempotency_lock_key=idempotency_lock_key,
             )

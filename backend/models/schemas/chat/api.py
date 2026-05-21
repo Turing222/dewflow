@@ -68,6 +68,7 @@ class MessageResponse(BaseModel):
     status: MessageStatus
     latency_ms: int | None = None
     search_context: dict | None = None
+    message_metadata: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

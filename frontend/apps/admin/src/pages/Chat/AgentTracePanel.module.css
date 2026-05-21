@@ -103,6 +103,40 @@
     flex-direction: column;
 }
 
+.trace-metrics-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.trace-metric-item {
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 8px;
+    background: var(--color-bg-subtle);
+    min-width: 0;
+}
+
+.trace-metric-label {
+    display: block;
+    color: var(--color-text-desc);
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.trace-metric-value {
+    display: block;
+    margin-top: 4px;
+    color: var(--color-text-main);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
 .trace-step {
     display: flex;
     align-items: flex-start;
@@ -152,6 +186,26 @@
     font-size: 12px;
     color: var(--color-text-desc);
     margin-top: 2px;
+}
+
+.trace-step-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-top: 4px;
+    color: var(--color-text-desc);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.trace-step-duration {
+    flex-shrink: 0;
+    min-width: 48px;
+    margin-top: 1px;
+    color: var(--color-text-desc);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
 }
 
 .trace-step-icon {

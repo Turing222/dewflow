@@ -9,8 +9,11 @@ import { streamChatQuery } from '../../streams/chat-stream';
 import { getDefaultKBAPI } from '../../api/knowledge';
 import type { ChatMessage, ChatSession } from '../../types/chat';
 import {
+    applyTraceMetricsToSteps,
     createInitialTraceSteps,
     parseCitations,
+    parseChatMessageMetrics,
+    parseRagMetrics,
     TRACE_STEP_DEFS,
 } from '../../types/agent-trace';
 import type {
@@ -90,6 +93,8 @@ export function useChatController(): UseChatControllerReturn {
 
     useEffect(() => {
         if (!isSessionFromHistory || !sessionDetailData) return;
+        // Historical session selection hydrates local chat state from query data.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMessages(sessionDetailData.messages || []);
         if (sessionDetailData.session) {
             setChatMode(sessionDetailData.session.kb_id ? 'rag' : 'normal');
@@ -99,7 +104,14 @@ export function useChatController(): UseChatControllerReturn {
             .find((m) => m.role === 'assistant');
         if (lastAssistantMsg?.search_context) {
             setCitations(parseCitations(lastAssistantMsg.search_context));
+        } else {
+            setCitations([]);
         }
+        setTraceSteps((prev) => applyTraceMetricsToSteps(
+            prev,
+            parseChatMessageMetrics(lastAssistantMsg?.message_metadata),
+            parseRagMetrics(lastAssistantMsg?.search_context),
+        ));
     }, [isSessionFromHistory, sessionDetailData]);
 
     const pruneRetryCache = useCallback(() => {
@@ -301,7 +313,14 @@ export function useChatController(): UseChatControllerReturn {
                                                 lastAssistantMsg.search_context,
                                             ),
                                         );
+                                    } else {
+                                        setCitations([]);
                                     }
+                                    setTraceSteps((prev) => applyTraceMetricsToSteps(
+                                        prev,
+                                        parseChatMessageMetrics(lastAssistantMsg?.message_metadata),
+                                        parseRagMetrics(lastAssistantMsg?.search_context),
+                                    ));
                                 }
                             })
                             .catch(() => {});
@@ -349,7 +368,7 @@ export function useChatController(): UseChatControllerReturn {
                 },
             },
         );
-    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId]);
+    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId, advanceToStep]);
 
     const retryFailedMessage = useCallback((messageId: string) => {
         if (isStreaming) return;

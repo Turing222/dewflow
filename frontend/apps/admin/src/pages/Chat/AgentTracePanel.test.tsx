@@ -165,4 +165,47 @@ describe('AgentTracePanel', () => {
         await user.click(expandBtn);
         expect(onToggle).toHaveBeenCalledTimes(1);
     });
+
+    it('renders trace metrics summary and step durations', () => {
+        mockUseAuth.mockReturnValue(defaultAuth);
+        const steps: AgentTraceStep[] = createInitialTraceSteps().map((step) => {
+            if (step.id === 'generate-answer') {
+                return {
+                    ...step,
+                    status: 'done',
+                    durationMs: 1500,
+                    metricDetails: { first_token_latency_ms: 320 },
+                };
+            }
+            if (step.id === 'retrieve-docs') {
+                return {
+                    ...step,
+                    status: 'done',
+                    durationMs: 120,
+                    metricDetails: {
+                        candidate_count: 20,
+                        hit_count: 4,
+                        retrieval_mode: 'hybrid',
+                        rerank_used: true,
+                    },
+                };
+            }
+            if (step.id === 'complete') {
+                return {
+                    ...step,
+                    status: 'done',
+                    durationMs: 2600,
+                    metricDetails: { tokens_per_second: 18.5 },
+                };
+            }
+            return { ...step, status: 'done' as const };
+        });
+
+        renderPanel({ traceSteps: steps });
+
+        expect(screen.getByTestId('trace-metrics-summary')).toHaveTextContent('320 ms');
+        expect(screen.getByTestId('trace-metrics-summary')).toHaveTextContent('2.6 s');
+        expect(screen.getByTestId('trace-step-duration-retrieve-docs')).toHaveTextContent('120 ms');
+        expect(screen.getByText(/hybrid/)).toBeInTheDocument();
+    });
 });

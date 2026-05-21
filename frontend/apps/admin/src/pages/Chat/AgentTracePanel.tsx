@@ -22,6 +22,7 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
     const { t } = useTranslation();
 
     const hasTrace = traceSteps.length > 0;
+    const summaryMetrics = getSummaryMetrics(traceSteps);
 
     if (collapsed) {
         return (
@@ -73,6 +74,16 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                     </div>
                 ) : (
                     <>
+                        {summaryMetrics.length > 0 && (
+                            <div className={styles['trace-metrics-summary']} data-testid="trace-metrics-summary">
+                                {summaryMetrics.map((item) => (
+                                    <div key={item.key} className={styles['trace-metric-item']}>
+                                        <span className={styles['trace-metric-label']}>{t(`trace.summary.${item.key}`)}</span>
+                                        <span className={styles['trace-metric-value']}>{item.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         <div className={styles['trace-timeline']}>
                             {traceSteps.map((step, index) => (
                                 <div
@@ -118,7 +129,21 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                                 {step.description}
                                             </div>
                                         )}
+                                        {step.metricDetails && Object.keys(step.metricDetails).length > 0 && (
+                                            <div className={styles['trace-step-details']}>
+                                                {Object.entries(step.metricDetails).map(([key, value]) => (
+                                                    <span key={key}>
+                                                        {t(`trace.metrics.${key}`, key)}: {formatMetricValue(key, value)}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
+                                    {step.durationMs !== undefined && (
+                                        <div className={styles['trace-step-duration']} data-testid={`trace-step-duration-${step.id}`}>
+                                            {formatDuration(step.durationMs)}
+                                        </div>
+                                    )}
                                     <div className={styles['trace-step-icon']}>
                                         {step.status === 'done' && (
                                             <Check size={14} />
@@ -265,3 +290,35 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
 };
 
 export default AgentTracePanel;
+
+function formatDuration(value: number): string {
+    if (value < 1000) return `${Math.round(value)} ms`;
+    return `${(value / 1000).toFixed(1)} s`;
+}
+
+function formatMetricValue(key: string, value: number | string | boolean): string {
+    if (typeof value === 'boolean') return value ? 'yes' : 'no';
+    if (typeof value === 'number') {
+        if (key.endsWith('_ms')) return formatDuration(value);
+        return String(value);
+    }
+    return value;
+}
+
+function getSummaryMetrics(traceSteps: AgentTraceStep[]) {
+    const generateStep = traceSteps.find((step) => step.id === 'generate-answer');
+    const completeStep = traceSteps.find((step) => step.id === 'complete');
+    const firstToken = generateStep?.metricDetails?.first_token_latency_ms;
+    const tokensPerSecond = completeStep?.metricDetails?.tokens_per_second;
+    const items: Array<{ key: string; value: string }> = [];
+    if (typeof firstToken === 'number') {
+        items.push({ key: 'first_token', value: formatDuration(firstToken) });
+    }
+    if (completeStep?.durationMs !== undefined) {
+        items.push({ key: 'total', value: formatDuration(completeStep.durationMs) });
+    }
+    if (typeof tokensPerSecond === 'number') {
+        items.push({ key: 'tokens_per_second', value: tokensPerSecond.toFixed(2) });
+    }
+    return items;
+}

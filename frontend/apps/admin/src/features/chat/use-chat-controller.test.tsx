@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 
 import { useChatController } from './use-chat-controller';
 import type { StreamCallbacks, StreamOptions } from '../../streams/chat-stream';
+import type { SessionDetailResponse } from '../../types/chat';
 import { TRACE_STEP_DEFS } from '../../types/agent-trace';
 
 vi.mock('../../api/chat', () => ({
@@ -41,8 +42,7 @@ vi.mock('../../query/keys/chat', () => ({
 }));
 
 // Factory lets individual tests control what useSessionDetailQuery returns.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let mockSessionDetailData: any = { data: undefined, isLoading: false };
+let mockSessionDetailData: { data?: SessionDetailResponse; isLoading: boolean } = { data: undefined, isLoading: false };
 
 vi.mock('../../query/hooks/chat', () => ({
     useSessionDetailQuery: () => mockSessionDetailData,
@@ -71,7 +71,7 @@ function createWrapper() {
 beforeEach(() => {
     vi.clearAllMocks();
     // Reset per-test session detail mock to "no data" default
-    mockSessionDetailData = { data: undefined, isLoading: false } as any;
+    mockSessionDetailData = { data: undefined, isLoading: false };
     mockGetSessionDetailAPI.mockResolvedValue({
         session: { id: 's1', title: 'Test', user_id: '1', created_at: '', updated_at: '', total_tokens: 0 },
         messages: [],
@@ -382,10 +382,25 @@ describe('useChatController', () => {
                 content: 'answer',
                 status: 'success',
                 search_context: {
+                    metrics: {
+                        retrieve_ms: 42,
+                        candidate_count: 20,
+                        hit_count: 4,
+                        retrieval_mode: 'hybrid',
+                        rerank_used: true,
+                    },
                     citations: [
                         { document_name: 'doc1.pdf', chunk_id: 'c1', score: 0.92, summary: 'Passage one.' },
                         { document_name: 'report.docx', chunk_id: 'c2', score: 0.78, summary: 'Passage two.' },
                     ],
+                },
+                message_metadata: {
+                    metrics: {
+                        e2e_first_token_ms: 320,
+                        worker_total_latency_ms: 1200,
+                        llm_generate_ms: 900,
+                        tokens_per_second: 11.5,
+                    },
                 },
                 created_at: '',
                 updated_at: '',
@@ -413,6 +428,9 @@ describe('useChatController', () => {
         expect(result.current.citations).toHaveLength(2);
         expect(result.current.citations[0].documentName).toBe('doc1.pdf');
         expect(result.current.citations[1].documentName).toBe('report.docx');
+        expect(result.current.traceSteps.find((step) => step.id === 'retrieve-docs')?.durationMs).toBe(42);
+        expect(result.current.traceSteps.find((step) => step.id === 'generate-answer')?.metricDetails?.first_token_latency_ms).toBe(320);
+        expect(result.current.traceSteps.find((step) => step.id === 'complete')?.durationMs).toBe(1200);
     });
 
     it('handles empty or malformed search_context gracefully', async () => {
@@ -523,7 +541,7 @@ describe('useChatController', () => {
     });
 
     it('retryFailedMessage deletes the error message and triggers sendQuery with a fresh clientRequestId', async () => {
-        let capturedOptions: any[] = [];
+        const capturedOptions: StreamOptions[] = [];
         mockStreamChatQuery.mockImplementation((options: StreamOptions, callbacks: StreamCallbacks) => {
             capturedOptions.push(options);
             callbacks.onError!(new Error('Immediate fail'));

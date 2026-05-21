@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
+from backend.application.chat.timing import elapsed_ms, merge_metrics, perf_start
 from backend.config.ai_settings import ai_settings
 from backend.contracts.interfaces import AbstractRAGService
 from backend.core.concurrency import llm_concurrency_slot
@@ -60,24 +61,42 @@ class WorkerRAGOrchestrator:
                 "rag.kb_id": payload.kb_id,
             },
         ) as span:
+            metrics: dict[str, object] = {}
+            planner_started = perf_start()
             rag_plan, planner_used = await self.build_rag_plan(payload)
+            metrics["planner_ms"] = elapsed_ms(planner_started)
+            metrics["planner_used"] = planner_used
+            metrics["retrieval_mode"] = rag_plan.retrieval_mode
+            metrics["rerank_used"] = rag_plan.use_rerank
+
+            retrieve_started = perf_start()
             candidates = await self.retrieve_rag_candidates(payload, rag_plan)
+            metrics["retrieve_ms"] = elapsed_ms(retrieve_started)
+            metrics["candidate_count"] = len(candidates)
+
+            rerank_started = perf_start()
             reranked_chunks = await self.rerank_candidates_if_enabled(
                 payload,
                 candidates,
                 rag_plan,
             )
+            metrics["rerank_ms"] = elapsed_ms(rerank_started)
+            metrics["hit_count"] = len(reranked_chunks)
+
             refusal_decision = self.rag_evidence_policy.evaluate(
                 kb_id=payload.kb_id,
                 rag_plan=rag_plan,
                 chunks=reranked_chunks,
             )
             if refusal_decision.should_refuse:
+                context_started = perf_start()
                 search_context = self._build_refusal_search_context(
                     payload=payload,
                     chunks=reranked_chunks,
                     decision=refusal_decision,
                 )
+                metrics["context_build_ms"] = elapsed_ms(context_started)
+                search_context = self._with_rag_metrics(search_context, metrics)
                 set_span_attributes(
                     span,
                     {
@@ -95,12 +114,18 @@ class WorkerRAGOrchestrator:
                     refusal_decision=refusal_decision,
                 )
 
+            context_started = perf_start()
             prepared_context = self.chat_context_builder.build_from_chunks(
                 history_messages=payload.conversation_history,
                 current_query=payload.query_text,
                 kb_id=payload.kb_id,
                 rag_chunks=reranked_chunks,
                 context_state=payload.context_state,
+            )
+            metrics["context_build_ms"] = elapsed_ms(context_started)
+            search_context = self._with_rag_metrics(
+                prepared_context.search_context,
+                metrics,
             )
             set_span_attributes(
                 span,
@@ -126,7 +151,7 @@ class WorkerRAGOrchestrator:
             )
             return PreparedGenerationContext(
                 assembled_prompt=prepared_context.assembled_prompt,
-                search_context=prepared_context.search_context,
+                search_context=search_context,
             )
 
     async def build_rag_plan(
@@ -284,3 +309,12 @@ class WorkerRAGOrchestrator:
         }
         search_context.update(decision.to_metadata())
         return search_context
+
+    @staticmethod
+    def _with_rag_metrics(
+        search_context: dict | None,
+        metrics: dict[str, object],
+    ) -> dict | None:
+        if search_context is None:
+            return None
+        return merge_metrics(search_context, metrics)
