@@ -2,6 +2,7 @@ SHELL := /bin/bash
 
 DOCKER_IMAGE_NAME_WEB ?= dewflow-backend:2.0.0-web
 DOCKER_IMAGE_NAME_AI ?= dewflow-backend:2.0.0-ai
+DOCKER_IMAGE_NAME_FRONTEND ?= dewflow-frontend:2.0.0
 SMOKE_COMPOSE_FILE ?= docker-compose.db.yml
 DEBUG_COMPOSE_FILE ?= docker-compose.debug.yml
 SMOKE_ENV_FILE ?= .env.smoke
@@ -25,7 +26,7 @@ PERF_PROFILE ?= perf/profiles/enterprise_smoke.json
 PERF_OUTPUT ?= perf/reports/chat_api_load_report.json
 PYTEST_ARGS ?=
 
-export DOCKER_IMAGE_NAME_WEB DOCKER_IMAGE_NAME_AI
+export DOCKER_IMAGE_NAME_WEB DOCKER_IMAGE_NAME_AI DOCKER_IMAGE_NAME_FRONTEND
 export SMOKE_COMPOSE_FILE
 export DEBUG_COMPOSE_FILE
 export SMOKE_ENV_FILE
@@ -41,7 +42,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 .PHONY: help \
 	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-mock frontend-e2e-smoke frontend-check \
-	image-build \
+	image-build frontend-image-build image-build-all \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
 	set-llm seed-dev \
@@ -83,6 +84,8 @@ help:
 		'  frontend-e2e-smoke   Run frontend Playwright smoke tests against a real backend' \
 		'  frontend-check       Run frontend lint, typecheck, tests, build, and mock e2e' \
 		'  image-build          Build the backend Docker image' \
+		'  frontend-image-build  Build the frontend Docker image' \
+		'  image-build-all       Build all Docker images (backend + frontend)' \
 		'  env-smoke-prepare    Generate the smoke env file from template' \
 		'  env-smoke-check      Run preflight checks for smoke environment (API keys)' \
 		'  env-smoke-up         Start the smoke environment' \
@@ -199,6 +202,11 @@ frontend-check:
 
 image-build:
 	bash scripts/image/build_backend.sh
+
+frontend-image-build:
+	docker build -f frontend/apps/admin/Dockerfile -t "$(DOCKER_IMAGE_NAME_FRONTEND)" .
+
+image-build-all: image-build frontend-image-build
 
 env-smoke-prepare:
 	bash scripts/smoke/prepare_env.sh

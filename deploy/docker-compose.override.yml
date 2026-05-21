@@ -42,12 +42,12 @@ services:
     ports:
       - "6379:6379"
 
-  # --- 4. Nginx 服务：前端热更新 ---
-  nginx:
-    volumes:
-      # 如果你本地也在开发前端，可以把 dist 挂载进去
-      # 这样你前端 npm run build 后，Nginx 里的内容立刻就变了
-      - ../frontend/apps/admin/dist:/usr/share/nginx/html:ro
+  # --- 4. Frontend 服务 ---
+  # 开发时热更新请使用 Vite dev server: pnpm --dir frontend --filter admin dev
+  # 如需验证本地 build 产物，取消以下注释：
+  # frontend:
+  #   volumes:
+  #     - ../frontend/apps/admin/dist:/usr/share/nginx/html:ro
 
   # --- 5. 监控工具：通常开发阶段不需要一直开着，可以保持默认或按需修改 ---
   prometheus:

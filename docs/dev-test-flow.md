@@ -153,7 +153,7 @@ make env-smoke-wait
 说明：
 
 - 该环境用于 Smoke，不追求完整生产拓扑。
-- `nginx`、`prometheus`、`grafana`、`vector`、`loki` 暂不作为日常 Smoke 的必需项。
+- `frontend`、`prometheus`、`grafana`、`vector`、`loki` 暂不作为日常 Smoke 的必需项；如需验证前端容器链路，先运行 `make frontend-image-build` 再启动 Compose 中的 `frontend` 服务。
 - `env-smoke-prepare` 会基于仓库里的 `.env.smoke.template` 生成本地 `.env.smoke`，本地与 CI 共用同一份模板。
 
 ### 步骤 7：运行 Smoke 测试

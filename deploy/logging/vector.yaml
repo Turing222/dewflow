@@ -4,7 +4,7 @@ sources:
     # 只采集业务相关容器，减少噪音并缩小 Docker Socket 权限影响面
     include_containers:
       - "api"
-      - "nginx"
+      - "frontend"
       - "task_worker"
       - "postgres"
       - "redis"
