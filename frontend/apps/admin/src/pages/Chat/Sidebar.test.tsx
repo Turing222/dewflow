@@ -1,0 +1,207 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import Sidebar from './Sidebar';
+import { renderWithQueryClient } from '../../test/render-with-query';
+import type { ChatSession } from '../../types/chat';
+
+vi.mock('../../context/useAuth', () => ({
+    useAuth: vi.fn(),
+}));
+
+vi.mock('../../query/hooks/chat', () => ({
+    useChatSessionsQuery: vi.fn(),
+}));
+
+import { useAuth } from '../../context/useAuth';
+import { useChatSessionsQuery } from '../../query/hooks/chat';
+
+const mockUseAuth = vi.mocked(useAuth);
+const mockUseChatSessionsQuery = vi.mocked(useChatSessionsQuery);
+
+type AuthReturn = ReturnType<typeof useAuth>;
+type ChatSessionsReturn = ReturnType<typeof useChatSessionsQuery>;
+
+const fakeSessions: ChatSession[] = [
+    {
+        id: 's1',
+        title: 'Session 1',
+        user_id: 'u1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    },
+    {
+        id: 's2',
+        title: 'Session 2',
+        user_id: 'u1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    },
+];
+
+const defaultAuth: AuthReturn = {
+    user: null,
+    token: null,
+    isLoading: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    isAuthenticated: false,
+    showAuthModal: false,
+    setShowAuthModal: vi.fn(),
+    refreshUser: vi.fn(),
+    authTab: 'login',
+    setAuthTab: vi.fn(),
+};
+
+function makeQueryResult(overrides: Partial<ChatSessionsReturn> = {}): ChatSessionsReturn {
+    return {
+        data: undefined,
+        dataUpdatedAt: 0,
+        error: null,
+        errorUpdatedAt: 0,
+        failureCount: 0,
+        failureReason: null,
+        errorUpdateCount: 0,
+        isError: false,
+        isFetched: false,
+        isFetchedAfterMount: false,
+        isFetching: false,
+        isPaused: false,
+        isLoading: false,
+        isLoadingError: false,
+        isInitialLoading: false,
+        isPending: true,
+        isPlaceholderData: false,
+        isRefetchError: false,
+        isRefetching: false,
+        isStale: false,
+        isSuccess: false,
+        refetch: vi.fn(),
+        status: 'pending',
+        fetchStatus: 'idle',
+        promise: Promise.resolve(undefined),
+        ...overrides,
+    } as ChatSessionsReturn;
+}
+
+function renderSidebar(overrides: Record<string, unknown> = {}) {
+    const props = {
+        activeSessionId: null,
+        onSelectSession: vi.fn(),
+        onNewChat: vi.fn(),
+        collapsed: false,
+        onToggle: vi.fn(),
+        ...overrides,
+    };
+    const result = renderWithQueryClient(<Sidebar {...props} />);
+    return { ...result, props };
+}
+
+beforeEach(() => {
+    mockUseAuth.mockReturnValue(defaultAuth);
+    mockUseChatSessionsQuery.mockReturnValue(makeQueryResult());
+});
+
+describe('Sidebar', () => {
+    it('shows login hint when not authenticated', () => {
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: false });
+        renderSidebar();
+        expect(screen.getByText('登录后可查看历史记录')).toBeInTheDocument();
+    });
+
+    it('shows spinner when loading', () => {
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        mockUseChatSessionsQuery.mockReturnValue(makeQueryResult({
+            isLoading: true,
+            isPending: true,
+            isFetching: true,
+            status: 'pending',
+            fetchStatus: 'fetching',
+        }));
+        renderSidebar();
+        expect(document.querySelector('.ant-spin')).toBeInTheDocument();
+    });
+
+    it('shows empty hint when no sessions', () => {
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        mockUseChatSessionsQuery.mockReturnValue(makeQueryResult({
+            data: { items: [], total: 0, skip: 0, limit: 50 } as ChatSessionsReturn['data'],
+            isSuccess: true,
+            isPending: false,
+            status: 'success',
+        }));
+        renderSidebar();
+        expect(screen.getByText('暂无对话记录')).toBeInTheDocument();
+    });
+
+    it('renders session list when sessions exist', () => {
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        mockUseChatSessionsQuery.mockReturnValue(makeQueryResult({
+            data: { items: fakeSessions, total: 2, skip: 0, limit: 50 } as ChatSessionsReturn['data'],
+            isSuccess: true,
+            isPending: false,
+            status: 'success',
+        }));
+        renderSidebar();
+        expect(screen.getByText('Session 1')).toBeInTheDocument();
+        expect(screen.getByText('Session 2')).toBeInTheDocument();
+        expect(document.querySelectorAll('.session-item')).toHaveLength(2);
+    });
+
+    it('highlights active session', () => {
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        mockUseChatSessionsQuery.mockReturnValue(makeQueryResult({
+            data: { items: fakeSessions, total: 2, skip: 0, limit: 50 } as ChatSessionsReturn['data'],
+            isSuccess: true,
+            isPending: false,
+            status: 'success',
+        }));
+        renderSidebar({ activeSessionId: 's1' });
+        const activeItem = document.querySelector('.session-item.active');
+        expect(activeItem).toBeInTheDocument();
+        expect(activeItem?.textContent).toContain('Session 1');
+    });
+
+    it('calls onSelectSession when session clicked', async () => {
+        const user = userEvent.setup();
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        mockUseChatSessionsQuery.mockReturnValue(makeQueryResult({
+            data: { items: [fakeSessions[0]], total: 1, skip: 0, limit: 50 } as ChatSessionsReturn['data'],
+            isSuccess: true,
+            isPending: false,
+            status: 'success',
+        }));
+        const { props } = renderSidebar();
+        await user.click(screen.getByText('Session 1'));
+        expect(props.onSelectSession).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 's1' }),
+        );
+    });
+
+    it('collapsed mode shows toggle and new-chat only', () => {
+        renderSidebar({ collapsed: true });
+        expect(document.querySelector('.collapsed-sidebar')).toBeInTheDocument();
+        expect(screen.queryByText('历史记录')).not.toBeInTheDocument();
+    });
+
+    it('calls onNewChat when new-chat button clicked', async () => {
+        const user = userEvent.setup();
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        const { props } = renderSidebar();
+        await user.click(screen.getByRole('button', { name: /新对话/ }));
+        expect(props.onNewChat).toHaveBeenCalledOnce();
+    });
+
+    it('calls onToggle when toggle button clicked', async () => {
+        const user = userEvent.setup();
+        mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
+        const { props } = renderSidebar();
+        const toggleBtns = screen.getAllByRole('button');
+        const toggleBtn = toggleBtns.find(
+            (btn) => btn.classList.contains('toggle-btn'),
+        );
+        expect(toggleBtn).toBeTruthy();
+        await user.click(toggleBtn!);
+        expect(props.onToggle).toHaveBeenCalledOnce();
+    });
+});
