@@ -3,6 +3,10 @@ import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
 import { useAuthStore } from '../stores/auth-store';
+import { setupServerLifecycle } from './msw/server';
+import { resetFactoryCounters } from './msw/factories';
+
+setupServerLifecycle();
 
 Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -26,4 +30,5 @@ afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     window.history.pushState({}, '', '/');
+    resetFactoryCounters();
 });
