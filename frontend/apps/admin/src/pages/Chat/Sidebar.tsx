@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Spin, Tooltip } from 'antd';
-import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, LogIn, Sun, Moon } from 'lucide-react';
+import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, Sun, Moon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatSession } from '../../types/chat';
 import { useChatSessionsQuery } from '../../query/hooks/chat';
@@ -62,7 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <Button
                 type="text"
                 size={isCollapsed ? undefined : "small"}
-                className={isCollapsed ? styles['collapsed-action-btn'] : undefined}
+                className={isCollapsed ? styles['collapsed-action-btn'] : styles['sidebar-text-btn']}
                 style={isCollapsed ? { fontSize: '11px', fontWeight: 700 } : { fontSize: '12px', fontWeight: 700 }}
                 onClick={toggleLanguage}
             >
@@ -141,14 +141,13 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             <div className={styles['session-list']}>
                 {!isAuthenticated ? (
-                    <div className={styles['sidebar-hint']}>
-                        <LogIn size={20} className={styles['sidebar-hint-icon']} />
+                    <div className={`${styles['sidebar-hint']} sidebar-hint`}>
                         {t('sidebar.login_hint')}
                     </div>
                 ) : loading ? (
                     <div className={styles['sidebar-loading']}><Spin size="small" /></div>
                 ) : sessions.length === 0 ? (
-                    <div className={styles['sidebar-hint']}>
+                    <div className={`${styles['sidebar-hint']} sidebar-hint`}>
                         <Inbox size={20} className={styles['sidebar-hint-icon']} />
                         {t('sidebar.empty_hint')}
                     </div>
@@ -156,7 +155,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     sessions.map((s) => (
                         <div
                             key={s.id}
-                            className={`${styles['session-item']} ${s.id === activeSessionId ? styles.active : ''}`}
+                            className={`${styles['session-item']} session-item ${s.id === activeSessionId ? `${styles.active} active` : ''}`}
                             data-testid="session-item"
                             onClick={() => onSelectSession(s)}
                         >
@@ -179,6 +178,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     <div style={{ display: 'flex', gap: '8px' }}>
                         {renderLanguageSwitch(false)}
                         <Button
+                            className={styles['sidebar-icon-btn']}
                             type="text"
                             size="small"
                             icon={theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}

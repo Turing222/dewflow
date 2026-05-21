@@ -64,11 +64,11 @@ const MessageList: React.FC<MessageListProps> = ({
     const renderMessage = (msg: ChatMessage) => {
         const isUser = msg.role === 'user';
         return (
-            <div key={msg.id} className={`${styles['chat-message']} ${isUser ? styles.user : styles.assistant}`}>
+            <div key={msg.id} className={`${styles['chat-message']} chat-message ${isUser ? `${styles.user} user` : `${styles.assistant} assistant`}`}>
                 <Avatar
                     className={styles['chat-avatar']}
-                    style={{ backgroundColor: isUser ? '#e8f4fd' : '#f0f5ff', flexShrink: 0 }}
-                    icon={isUser ? <UserIcon size={18} color="#1677ff" /> : <Bot size={18} color="#722ed1" />}
+                    style={{ backgroundColor: isUser ? 'var(--color-bg-subtle)' : 'var(--color-bg-container)', flexShrink: 0 }}
+                    icon={isUser ? <UserIcon size={18} color="var(--color-primary)" /> : <Bot size={18} color="var(--color-primary-gradient-end)" />}
                 />
                 <div className={`${styles['chat-bubble']} ${isUser ? styles['user-bubble'] : styles['assistant-bubble']}`}>
                     {msg.status === 'failed' ? (
@@ -92,7 +92,7 @@ const MessageList: React.FC<MessageListProps> = ({
                             )}
                         </>
                     ) : (
-                        <div className={styles['message-text']}>{msg.content}</div>
+                        <div className={`${styles['message-text']} message-text`}>{msg.content}</div>
                     )}
                     {msg.latency_ms && (
                         <div className={styles['message-meta']}>{msg.latency_ms}ms</div>
@@ -123,14 +123,14 @@ const MessageList: React.FC<MessageListProps> = ({
                     <>
                         {messages.map(renderMessage)}
                         {isStreaming && streamingText && (
-                            <div className={`${styles['chat-message']} ${styles.assistant}`}>
+                            <div className={`${styles['chat-message']} chat-message ${styles.assistant} assistant`}>
                                 <Avatar
                                     className={styles['chat-avatar']}
-                                    style={{ backgroundColor: '#f0f5ff', flexShrink: 0 }}
-                                    icon={<Bot size={18} color="#722ed1" />}
+                                    style={{ backgroundColor: 'var(--color-bg-container)', flexShrink: 0 }}
+                                    icon={<Bot size={18} color="var(--color-primary-gradient-end)" />}
                                 />
                                 <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
-                                    <div className={styles['message-text']}>
+                                    <div className={`${styles['message-text']} message-text`}>
                                         {streamingText}
                                         <span className={styles['cursor-blink']}>|</span>
                                     </div>
@@ -138,11 +138,11 @@ const MessageList: React.FC<MessageListProps> = ({
                             </div>
                         )}
                         {isStreaming && !streamingText && (
-                            <div className={`${styles['chat-message']} ${styles.assistant}`}>
+                            <div className={`${styles['chat-message']} chat-message ${styles.assistant} assistant`}>
                                 <Avatar
                                     className={styles['chat-avatar']}
-                                    style={{ backgroundColor: '#f0f5ff', flexShrink: 0 }}
-                                    icon={<Bot size={18} color="#722ed1" />}
+                                    style={{ backgroundColor: 'var(--color-bg-container)', flexShrink: 0 }}
+                                    icon={<Bot size={18} color="var(--color-primary-gradient-end)" />}
                                 />
                                 <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
                                     <div className={styles['thinking-dots']}>

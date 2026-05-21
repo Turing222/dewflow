@@ -41,5 +41,25 @@
       "token_quota": "账号 Token 额度",
       "used": "已使用"
     }
+  },
+  "auth": {
+    "title": "AI 助手",
+    "subtitle": "登录以获得完整体验",
+    "login": "登录",
+    "register": "注册",
+    "username": "用户名",
+    "email": "邮箱",
+    "password": "密码",
+    "confirm_password": "确认密码",
+    "login_success": "登录成功",
+    "register_success": "注册成功，请登录",
+    "validation": {
+      "username_required": "请输入用户名",
+      "email_required": "请输入邮箱",
+      "email_invalid": "请输入有效邮箱",
+      "password_required": "请输入密码",
+      "confirm_password_required": "请再次输入密码",
+      "password_mismatch": "两次输入的密码不一致"
+    }
   }
 }

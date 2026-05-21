@@ -18,6 +18,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             title: '用户',
             dataIndex: 'username',
             key: 'username',
+            width: 160,
             render: (text: string) => (
                 <div className={styles['user-cell']}>
                     <Avatar className={styles['user-cell-avatar']} size={32}>
@@ -36,6 +37,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             title: '状态',
             dataIndex: 'is_active',
             key: 'is_active',
+            width: 100,
             render: (active: boolean) => (
                 <Tag color={active ? 'green' : 'red'}>{active ? '活跃' : '已停用'}</Tag>
             ),
@@ -44,6 +46,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             title: '角色',
             dataIndex: 'is_superuser',
             key: 'is_superuser',
+            width: 120,
             render: (su: boolean) => (
                 <Tag color={su ? 'purple' : 'default'}>{su ? '超级管理员' : '普通用户'}</Tag>
             ),
@@ -51,6 +54,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
         {
             title: 'Token 消耗',
             key: 'tokens',
+            width: 220,
             render: (_value: unknown, record: User) => {
                 const used = record.used_tokens || 0;
                 const max = record.max_tokens || 0;
@@ -60,17 +64,15 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
                 else if (percent > 70) level = 'mid';
 
                 return (
-                    <div className={styles['token-cell']}>
-                        <div className={styles['token-cell-header']}>
-                            <span>{used} / {max}</span>
-                            <span>{Math.round(percent)}%</span>
-                        </div>
-                        <div className={styles['token-cell-track']}>
+                    <div className={styles['token-compact-row']}>
+                        <span className={styles['token-digits']}>{used}/{max}</span>
+                        <div className={styles['mini-progress-track']}>
                             <div
-                                className={`${styles['token-cell-fill']} ${styles[`level-${level}`]}`}
+                                className={`${styles['mini-progress-fill']} ${styles[`level-${level}`]}`}
                                 style={{ width: `${percent}%` }}
                             />
                         </div>
+                        <span className={styles['token-percent-label']}>{Math.round(percent)}%</span>
                     </div>
                 );
             },
@@ -79,11 +81,14 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             title: '创建时间',
             dataIndex: 'created_at',
             key: 'created_at',
+            width: 120,
             render: (t: string) => t ? new Date(t).toLocaleDateString('zh-CN') : '-',
         },
         {
             title: '操作',
             key: 'action',
+            width: 100,
+            align: 'center',
             render: (_value: unknown, record: User) => (
                 <Space>
                     <Tooltip title="编辑">

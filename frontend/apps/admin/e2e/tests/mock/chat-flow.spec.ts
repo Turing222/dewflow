@@ -30,7 +30,7 @@ test.describe('Chat flow with SSE streaming', () => {
 
     await expect(page.locator('.cursor-blink')).not.toBeVisible();
 
-    await expect(page.getByTestId('session-item').locator('.session-title')).toHaveText('New Chat');
+    await expect(page.getByTestId('session-item')).toContainText('New Chat');
 
     await expect(page.locator('.chat-header-title')).toHaveText('New Chat');
   });

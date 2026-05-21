@@ -40,7 +40,7 @@ const ChatPage: React.FC = () => {
     };
 
     return (
-        <div className={styles['chat-page']}>
+        <div className={`${styles['chat-page']} chat-page`}>
             <Sidebar
                 activeSessionId={controller.activeSessionId}
                 onSelectSession={controller.selectSession}
@@ -51,7 +51,7 @@ const ChatPage: React.FC = () => {
             <div className={styles['chat-main']}>
                 <div className={styles['chat-header']}>
                     <div className={styles['chat-header-title-container']}>
-                        <div className={styles['chat-header-title']}>
+                        <div className={`${styles['chat-header-title']} chat-header-title`}>
                             {controller.activeSession?.title || t('chat.default_title')}
                         </div>
                         {controller.activeSession && controller.activeSession.total_tokens !== undefined && (
@@ -92,8 +92,8 @@ const ChatPage: React.FC = () => {
                                 data-testid="user-menu-btn"
                                 icon={
                                     isAuthenticated
-                                        ? <div className={styles['avatar-badge']}>{user?.username?.[0]?.toUpperCase()}</div>
-                                        : <div className={`${styles['avatar-badge']} ${styles['guest']}`}><LogIn size={18} /></div>
+                                        ? <div className={`${styles['avatar-badge']} avatar-badge`}>{user?.username?.[0]?.toUpperCase()}</div>
+                                        : <div className={`${styles['avatar-badge']} avatar-badge ${styles['guest']} guest`}><LogIn size={18} /></div>
                                 }
                             />
                         </Tooltip>

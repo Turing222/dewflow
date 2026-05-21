@@ -11,6 +11,114 @@ import { useThemeStore } from './stores/theme-store';
 
 const LazyAdminDashboard = React.lazy(() => import('./pages/Admin'));
 
+const BRAND_PALETTES = {
+  '#1677ff': {
+    gradientEnd: '#722ed1',
+    light: {
+      page: '#f3f8ff',
+      container: '#ffffff',
+      subtle: '#e8f2ff',
+      border: '#cfe3ff',
+      sidebar: '#87b7f4',
+      sidebarHover: 'rgba(255, 255, 255, 0.14)',
+      sidebarActive: 'rgba(255, 255, 255, 0.22)',
+    },
+    dark: {
+      page: '#101923',
+      container: '#162230',
+      subtle: '#1c3045',
+      border: '#284461',
+      sidebar: '#0b3d80',
+      sidebarHover: 'rgba(255, 255, 255, 0.12)',
+      sidebarActive: 'rgba(255, 255, 255, 0.2)',
+    },
+  },
+  '#4f46e5': {
+    gradientEnd: '#9333ea',
+    light: {
+      page: '#f6f5ff',
+      container: '#ffffff',
+      subtle: '#ecebff',
+      border: '#d9d6ff',
+      sidebar: '#8981eb',
+      sidebarHover: 'rgba(255, 255, 255, 0.14)',
+      sidebarActive: 'rgba(255, 255, 255, 0.22)',
+    },
+    dark: {
+      page: '#171529',
+      container: '#201d38',
+      subtle: '#2b2750',
+      border: '#413a75',
+      sidebar: '#312e81',
+      sidebarHover: 'rgba(255, 255, 255, 0.12)',
+      sidebarActive: 'rgba(255, 255, 255, 0.2)',
+    },
+  },
+  '#722ed1': {
+    gradientEnd: '#db2777',
+    light: {
+      page: '#faf5ff',
+      container: '#ffffff',
+      subtle: '#f1e4ff',
+      border: '#dfc8fb',
+      sidebar: '#9b65f2',
+      sidebarHover: 'rgba(255, 255, 255, 0.14)',
+      sidebarActive: 'rgba(255, 255, 255, 0.22)',
+    },
+    dark: {
+      page: '#1e1329',
+      container: '#2a1a38',
+      subtle: '#3a2450',
+      border: '#573579',
+      sidebar: '#4c1d95',
+      sidebarHover: 'rgba(255, 255, 255, 0.12)',
+      sidebarActive: 'rgba(255, 255, 255, 0.2)',
+    },
+  },
+  '#0d9488': {
+    gradientEnd: '#0284c7',
+    light: {
+      page: '#f0fdfa',
+      container: '#ffffff',
+      subtle: '#ccfbf1',
+      border: '#99e6d8',
+      sidebar: '#0f766e',
+      sidebarHover: 'rgba(255, 255, 255, 0.14)',
+      sidebarActive: 'rgba(255, 255, 255, 0.22)',
+    },
+    dark: {
+      page: '#0d1f1e',
+      container: '#132b29',
+      subtle: '#1a3a36',
+      border: '#285c56',
+      sidebar: '#115e59',
+      sidebarHover: 'rgba(255, 255, 255, 0.12)',
+      sidebarActive: 'rgba(255, 255, 255, 0.2)',
+    },
+  },
+  '#ea580c': {
+    gradientEnd: '#e11d48',
+    light: {
+      page: '#fff7ed',
+      container: '#ffffff',
+      subtle: '#ffedd5',
+      border: '#fed7aa',
+      sidebar: '#e36432',
+      sidebarHover: 'rgba(255, 255, 255, 0.14)',
+      sidebarActive: 'rgba(255, 255, 255, 0.22)',
+    },
+    dark: {
+      page: '#29180f',
+      container: '#382113',
+      subtle: '#4a2b16',
+      border: '#78451f',
+      sidebar: '#9a3412',
+      sidebarHover: 'rgba(255, 255, 255, 0.12)',
+      sidebarActive: 'rgba(255, 255, 255, 0.2)',
+    },
+  },
+} as const;
+
 // 管理员路由守卫
 const AdminRouteGuard: React.FC = () => {
   const { isAuthenticated, isLoading, user, setShowAuthModal } = useAuth();
@@ -39,22 +147,23 @@ const App: React.FC = () => {
   const { theme, brandColor } = useThemeStore();
 
   React.useEffect(() => {
-    // 品牌色对应的渐变结束色映射
-    const gradientEnds: Record<string, string> = {
-      '#1677ff': '#722ed1', // 经典蓝 -> 皇家紫
-      '#4f46e5': '#9333ea', // 靛蓝 -> 紫色
-      '#722ed1': '#db2777', // 皇家紫 -> 玫瑰红
-      '#0d9488': '#0284c7', // 薄荷绿 -> 天蓝色
-      '#ea580c': '#e11d48', // 落日橙 -> 深红
-    };
-    const gradientEnd = gradientEnds[brandColor] || '#722ed1';
+    const palette = BRAND_PALETTES[brandColor as keyof typeof BRAND_PALETTES] ?? BRAND_PALETTES['#1677ff'];
+    const modePalette = palette[theme];
 
     // 同步设置全局 CSS 变量
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.style.setProperty('--color-primary', brandColor);
     document.documentElement.style.setProperty('--color-primary-hover', `${brandColor}cc`);
     document.documentElement.style.setProperty('--color-primary-shadow', `${brandColor}26`);
-    document.documentElement.style.setProperty('--color-primary-gradient-end', gradientEnd);
+    document.documentElement.style.setProperty('--color-primary-gradient-end', palette.gradientEnd);
+    document.documentElement.style.setProperty('--color-bg-page', modePalette.page);
+    document.documentElement.style.setProperty('--color-bg-container', modePalette.container);
+    document.documentElement.style.setProperty('--color-bg-subtle', modePalette.subtle);
+    document.documentElement.style.setProperty('--color-border', modePalette.border);
+    document.documentElement.style.setProperty('--color-sidebar-bg', modePalette.sidebar);
+    document.documentElement.style.setProperty('--color-sidebar-border', 'rgba(255, 255, 255, 0.24)');
+    document.documentElement.style.setProperty('--color-sidebar-hover', modePalette.sidebarHover);
+    document.documentElement.style.setProperty('--color-sidebar-active', modePalette.sidebarActive);
   }, [theme, brandColor]);
 
   return (

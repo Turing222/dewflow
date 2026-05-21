@@ -41,5 +41,25 @@
       "token_quota": "Account Token Quota",
       "used": "Used"
     }
+  },
+  "auth": {
+    "title": "AI Assistant",
+    "subtitle": "Log in for the full experience",
+    "login": "Log In",
+    "register": "Register",
+    "username": "Username",
+    "email": "Email",
+    "password": "Password",
+    "confirm_password": "Confirm Password",
+    "login_success": "Logged in successfully",
+    "register_success": "Registration successful. Please log in.",
+    "validation": {
+      "username_required": "Please enter your username",
+      "email_required": "Please enter your email",
+      "email_invalid": "Please enter a valid email",
+      "password_required": "Please enter your password",
+      "confirm_password_required": "Please enter your password again",
+      "password_mismatch": "The two passwords do not match"
+    }
   }
 }

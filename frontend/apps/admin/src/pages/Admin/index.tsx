@@ -18,7 +18,7 @@ const AdminDashboard: React.FC = () => {
     const admin = useAdminUsers();
 
     return (
-        <Layout className={styles['admin-layout']}>
+        <Layout className={`${styles['admin-layout']} admin-layout`}>
             <Header className={styles['admin-header']}>
                 <div className={styles['header-left']}>
                     <Button
@@ -28,7 +28,7 @@ const AdminDashboard: React.FC = () => {
                         className={styles['back-btn']}
                     />
                     <Shield size={22} color="#1677ff" />
-                    <span className={styles['header-title']}>管理后台</span>
+                    <span className={`${styles['header-title']} header-title`}>管理后台</span>
                 </div>
                 <div className={styles['header-right']}>
                     <span className={styles['header-user']}>{user?.username}</span>

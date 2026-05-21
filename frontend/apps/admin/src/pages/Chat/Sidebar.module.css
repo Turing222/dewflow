@@ -1,11 +1,11 @@
 .sidebar {
     width: 280px;
     height: 100vh;
-    background: var(--color-bg-container);
-    border-right: 1px solid var(--color-border);
+    background: var(--color-sidebar-bg, var(--color-bg-container));
+    border-right: 1px solid var(--color-sidebar-border, var(--color-border));
     display: flex;
     flex-direction: column;
-    transition: width 0.2s ease;
+    transition: width 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
 .collapsed-sidebar {
@@ -27,21 +27,30 @@
     border-radius: 8px !important;
     height: 38px !important;
     font-weight: 500;
+    background: var(--color-sidebar-active, var(--color-primary)) !important;
+    border-color: var(--color-sidebar-border, var(--color-primary)) !important;
+    color: var(--color-text-light) !important;
+}
+
+.new-chat-btn:hover {
+    background: var(--color-sidebar-hover, var(--color-primary-hover)) !important;
+    border-color: var(--color-sidebar-border, var(--color-primary-hover)) !important;
+    color: var(--color-text-light) !important;
 }
 
 .toggle-btn {
-    color: var(--color-text-desc) !important;
+    color: rgba(255, 255, 255, 0.74) !important;
     padding: 4px !important;
     border-radius: 8px !important;
 }
 
 .toggle-btn:hover {
-    background: var(--color-bg-page) !important;
-    color: var(--color-text-main) !important;
+    background: var(--color-sidebar-hover, var(--color-bg-page)) !important;
+    color: var(--color-text-light) !important;
 }
 
 .collapsed-action-btn {
-    color: var(--color-text-desc) !important;
+    color: rgba(255, 255, 255, 0.74) !important;
     width: 40px !important;
     height: 40px !important;
     border-radius: 10px !important;
@@ -51,8 +60,19 @@
 }
 
 .collapsed-action-btn:hover {
-    background: var(--color-primary-shadow) !important;
-    color: var(--color-primary) !important;
+    background: var(--color-sidebar-hover, var(--color-primary-shadow)) !important;
+    color: var(--color-text-light) !important;
+}
+
+.sidebar-text-btn,
+.sidebar-icon-btn {
+    color: rgba(255, 255, 255, 0.74) !important;
+}
+
+.sidebar-text-btn:hover,
+.sidebar-icon-btn:hover {
+    background: var(--color-sidebar-hover, var(--color-bg-page)) !important;
+    color: var(--color-text-light) !important;
 }
 
 .sidebar-section-title {
@@ -61,7 +81,7 @@
     gap: 6px;
     padding: 6px 20px;
     font-size: 12px;
-    color: var(--color-text-desc);
+    color: rgba(255, 255, 255, 0.74);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600;
@@ -77,7 +97,7 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    padding: 8px 12px;
+    padding: 6px 12px;
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -85,20 +105,20 @@
 }
 
 .session-item:hover {
-    background: var(--color-bg-page);
+    background: var(--color-sidebar-hover, var(--color-bg-page));
 }
 
 .session-item.active {
-    background: var(--color-primary-shadow);
+    background: var(--color-sidebar-active, var(--color-primary-shadow));
 }
 
 .session-item.active .session-title {
-    color: var(--color-primary);
+    color: var(--color-text-light);
     font-weight: 500;
 }
 
 .session-icon {
-    color: var(--color-text-desc);
+    color: rgba(255, 255, 255, 0.74);
     margin-top: 3px;
     flex-shrink: 0;
 }
@@ -110,7 +130,7 @@
 
 .session-title {
     font-size: 13px;
-    color: var(--color-text-main);
+    color: var(--color-text-light);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -119,7 +139,7 @@
 
 .session-time {
     font-size: 11px;
-    color: var(--color-text-desc);
+    color: rgba(255, 255, 255, 0.68);
     margin-top: 2px;
 }
 
@@ -133,18 +153,18 @@
     padding: 32px 16px;
     text-align: center;
     font-size: 13px;
-    color: var(--color-text-desc);
+    color: rgba(255, 255, 255, 0.74);
 }
 
 .sidebar-hint-icon {
-    color: var(--color-icon-muted);
+    color: rgba(255, 255, 255, 0.62);
     margin-bottom: 6px;
 }
 
 /* --- Theme Customizer Footer --- */
 .sidebar-footer {
     padding: 16px;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--color-sidebar-border, var(--color-border));
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -158,7 +178,7 @@
 
 .theme-label {
     font-size: 13px;
-    color: var(--color-text-desc);
+    color: rgba(255, 255, 255, 0.74);
     font-weight: 500;
 }
 
@@ -184,6 +204,6 @@
 }
 
 .color-preset-btn.color-preset-active {
-    border-color: var(--color-text-main);
-    box-shadow: 0 0 0 2px var(--color-primary-shadow);
+    border-color: var(--color-text-light);
+    box-shadow: 0 0 0 2px var(--color-sidebar-active, var(--color-primary-shadow));
 }

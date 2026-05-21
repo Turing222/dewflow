@@ -43,15 +43,19 @@
 /* --- Content --- */
 
 .admin-content {
-    padding: 24px;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: center;
 }
 
 .admin-content .content-card {
     background: #fff;
     border: 1px solid #e5e7eb;
     border-radius: 12px;
-    padding: 24px;
+    padding: 16px 20px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    max-width: 1600px;
+    width: 100%;
 }
 
 .admin-content .card-header {
