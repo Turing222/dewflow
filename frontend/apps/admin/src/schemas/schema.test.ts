@@ -1,6 +1,4 @@
-import { describe, expect, it } from 'vitest';
-
-import { chatStreamEventSchema } from './chat';
+import { chatStreamEventSchema, chatSessionSchema, chatMessageSchema } from './chat';
 import { userRegistrationPayloadSchema } from './user';
 
 describe('schema layer', () => {
@@ -24,6 +22,33 @@ describe('schema layer', () => {
             message_id: 'message-1',
         });
 
+        expect(result.success).toBe(true);
+    });
+
+    it('successfully parses chatSessionSchema when kb_id is null', () => {
+        const result = chatSessionSchema.safeParse({
+            id: 's1',
+            title: 'Test Session',
+            user_id: 'u1',
+            kb_id: null,
+            created_at: '2026-05-21T12:00:00Z',
+            updated_at: '2026-05-21T12:00:00Z',
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it('successfully parses chatMessageSchema when latency_ms and search_context are null', () => {
+        const result = chatMessageSchema.safeParse({
+            id: 'm1',
+            session_id: 's1',
+            role: 'assistant',
+            content: 'Hello world',
+            status: 'success',
+            latency_ms: null,
+            search_context: null,
+            created_at: '2026-05-21T12:00:00Z',
+            updated_at: '2026-05-21T12:00:00Z',
+        });
         expect(result.success).toBe(true);
     });
 });

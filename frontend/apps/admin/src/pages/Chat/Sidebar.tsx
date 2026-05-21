@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Spin, Tooltip } from 'antd';
+import { Button, Spin, Tooltip, Popover } from 'antd';
 import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, Sun, Moon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatSession } from '../../types/chat';
@@ -54,31 +54,52 @@ const Sidebar: React.FC<SidebarProps> = ({
         void changeAppLanguage(targetLng);
     };
 
-    const renderLanguageSwitch = (isCollapsed: boolean) => {
-        const text = i18n.language === 'zh-CN' ? 'EN' : (isCollapsed ? '中' : '中文');
-        const tooltipTitle = i18n.language === 'zh-CN' ? 'English' : '中文';
-        
-        const btn = (
-            <Button
-                type="text"
-                size={isCollapsed ? undefined : "small"}
-                className={isCollapsed ? styles['collapsed-action-btn'] : styles['sidebar-text-btn']}
-                style={isCollapsed ? { fontSize: '11px', fontWeight: 700 } : { fontSize: '12px', fontWeight: 700 }}
-                onClick={toggleLanguage}
-            >
-                {text}
-            </Button>
-        );
 
-        if (isCollapsed) {
-            return (
-                <Tooltip title={tooltipTitle} placement="right">
-                    {btn}
-                </Tooltip>
-            );
-        }
-        return btn;
-    };
+
+    const renderStylePopoverContent = () => (
+        <div className={styles['style-popover-content']} data-testid="style-popover-content">
+            <div className={styles['popover-section']}>
+                <span className={styles['popover-label']}>{t('sidebar.theme')}</span>
+                <Button
+                    className={styles['popover-btn']}
+                    type="text"
+                    icon={theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                    data-testid="theme-toggle-btn"
+                >
+                    {theme === 'dark' ? t('sidebar.light_mode') : t('sidebar.dark_mode')}
+                </Button>
+            </div>
+            <div className={styles['popover-section']}>
+                <span className={styles['popover-label']}>{t('sidebar.language')}</span>
+                <Button
+                    className={styles['popover-btn']}
+                    type="text"
+                    onClick={toggleLanguage}
+                    data-testid="language-toggle-btn"
+                >
+                    {i18n.language === 'zh-CN' ? 'English' : '中文'}
+                </Button>
+            </div>
+            <div className={styles['popover-section']}>
+                <span className={styles['popover-label']}>{t('sidebar.accent_color')}</span>
+                <div className={styles['brand-colors-row']}>
+                    {BRAND_PRESETS.map((color) => (
+                        <button
+                            key={color.value}
+                            className={`${styles['color-preset-btn']} ${brandColor === color.value ? styles['color-preset-active'] : ''}`}
+                            style={{ backgroundColor: color.value }}
+                            title={t(`sidebar.brand_colors.${color.key}`)}
+                            aria-label={t(`sidebar.brand_colors.${color.key}`)}
+                            aria-pressed={brandColor === color.value}
+                            onClick={() => setBrandColor(color.value)}
+                        />
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
 
     if (collapsed) {
         return (
@@ -101,16 +122,25 @@ const Sidebar: React.FC<SidebarProps> = ({
                 
                 <div style={{ flex: 1 }} />
 
-                {renderLanguageSwitch(true)}
-                
-                <Tooltip title={theme === 'dark' ? t('sidebar.light_mode') : t('sidebar.dark_mode')} placement="right">
-                    <Button
-                        className={styles['collapsed-action-btn']}
-                        type="text"
-                        icon={theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                    />
-                </Tooltip>
+                <Popover
+                    content={renderStylePopoverContent()}
+                    trigger="hover"
+                    placement="right"
+                    overlayClassName={styles['style-popover']}
+                    mouseEnterDelay={0.1}
+                    mouseLeaveDelay={0.2}
+                >
+                    <div 
+                        className={styles['style-toggle-icon']} 
+                        data-testid="style-popover-trigger"
+                        role="button"
+                        aria-label={t('sidebar.style_settings')}
+                    >
+                        <div className={styles['style-toggle-bar']} />
+                        <div className={styles['style-toggle-bar']} />
+                        <div className={styles['style-toggle-bar']} />
+                    </div>
+                </Popover>
             </div>
         );
     }
@@ -183,34 +213,25 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             {/* 底部主题与品牌色定制面板 */}
             <div className={styles['sidebar-footer']}>
-                <div className={styles['theme-toggle-row']}>
-                    <span className={styles['theme-label']}>
-                        {theme === 'dark' ? t('sidebar.dark_mode') : t('sidebar.light_mode')}
-                    </span>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        {renderLanguageSwitch(false)}
-                        <Button
-                            className={styles['sidebar-icon-btn']}
-                            type="text"
-                            size="small"
-                            icon={theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-                            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                        />
+                <Popover
+                    content={renderStylePopoverContent()}
+                    trigger="hover"
+                    placement="top"
+                    overlayClassName={styles['style-popover']}
+                    mouseEnterDelay={0.1}
+                    mouseLeaveDelay={0.2}
+                >
+                    <div 
+                        className={styles['style-toggle-icon']} 
+                        data-testid="style-popover-trigger"
+                        role="button"
+                        aria-label={t('sidebar.style_settings')}
+                    >
+                        <div className={styles['style-toggle-bar']} />
+                        <div className={styles['style-toggle-bar']} />
+                        <div className={styles['style-toggle-bar']} />
                     </div>
-                </div>
-                <div className={styles['brand-colors-row']}>
-                    {BRAND_PRESETS.map((color) => (
-                        <button
-                            key={color.value}
-                            className={`${styles['color-preset-btn']} ${brandColor === color.value ? styles['color-preset-active'] : ''}`}
-                            style={{ backgroundColor: color.value }}
-                            title={t(`sidebar.brand_colors.${color.key}`)}
-                            aria-label={t(`sidebar.brand_colors.${color.key}`)}
-                            aria-pressed={brandColor === color.value}
-                            onClick={() => setBrandColor(color.value)}
-                        />
-                    ))}
-                </div>
+                </Popover>
             </div>
         </div>
     );

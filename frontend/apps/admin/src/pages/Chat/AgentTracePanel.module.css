@@ -7,6 +7,60 @@
     flex-direction: column;
     overflow: hidden;
     flex-shrink: 0;
+    transition: width 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.collapsed-trace-panel {
+    width: 56px !important;
+    align-items: center;
+    padding-top: 12px;
+    gap: 16px;
+}
+
+.toggle-btn {
+    color: var(--color-text-desc) !important;
+    padding: 4px !important;
+    border-radius: 8px !important;
+    transition: background 0.15s ease, color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toggle-btn:hover {
+    background: var(--color-bg-subtle) !important;
+    color: var(--color-text-main) !important;
+}
+
+.collapsed-icon-btn {
+    color: var(--color-text-desc);
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg-subtle);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.collapsed-icon-btn:hover {
+    background: var(--color-bg-page);
+    color: var(--color-text-main);
+}
+
+.collapsed-vertical-title {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    color: var(--color-text-desc);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    user-select: none;
+    margin-top: 12px;
+    opacity: 0.8;
+    animation: traceStepFadeIn 0.35s ease-out both;
 }
 
 /* --- Header --- */
@@ -15,7 +69,8 @@
     height: 56px;
     display: flex;
     align-items: center;
-    padding: 0 20px;
+    gap: 8px;
+    padding: 0 16px;
     border-bottom: 1px solid var(--color-border);
     flex-shrink: 0;
 }
@@ -198,6 +253,10 @@
     animation: spin 1s linear infinite;
 }
 
+.spin-slow {
+    animation: spin 3s linear infinite;
+}
+
 @keyframes spin {
     from {
         transform: rotate(0deg);
@@ -281,6 +340,7 @@
     line-height: 1.5;
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
 }

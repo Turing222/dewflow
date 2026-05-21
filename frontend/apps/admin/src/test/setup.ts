@@ -25,6 +25,15 @@ Object.defineProperty(window, 'matchMedia', {
     })),
 });
 
+class ResizeObserverMock {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+}
+window.ResizeObserver = ResizeObserverMock;
+globalThis.ResizeObserver = ResizeObserverMock;
+
+
 beforeAll(async () => {
     if (!appI18n.isInitialized) {
         await appI18n.use(initReactI18next).init({

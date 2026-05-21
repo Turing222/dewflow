@@ -23,4 +23,7 @@ export const API_URLS = {
     TELEMETRY: {
         ERRORS: `${API_PREFIX}/telemetry/errors`,
     },
+    KNOWLEDGE: {
+        DEFAULT: `${API_PREFIX}/knowledge/default`,
+    },
 } as const;

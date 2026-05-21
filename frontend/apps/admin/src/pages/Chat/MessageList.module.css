@@ -300,3 +300,112 @@
         transform: translateY(0);
     }
 }
+
+/* --- Mode Selector Choice --- */
+
+.mode-selector-container {
+    display: flex;
+    gap: 16px;
+    margin-top: 24px;
+    width: 100%;
+    max-width: 600px;
+    box-sizing: border-box;
+    justify-content: center;
+}
+
+@media (max-width: 640px) {
+    .mode-selector-container {
+        flex-direction: column;
+        padding: 0 16px;
+    }
+}
+
+.mode-card {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-container);
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+}
+
+.mode-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-primary-hover);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+}
+
+.mode-card.active {
+    border-color: var(--color-primary);
+    background: rgba(22, 119, 255, 0.02);
+    box-shadow: 0 0 0 1px var(--color-primary), 0 8px 16px -4px var(--color-primary-shadow);
+}
+
+:global([data-theme='dark']) .mode-card.active {
+    background: rgba(22, 119, 255, 0.06);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary), 0 8px 16px -4px rgba(22, 119, 255, 0.25);
+}
+
+.mode-card-icon-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--color-bg-subtle);
+    color: var(--color-text-desc);
+    flex-shrink: 0;
+    transition: all 0.25s ease;
+}
+
+.mode-card:hover .mode-card-icon-container {
+    background: var(--color-primary-shadow);
+    color: var(--color-primary);
+}
+
+.mode-card.active .mode-card-icon-container {
+    background: var(--color-primary);
+    color: var(--color-text-light);
+}
+
+.mode-icon {
+    transition: transform 0.25s ease;
+}
+
+.mode-card:hover .mode-icon {
+    transform: scale(1.1);
+}
+
+.mode-card-content {
+    flex: 1;
+    text-align: left;
+}
+
+.mode-card-content h4 {
+    margin: 0 0 4px 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text-main);
+    transition: color 0.2s ease;
+}
+
+.mode-card.active .mode-card-content h4 {
+    color: var(--color-primary);
+}
+
+.mode-card-content p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--color-text-desc);
+}

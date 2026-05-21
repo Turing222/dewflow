@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Check, Loader, AlertCircle, Minus, ChevronDown } from 'lucide-react';
+import { Check, Loader, AlertCircle, Minus, ChevronDown, ChevronLeft, ChevronRight, Activity } from 'lucide-react';
+import { Button, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 import type { AgentTraceStep, CitationItem } from '../../types/agent-trace';
 import styles from './AgentTracePanel.module.css';
@@ -7,20 +8,59 @@ import styles from './AgentTracePanel.module.css';
 interface AgentTracePanelProps {
     traceSteps: AgentTraceStep[];
     citations: CitationItem[];
+    collapsed?: boolean;
+    onToggle?: () => void;
 }
 
 const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
     traceSteps,
     citations,
+    collapsed = false,
+    onToggle,
 }) => {
     const [citationsExpanded, setCitationsExpanded] = useState(false);
     const { t } = useTranslation();
 
     const hasTrace = traceSteps.length > 0;
 
+    if (collapsed) {
+        return (
+            <div className={`${styles['trace-panel']} ${styles['collapsed-trace-panel']}`} data-testid="trace-panel-collapsed">
+                <Tooltip title={t('trace.expand')} placement="left">
+                    <Button
+                        className={styles['toggle-btn']}
+                        type="text"
+                        icon={<ChevronLeft size={18} />}
+                        aria-label={t('trace.expand')}
+                        onClick={onToggle}
+                        data-testid="trace-panel-expand-btn"
+                    />
+                </Tooltip>
+                <div className={styles['collapsed-icon-btn']}>
+                    <Activity size={20} className={styles['spin-slow']} style={{ animationDuration: '3s' }} />
+                </div>
+                <div className={styles['collapsed-vertical-title']}>
+                    {t('trace.title')}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className={styles['trace-panel']}>
             <div className={styles['trace-panel-header']}>
+                {onToggle && (
+                    <Tooltip title={t('trace.collapse')} placement="left">
+                        <Button
+                            className={styles['toggle-btn']}
+                            type="text"
+                            icon={<ChevronRight size={18} />}
+                            aria-label={t('trace.collapse')}
+                            onClick={onToggle}
+                            data-testid="trace-panel-collapse-btn"
+                        />
+                    </Tooltip>
+                )}
                 <span className={styles['trace-panel-title']}>
                     {t('trace.title')}
                 </span>

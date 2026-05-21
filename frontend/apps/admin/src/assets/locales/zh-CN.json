@@ -8,6 +8,10 @@
     "dark_mode": "深色模式",
     "expand": "展开侧边栏",
     "collapse": "收起侧边栏",
+    "theme": "外观主题",
+    "language": "界面语言",
+    "accent_color": "主题颜色",
+    "style_settings": "样式设置",
     "time": {
       "yesterday": "昨天",
       "days_ago": "{{count}}天前"
@@ -35,6 +39,12 @@
     "retry": "重试",
     "request_failed": "请求处理失败",
     "upload_success": "文件 {{name}} 上传成功",
+    "mode_normal_title": "普通对话",
+    "mode_normal_desc": "纯粹的大语言模型对话，速度极快，不绑定任何特定文档。",
+    "mode_rag_title": "知识库问答 RAG",
+    "mode_rag_desc": "关联您的默认个人知识库文档，回答更有针对性与专业性。",
+    "mode_rag": "知识库问答 RAG",
+    "mode_normal": "普通对话",
     "user_menu": {
       "login": "登录",
       "register": "注册",
@@ -71,6 +81,8 @@
     "no_citations": "本次未返回引用来源",
     "chunk_id": "片段",
     "score": "相关度",
+    "expand": "展开执行面板",
+    "collapse": "收起执行面板",
     "steps": {
       "receive-query": "接收问题",
       "router-judge": "Router 判断",

@@ -14,6 +14,7 @@ from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflo
 from backend.core.exceptions import app_not_found
 from backend.models.orm.user import User
 from backend.models.schemas.knowledge_schema import (
+    KnowledgeBaseResponse,
     KnowledgeFileResponse,
     KnowledgeUploadResponse,
 )
@@ -128,3 +129,14 @@ async def get_file_status(
             user_id=current_user.id,
         )
     return KnowledgeFileResponse.model_validate(knowledge_file)
+
+
+@router.get("/default")
+async def get_default_kb(
+    current_user: CurrentUserDep,
+    service: KnowledgeServiceDep,
+) -> KnowledgeBaseResponse:
+    async with service.write():
+        kb = await service.get_or_create_default_kb(user_id=current_user.id)
+    return KnowledgeBaseResponse.model_validate(kb)
+

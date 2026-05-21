@@ -29,6 +29,10 @@ vi.mock('../../context/useAuth', () => ({
     }),
 }));
 
+vi.mock('../../api/knowledge', () => ({
+    getDefaultKBAPI: vi.fn().mockResolvedValue({ id: 'kb1', name: 'Default KB' }),
+}));
+
 vi.mock('../../query/keys/chat', () => ({
     chatKeys: {
         sessions: () => ['chat', 'sessions'],
@@ -46,9 +50,11 @@ vi.mock('../../query/hooks/chat', () => ({
 
 import { streamChatQuery } from '../../streams/chat-stream';
 import { getSessionDetailAPI } from '../../api/chat';
+import { getDefaultKBAPI } from '../../api/knowledge';
 
 const mockStreamChatQuery = vi.mocked(streamChatQuery);
 const mockGetSessionDetailAPI = vi.mocked(getSessionDetailAPI);
+const mockGetDefaultKBAPI = vi.mocked(getDefaultKBAPI);
 
 function createWrapper() {
     const queryClient = new QueryClient({
@@ -514,5 +520,212 @@ describe('useChatController', () => {
         expect(result.current.citations).toHaveLength(1);
         expect(result.current.citations[0].documentName).toBe('hist-doc.pdf');
         expect(result.current.citations[0].relevanceScore).toBe(0.85);
+    });
+
+    it('retryFailedMessage deletes the error message and triggers sendQuery with a fresh clientRequestId', async () => {
+        let capturedOptions: any[] = [];
+        mockStreamChatQuery.mockImplementation((options: StreamOptions, callbacks: StreamCallbacks) => {
+            capturedOptions.push(options);
+            callbacks.onError!(new Error('Immediate fail'));
+            return new AbortController();
+        });
+
+        const { result } = renderHook(() => useChatController(), {
+            wrapper: createWrapper(),
+        });
+
+        await act(async () => {
+            result.current.sendQuery('query one');
+        });
+
+        expect(result.current.messages).toHaveLength(2);
+        const errorMessage = result.current.messages[1];
+        expect(errorMessage.status).toBe('failed');
+        expect(capturedOptions).toHaveLength(1);
+        const firstClientId = capturedOptions[0].clientRequestId;
+        expect(firstClientId).toBeDefined();
+
+        await act(async () => {
+            result.current.retryFailedMessage(errorMessage.id);
+        });
+
+        expect(result.current.messages).toHaveLength(2);
+        expect(capturedOptions).toHaveLength(2);
+        
+        const secondClientId = capturedOptions[1].clientRequestId;
+        expect(secondClientId).toBeDefined();
+        expect(secondClientId).not.toBe(firstClientId);
+    });
+
+    it('preserves historical messages when sending a new query in an active historical session', async () => {
+        const historicalDetail = {
+            session: { id: 'hist-1', title: 'History', user_id: '1', created_at: '', updated_at: '', total_tokens: 50 },
+            messages: [
+                {
+                    id: 'h-m1',
+                    session_id: 'hist-1',
+                    role: 'user' as const,
+                    content: 'old question',
+                    status: 'success' as const,
+                    created_at: '',
+                    updated_at: '',
+                },
+                {
+                    id: 'h-m2',
+                    session_id: 'hist-1',
+                    role: 'assistant' as const,
+                    content: 'old answer',
+                    status: 'success' as const,
+                    created_at: '',
+                    updated_at: '',
+                },
+            ],
+            total_messages: 2,
+        };
+
+        mockStreamChatQuery.mockReturnValue(new AbortController());
+
+        const { result, rerender } = renderHook(() => useChatController(), {
+            wrapper: createWrapper(),
+        });
+
+        act(() => {
+            result.current.selectSession({
+                id: 'hist-1',
+                title: 'History',
+                user_id: '1',
+                created_at: '',
+                updated_at: '',
+                total_tokens: 50,
+            });
+        });
+
+        act(() => {
+            mockSessionDetailData = { data: historicalDetail, isLoading: false };
+            rerender();
+        });
+
+        expect(result.current.messages).toHaveLength(2);
+        expect(result.current.messages[0].content).toBe('old question');
+
+        await act(async () => {
+            result.current.sendQuery('new question');
+        });
+
+        expect(result.current.messages).toHaveLength(3);
+        expect(result.current.messages[0].content).toBe('old question');
+        expect(result.current.messages[1].content).toBe('old answer');
+        expect(result.current.messages[2].content).toBe('new question');
+    });
+
+    describe('chatMode and RAG/Normal dialogue options', () => {
+        it('should default chatMode to normal', () => {
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+            expect(result.current.chatMode).toBe('normal');
+        });
+
+        it('should update chatMode when setChatMode is called', () => {
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+            expect(result.current.chatMode).toBe('rag');
+        });
+
+        it('should reset chatMode to normal when startNewChat is called', () => {
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+            expect(result.current.chatMode).toBe('rag');
+
+            act(() => {
+                result.current.startNewChat();
+            });
+            expect(result.current.chatMode).toBe('normal');
+        });
+
+        it('should sync chatMode when selectSession is called', () => {
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            act(() => {
+                result.current.selectSession({
+                    id: 's-rag',
+                    title: 'RAG session',
+                    user_id: '1',
+                    kb_id: 'kb-active',
+                    created_at: '',
+                    updated_at: '',
+                });
+            });
+            expect(result.current.chatMode).toBe('rag');
+
+            act(() => {
+                result.current.selectSession({
+                    id: 's-normal',
+                    title: 'Normal session',
+                    user_id: '1',
+                    kb_id: null,
+                    created_at: '',
+                    updated_at: '',
+                });
+            });
+            expect(result.current.chatMode).toBe('normal');
+        });
+
+        it('should fetch default knowledge base ID and pass it during RAG chat initiation', async () => {
+            mockGetDefaultKBAPI.mockResolvedValue({ id: 'resolved-kb-id', name: 'My KB' });
+            mockStreamChatQuery.mockReturnValue(new AbortController());
+
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            act(() => {
+                result.current.setChatMode('rag');
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('hello RAG');
+            });
+
+            expect(mockGetDefaultKBAPI).toHaveBeenCalledTimes(1);
+            expect(mockStreamChatQuery).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    query: 'hello RAG',
+                    kbId: 'resolved-kb-id',
+                }),
+                expect.any(Object),
+            );
+        });
+
+        it('should not pass kbId during normal chat initiation', async () => {
+            mockStreamChatQuery.mockReturnValue(new AbortController());
+
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('hello normal');
+            });
+
+            expect(mockGetDefaultKBAPI).not.toHaveBeenCalled();
+            expect(mockStreamChatQuery).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    query: 'hello normal',
+                    kbId: undefined,
+                }),
+                expect.any(Object),
+            );
+        });
     });
 });

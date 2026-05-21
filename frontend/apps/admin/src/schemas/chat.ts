@@ -6,8 +6,8 @@ export const chatSessionSchema = z.object({
     id: requiredString,
     title: requiredString,
     user_id: requiredString,
-    kb_id: z.string().optional(),
-    model_config_data: z.record(z.string(), z.unknown()).optional(),
+    kb_id: z.string().nullable().optional(),
+    model_config_data: z.record(z.string(), z.unknown()).nullable().optional(),
     total_tokens: z.number().optional(),
     created_at: requiredString,
     updated_at: requiredString,
@@ -19,8 +19,8 @@ export const chatMessageSchema = z.object({
     role: z.enum(['user', 'assistant', 'system']),
     content: z.string(),
     status: z.enum(['thinking', 'streaming', 'success', 'failed']),
-    latency_ms: z.number().optional(),
-    search_context: z.record(z.string(), z.unknown()).optional(),
+    latency_ms: z.number().nullable().optional(),
+    search_context: z.record(z.string(), z.unknown()).nullable().optional(),
     created_at: requiredString,
     updated_at: requiredString,
 });
@@ -92,3 +92,11 @@ export type ChatQueryResponse = z.infer<typeof chatQueryResponseSchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionDetailResponse = z.infer<typeof sessionDetailResponseSchema>;
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+
+export const knowledgeBaseResponseSchema = z.object({
+    id: requiredString,
+    name: requiredString,
+});
+
+export type KnowledgeBaseResponse = z.infer<typeof knowledgeBaseResponseSchema>;
+

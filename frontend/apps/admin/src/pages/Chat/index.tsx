@@ -15,6 +15,7 @@ const ChatPage: React.FC = () => {
     const { user, isAuthenticated, logout, setShowAuthModal, setAuthTab } = useAuth();
     const navigate = useNavigate();
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [tracePanelCollapsed, setTracePanelCollapsed] = useState(false);
     const { t } = useTranslation();
 
     const controller = useChatController();
@@ -56,6 +57,11 @@ const ChatPage: React.FC = () => {
                             <div className={`${styles['chat-header-title']} chat-header-title`}>
                                 {controller.activeSession?.title || t('chat.default_title')}
                             </div>
+                            {controller.activeSession && (
+                                <div className={`${styles['chat-header-badge']} ${controller.activeSession.kb_id ? styles['rag'] : styles['normal']}`}>
+                                    {controller.activeSession.kb_id ? t('chat.mode_rag', '知识库问答 RAG') : t('chat.mode_normal', '普通对话')}
+                                </div>
+                            )}
                             {controller.activeSession && controller.activeSession.total_tokens !== undefined && (
                                 <div className={styles['chat-header-tokens']}>
                                     {t('chat.tokens_consumed', { tokens: controller.activeSession.total_tokens })}
@@ -108,11 +114,15 @@ const ChatPage: React.FC = () => {
                         isLoading={controller.isLoadingHistory}
                         onSend={controller.sendQuery}
                         onRetryFailedMessage={controller.retryFailedMessage}
+                        chatMode={controller.chatMode}
+                        setChatMode={controller.setChatMode}
                     />
                 </div>
                 <AgentTracePanel
                     traceSteps={controller.traceSteps}
                     citations={controller.citations}
+                    collapsed={tracePanelCollapsed}
+                    onToggle={() => setTracePanelCollapsed(!tracePanelCollapsed)}
                 />
             </div>
             <AuthModal />

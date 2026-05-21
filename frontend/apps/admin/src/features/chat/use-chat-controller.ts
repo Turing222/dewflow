@@ -6,6 +6,7 @@ import { chatKeys } from '../../query/keys/chat';
 import { useSessionDetailQuery } from '../../query/hooks/chat';
 import { getSessionDetailAPI } from '../../api/chat';
 import { streamChatQuery } from '../../streams/chat-stream';
+import { getDefaultKBAPI } from '../../api/knowledge';
 import type { ChatMessage, ChatSession } from '../../types/chat';
 import {
     createInitialTraceSteps,
@@ -31,6 +32,8 @@ type SendMessageOptions = {
     retryMessageId?: string;
 };
 
+export type ChatMode = 'normal' | 'rag';
+
 export type UseChatControllerReturn = {
     activeSessionId: string | null;
     activeSession: ChatSession | null;
@@ -44,6 +47,8 @@ export type UseChatControllerReturn = {
     startNewChat: () => void;
     traceSteps: AgentTraceStep[];
     citations: CitationItem[];
+    chatMode: ChatMode;
+    setChatMode: (mode: ChatMode) => void;
 };
 
 export function useChatController(): UseChatControllerReturn {
@@ -58,6 +63,21 @@ export function useChatController(): UseChatControllerReturn {
     const [isSessionFromHistory, setIsSessionFromHistory] = useState(false);
     const [traceSteps, setTraceSteps] = useState<AgentTraceStep[]>([]);
     const [citations, setCitations] = useState<CitationItem[]>([]);
+    const [chatMode, setChatMode] = useState<ChatMode>('normal');
+
+    const defaultKbIdRef = useRef<string | null>(null);
+
+    const fetchDefaultKbId = useCallback(async (): Promise<string | null> => {
+        if (defaultKbIdRef.current) return defaultKbIdRef.current;
+        try {
+            const kb = await getDefaultKBAPI();
+            defaultKbIdRef.current = kb.id;
+            return kb.id;
+        } catch (err) {
+            console.error('获取默认知识库失败:', err);
+            return null;
+        }
+    }, []);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const retryCacheRef = useRef<Map<string, RetryCacheEntry>>(new Map());
@@ -70,6 +90,10 @@ export function useChatController(): UseChatControllerReturn {
 
     useEffect(() => {
         if (!isSessionFromHistory || !sessionDetailData) return;
+        setMessages(sessionDetailData.messages || []);
+        if (sessionDetailData.session) {
+            setChatMode(sessionDetailData.session.kb_id ? 'rag' : 'normal');
+        }
         const lastAssistantMsg = [...(sessionDetailData.messages || [])]
             .reverse()
             .find((m) => m.role === 'assistant');
@@ -160,6 +184,28 @@ export function useChatController(): UseChatControllerReturn {
         setTraceSteps(createInitialTraceSteps());
         setCitations([]);
 
+        let targetKbId: string | undefined = undefined;
+        if (!activeSessionId && chatMode === 'rag') {
+            const kbId = await fetchDefaultKbId();
+            if (kbId) {
+                targetKbId = kbId;
+            } else {
+                setIsStreaming(false);
+                const failedMessageId = `temp-err-${Date.now()}`;
+                const errorMsg: ChatMessage = {
+                    id: failedMessageId,
+                    session_id: '',
+                    role: 'assistant',
+                    content: '无法获取默认知识库，请确保系统已配置知识库后再试。',
+                    status: 'failed',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                setMessages((prev) => [...prev, errorMsg]);
+                return;
+            }
+        }
+
         let runtimeSessionId: string | null = activeSessionId;
         let metaReceived = false;
         let firstChunkReceived = false;
@@ -170,6 +216,7 @@ export function useChatController(): UseChatControllerReturn {
             {
                 query: normalizedText,
                 sessionId: activeSessionId || undefined,
+                kbId: targetKbId,
                 clientRequestId,
                 signal: newController.signal,
             },
@@ -187,6 +234,7 @@ export function useChatController(): UseChatControllerReturn {
                             id: event.session_id,
                             title: event.session_title,
                             user_id: String(user?.id ?? ''),
+                            kb_id: targetKbId || null,
                             created_at: new Date().toISOString(),
                             updated_at: new Date().toISOString(),
                             total_tokens: 0,
@@ -301,7 +349,7 @@ export function useChatController(): UseChatControllerReturn {
                 },
             },
         );
-    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient]);
+    }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId]);
 
     const retryFailedMessage = useCallback((messageId: string) => {
         if (isStreaming) return;
@@ -310,7 +358,7 @@ export function useChatController(): UseChatControllerReturn {
         if (!entry) return;
         setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
         void sendQuery(entry.query, {
-            clientRequestId: entry.clientRequestId,
+            clientRequestId: undefined,
             addUserMessage: false,
             retryMessageId: messageId,
         });
@@ -320,6 +368,7 @@ export function useChatController(): UseChatControllerReturn {
         setIsSessionFromHistory(true);
         setActiveSessionId(session.id);
         setActiveSession(session);
+        setChatMode(session.kb_id ? 'rag' : 'normal');
         retryCacheRef.current.clear();
         setMessages([]);
         setTraceSteps([]);
@@ -332,6 +381,7 @@ export function useChatController(): UseChatControllerReturn {
         setIsSessionFromHistory(false);
         setActiveSessionId(null);
         setActiveSession(null);
+        setChatMode('normal');
         setMessages([]);
         setStreamingText('');
         setIsStreaming(false);
@@ -359,5 +409,7 @@ export function useChatController(): UseChatControllerReturn {
         startNewChat,
         traceSteps,
         citations,
+        chatMode,
+        setChatMode,
     };
 }

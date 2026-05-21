@@ -287,6 +287,57 @@ class TestKbIdMismatchRejection:
 
         assert prepared.generation_payload.kb_id == kb_id
 
+    async def test_new_session_no_kb_id_does_not_trigger_rag(self) -> None:
+        """新会话 + 无 kb_id → 不触发 RAG (kb_id 为 None)。"""
+        orchestrator, uow = _build_orchestrator()
+        user_id = uuid.uuid4()
+
+        uow.user_repo.get_with_lock.return_value = MagicMock(
+            used_tokens=0, max_tokens=1000
+        )
+
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
+        )
+
+        new_session = MagicMock(id=uuid.uuid4(), kb_id=None, workspace_id=None)
+        uow.chat_repo.create_session.return_value = new_session
+
+        assistant_msg = MagicMock(id=uuid.uuid4())
+        uow.chat_repo.get_context_state.return_value = ContextState()
+
+        with (
+            patch(
+                "backend.services.chat_service.SessionManager.create_user_message",
+                AsyncMock(),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.create_assistant_message",
+                AsyncMock(return_value=assistant_msg),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.get_session_messages",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
+                "backend.application.chat.session_orchestrator.history_to_conversation_messages",
+                return_value=[],
+            ),
+        ):
+            prepared = await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=None,
+                    kb_id=None,
+                ),
+                idempotency=_make_idempotency(),
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        assert prepared.generation_payload.kb_id is None
+
 
 class TestIdempotencyLockReleaseOnPrepareFailure:
     """prepare_request() 因 AppException 失败时，幂等锁必须被释放。"""

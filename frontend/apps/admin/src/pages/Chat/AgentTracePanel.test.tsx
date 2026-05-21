@@ -131,4 +131,38 @@ describe('AgentTracePanel', () => {
         const errorStep = document.querySelector('.' + styles['trace-step-error']);
         expect(errorStep).toBeInTheDocument();
     });
+
+    it('renders collapsed view when collapsed prop is true', () => {
+        mockUseAuth.mockReturnValue(defaultAuth);
+        renderPanel({ collapsed: true });
+        expect(screen.getByTestId('trace-panel-collapsed')).toBeInTheDocument();
+        expect(screen.getByTestId('trace-panel-expand-btn')).toBeInTheDocument();
+        expect(screen.queryByTestId('trace-panel-empty')).not.toBeInTheDocument();
+    });
+
+    it('renders collapse button in header and calls onToggle when clicked', async () => {
+        const user = userEvent.setup();
+        mockUseAuth.mockReturnValue(defaultAuth);
+        const onToggle = vi.fn();
+        renderPanel({ onToggle });
+        
+        const collapseBtn = screen.getByTestId('trace-panel-collapse-btn');
+        expect(collapseBtn).toBeInTheDocument();
+        
+        await user.click(collapseBtn);
+        expect(onToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders expand button in collapsed view and calls onToggle when clicked', async () => {
+        const user = userEvent.setup();
+        mockUseAuth.mockReturnValue(defaultAuth);
+        const onToggle = vi.fn();
+        renderPanel({ collapsed: true, onToggle });
+        
+        const expandBtn = screen.getByTestId('trace-panel-expand-btn');
+        expect(expandBtn).toBeInTheDocument();
+        
+        await user.click(expandBtn);
+        expect(onToggle).toHaveBeenCalledTimes(1);
+    });
 });

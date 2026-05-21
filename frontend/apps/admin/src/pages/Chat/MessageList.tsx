@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Input, Button, Spin, Avatar, Upload, message as antdMessage } from 'antd';
-import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw } from 'lucide-react';
+import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw, MessageSquare, Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatMessage } from '../../types/chat';
+import type { ChatMode } from '../../features/chat/use-chat-controller';
 import { uploadCSVAPI } from '../../api/upload';
 import styles from './MessageList.module.css';
 
@@ -15,6 +16,8 @@ interface MessageListProps {
     isLoading: boolean;
     onSend: (text: string) => void;
     onRetryFailedMessage?: (messageId: string) => void;
+    chatMode: ChatMode;
+    setChatMode: (mode: ChatMode) => void;
 }
 
 const MessageList: React.FC<MessageListProps> = ({
@@ -24,6 +27,8 @@ const MessageList: React.FC<MessageListProps> = ({
     isLoading,
     onSend,
     onRetryFailedMessage,
+    chatMode,
+    setChatMode,
 }) => {
     const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -117,6 +122,33 @@ const MessageList: React.FC<MessageListProps> = ({
                             <h3>{t('chat.empty_title')}</h3>
                             <p>{t('chat.empty_desc1')}</p>
                             <p className={styles['empty-sub-prompt']}>{t('chat.empty_desc2')}</p>
+                        </div>
+                        <div className={styles['mode-selector-container']}>
+                            <div
+                                className={`${styles['mode-card']} ${chatMode === 'normal' ? styles.active : ''}`}
+                                onClick={() => setChatMode('normal')}
+                            >
+                                <div className={styles['mode-card-icon-container']}>
+                                    <MessageSquare size={20} className={styles['mode-icon']} />
+                                </div>
+                                <div className={styles['mode-card-content']}>
+                                    <h4>{t('chat.mode_normal_title', '普通对话')}</h4>
+                                    <p>{t('chat.mode_normal_desc', '纯粹的大语言模型对话，速度极快，不绑定任何特定文档。')}</p>
+                                </div>
+                            </div>
+
+                            <div
+                                className={`${styles['mode-card']} ${chatMode === 'rag' ? styles.active : ''}`}
+                                onClick={() => setChatMode('rag')}
+                            >
+                                <div className={styles['mode-card-icon-container']}>
+                                    <Database size={20} className={styles['mode-icon']} />
+                                </div>
+                                <div className={styles['mode-card-content']}>
+                                    <h4>{t('chat.mode_rag_title', '知识库问答 RAG')}</h4>
+                                    <p>{t('chat.mode_rag_desc', '关联您的默认个人知识库文档，回答更有针对性与专业性。')}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 ) : (

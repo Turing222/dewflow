@@ -212,7 +212,10 @@ describe('Sidebar', () => {
         
         renderSidebar();
         
-        const presetIndigo = screen.getByTitle('靛蓝');
+        const trigger = screen.getByTestId('style-popover-trigger');
+        await user.hover(trigger);
+
+        const presetIndigo = await screen.findByTitle('靛蓝');
         expect(presetIndigo).toBeInTheDocument();
         
         await user.click(presetIndigo);
@@ -229,12 +232,15 @@ describe('Sidebar', () => {
         
         expect(screen.getByText('新对话')).toBeInTheDocument();
         
-        const langBtn = screen.getByRole('button', { name: 'EN' });
+        const trigger = screen.getByTestId('style-popover-trigger');
+        await user.hover(trigger);
+
+        const langBtn = await screen.findByRole('button', { name: 'English' });
         await user.click(langBtn);
         
         expect(await screen.findByText('New Chat')).toBeInTheDocument();
         
-        const backBtn = screen.getByRole('button', { name: '中文' });
+        const backBtn = await screen.findByRole('button', { name: '中文' });
         await user.click(backBtn);
         expect(await screen.findByText('新对话')).toBeInTheDocument();
     });
@@ -262,7 +268,11 @@ describe('Sidebar', () => {
 
         expect(screen.getByText('昨天')).toBeInTheDocument();
 
-        await user.click(screen.getByRole('button', { name: 'EN' }));
+        const trigger = screen.getByTestId('style-popover-trigger');
+        await user.hover(trigger);
+
+        const langBtn = await screen.findByRole('button', { name: 'English' });
+        await user.click(langBtn);
 
         expect(await screen.findByText('Yesterday')).toBeInTheDocument();
     });

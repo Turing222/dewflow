@@ -8,6 +8,10 @@
     "dark_mode": "Dark Mode",
     "expand": "Expand sidebar",
     "collapse": "Collapse sidebar",
+    "theme": "Theme",
+    "language": "Language",
+    "accent_color": "Accent Color",
+    "style_settings": "Style Settings",
     "time": {
       "yesterday": "Yesterday",
       "days_ago": "{{count}} days ago"
@@ -35,6 +39,12 @@
     "retry": "Retry",
     "request_failed": "Request processing failed",
     "upload_success": "File {{name}} uploaded successfully",
+    "mode_normal_title": "Normal Chat",
+    "mode_normal_desc": "Pure LLM chat, extremely fast, without binding to specific documents.",
+    "mode_rag_title": "Knowledge Base QA (RAG)",
+    "mode_rag_desc": "Retrieve relevant context from your default personal knowledge base for precise answers.",
+    "mode_rag": "RAG Chat",
+    "mode_normal": "Normal Chat",
     "user_menu": {
       "login": "Log In",
       "register": "Register",
@@ -71,6 +81,8 @@
     "no_citations": "No citations returned for this query",
     "chunk_id": "Chunk",
     "score": "Relevance",
+    "expand": "Expand execution panel",
+    "collapse": "Collapse execution panel",
     "steps": {
       "receive-query": "Receive Query",
       "router-judge": "Router Decision",

@@ -152,15 +152,6 @@ class ChatSessionOrchestrator:
 
                     session_manager = self._session_manager
                     resolved_kb_id = command.kb_id
-                    if command.session_id is None and resolved_kb_id is None:
-                        default_kb = (
-                            await self.uow.knowledge_repo.get_kb_by_name_for_user(
-                                name=DEFAULT_KNOWLEDGE_BASE_NAME,
-                                user_id=command.user_id,
-                            )
-                        )
-                        if default_kb is not None:
-                            resolved_kb_id = default_kb.id
 
                     session = await session_manager.ensure_session(
                         user_id=command.user_id,
