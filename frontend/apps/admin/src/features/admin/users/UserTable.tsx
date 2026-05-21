@@ -3,7 +3,7 @@ import { Avatar, Button, Popconfirm, Space, Table, Tag, Tooltip } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { Edit, Trash2, Search } from 'lucide-react';
 import type { User } from '../../../types/user';
-import './UserTable.css';
+import styles from './UserTable.module.css';
 
 type UserTableProps = {
     users: User[];
@@ -19,8 +19,8 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             dataIndex: 'username',
             key: 'username',
             render: (text: string) => (
-                <div className="user-cell">
-                    <Avatar className="user-cell-avatar" size={32}>
+                <div className={styles['user-cell']}>
+                    <Avatar className={styles['user-cell-avatar']} size={32}>
                         {text?.[0]?.toUpperCase()}
                     </Avatar>
                     <span>{text}</span>
@@ -60,14 +60,14 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
                 else if (percent > 70) level = 'mid';
 
                 return (
-                    <div className="token-cell">
-                        <div className="token-cell-header">
+                    <div className={styles['token-cell']}>
+                        <div className={styles['token-cell-header']}>
                             <span>{used} / {max}</span>
                             <span>{Math.round(percent)}%</span>
                         </div>
-                        <div className="token-cell-track">
+                        <div className={styles['token-cell-track']}>
                             <div
-                                className={`token-cell-fill level-${level}`}
+                                className={`${styles['token-cell-fill']} ${styles[`level-${level}`]}`}
                                 style={{ width: `${percent}%` }}
                             />
                         </div>
@@ -108,9 +108,9 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             pagination={false}
             locale={{
                 emptyText: (
-                    <div className="user-table-empty">
-                        <Search size={32} className="user-table-empty-icon" />
-                        <div className="user-table-empty-text">搜索用户以查看结果</div>
+                    <div className={styles['user-table-empty']}>
+                        <Search size={32} className={styles['user-table-empty-icon']} />
+                        <div className={styles['user-table-empty-text']}>搜索用户以查看结果</div>
                     </div>
                 ),
             }}

@@ -8,7 +8,7 @@ import UserSearchBar from '../../features/admin/users/UserSearchBar';
 import UserTable from '../../features/admin/users/UserTable';
 import CreateUserModal from '../../features/admin/users/CreateUserModal';
 import EditUserModal from '../../features/admin/users/EditUserModal';
-import './AdminDashboard.css';
+import styles from './AdminDashboard.module.css';
 
 const { Header, Content } = Layout;
 
@@ -18,25 +18,25 @@ const AdminDashboard: React.FC = () => {
     const admin = useAdminUsers();
 
     return (
-        <Layout className="admin-layout">
-            <Header className="admin-header">
-                <div className="header-left">
+        <Layout className={styles['admin-layout']}>
+            <Header className={styles['admin-header']}>
+                <div className={styles['header-left']}>
                     <Button
                         type="text"
                         icon={<ArrowLeft size={18} />}
                         onClick={() => navigate('/')}
-                        className="back-btn"
+                        className={styles['back-btn']}
                     />
                     <Shield size={22} color="#1677ff" />
-                    <span className="header-title">管理后台</span>
+                    <span className={styles['header-title']}>管理后台</span>
                 </div>
-                <div className="header-right">
-                    <span className="header-user">{user?.username}</span>
+                <div className={styles['header-right']}>
+                    <span className={styles['header-user']}>{user?.username}</span>
                 </div>
             </Header>
-            <Content className="admin-content">
-                <div className="content-card">
-                    <div className="card-header">
+            <Content className={styles['admin-content']}>
+                <div className={styles['content-card']}>
+                    <div className={styles['card-header']}>
                         <h2><Users size={20} /> 用户管理</h2>
                         <UserSearchBar
                             searchValue={admin.searchValue}

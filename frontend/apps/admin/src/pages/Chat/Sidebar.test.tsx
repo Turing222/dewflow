@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Sidebar from './Sidebar';
+import styles from './Sidebar.module.css';
 import { renderWithQueryClient } from '../../test/render-with-query';
 import type { ChatSession } from '../../types/chat';
 
@@ -145,7 +146,7 @@ describe('Sidebar', () => {
         renderSidebar();
         expect(screen.getByText('Session 1')).toBeInTheDocument();
         expect(screen.getByText('Session 2')).toBeInTheDocument();
-        expect(document.querySelectorAll('.session-item')).toHaveLength(2);
+        expect(document.querySelectorAll('.' + styles['session-item'])).toHaveLength(2);
     });
 
     it('highlights active session', () => {
@@ -157,7 +158,7 @@ describe('Sidebar', () => {
             status: 'success',
         }));
         renderSidebar({ activeSessionId: 's1' });
-        const activeItem = document.querySelector('.session-item.active');
+        const activeItem = document.querySelector('.' + styles['session-item'] + '.' + styles.active);
         expect(activeItem).toBeInTheDocument();
         expect(activeItem?.textContent).toContain('Session 1');
     });
@@ -180,7 +181,7 @@ describe('Sidebar', () => {
 
     it('collapsed mode shows toggle and new-chat only', () => {
         renderSidebar({ collapsed: true });
-        expect(document.querySelector('.collapsed-sidebar')).toBeInTheDocument();
+        expect(document.querySelector('.' + styles['collapsed-sidebar'])).toBeInTheDocument();
         expect(screen.queryByText('历史记录')).not.toBeInTheDocument();
     });
 
@@ -198,7 +199,7 @@ describe('Sidebar', () => {
         const { props } = renderSidebar();
         const toggleBtns = screen.getAllByRole('button');
         const toggleBtn = toggleBtns.find(
-            (btn) => btn.classList.contains('toggle-btn'),
+            (btn) => btn.classList.contains(styles['toggle-btn']),
         );
         expect(toggleBtn).toBeTruthy();
         await user.click(toggleBtn!);

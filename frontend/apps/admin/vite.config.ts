@@ -15,5 +15,41 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, '') // 去掉路径里的 /api 前缀
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            // 1. 拆分 Ant Design 及其相关组件库
+            if (
+              id.includes('antd') ||
+              id.includes('@ant-design') ||
+              id.includes('rc-')
+            ) {
+              return 'antd-vendor';
+            }
+            // 2. 拆分 React 核心库
+            if (
+              id.includes('react') ||
+              id.includes('react-dom') ||
+              id.includes('scheduler')
+            ) {
+              return 'react-vendor';
+            }
+            // 3. 拆分 TanStack Query
+            if (id.includes('@tanstack')) {
+              return 'query-vendor';
+            }
+            // 4. 拆分路由相关库
+            if (id.includes('react-router') || id.includes('@remix-run')) {
+              return 'router-vendor';
+            }
+            // 5. 剩余的其他公共第三方库
+            return 'vendor';
+          }
+        }
+      }
+    }
   }
 })

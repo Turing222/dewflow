@@ -2,7 +2,7 @@ import React from 'react';
 import { Button, Input, Upload } from 'antd';
 import { Search, UserPlus, Upload as UploadIcon } from 'lucide-react';
 import type { UploadProps } from 'antd';
-import './UserSearchBar.css';
+import styles from './UserSearchBar.module.css';
 
 type UserSearchBarProps = {
     searchValue: string;
@@ -26,7 +26,7 @@ const UserSearchBar: React.FC<UserSearchBarProps> = ({
     };
 
     return (
-        <div className="user-search-bar">
+        <div className={styles['user-search-bar']}>
             <Input.Search
                 placeholder="搜索用户名或邮箱"
                 value={searchValue}

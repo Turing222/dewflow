@@ -293,11 +293,11 @@
     border-radius: 8px !important;
 }
 
-.send-btn:disabled:not(.ant-btn-loading) {
+.send-btn:disabled:not(:global(.ant-btn-loading)) {
     opacity: 0.4 !important;
 }
 
-.send-btn.ant-btn-loading {
+.send-btn:global(.ant-btn-loading) {
     opacity: 0.8 !important;
 }
 

@@ -7,7 +7,7 @@ import { useChatController } from '../../features/chat/use-chat-controller';
 import Sidebar from './Sidebar';
 import MessageList from './MessageList';
 import AuthModal from '../Auth/AuthModal';
-import './ChatPage.css';
+import styles from './ChatPage.module.css';
 
 const ChatPage: React.FC = () => {
     const { user, isAuthenticated, logout, setShowAuthModal, setAuthTab } = useAuth();
@@ -35,7 +35,7 @@ const ChatPage: React.FC = () => {
     };
 
     return (
-        <div className="chat-page">
+        <div className={styles['chat-page']}>
             <Sidebar
                 activeSessionId={controller.activeSessionId}
                 onSelectSession={controller.selectSession}
@@ -43,14 +43,14 @@ const ChatPage: React.FC = () => {
                 collapsed={sidebarCollapsed}
                 onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
             />
-            <div className="chat-main">
-                <div className="chat-header">
-                    <div className="chat-header-title-container">
-                        <div className="chat-header-title">
+            <div className={styles['chat-main']}>
+                <div className={styles['chat-header']}>
+                    <div className={styles['chat-header-title-container']}>
+                        <div className={styles['chat-header-title']}>
                             {controller.activeSession?.title || 'AI 助手'}
                         </div>
                         {controller.activeSession && controller.activeSession.total_tokens !== undefined && (
-                            <div className="chat-header-tokens">
+                            <div className={styles['chat-header-tokens']}>
                                 本次对话已消耗 {controller.activeSession.total_tokens} tokens
                             </div>
                         )}
@@ -64,15 +64,15 @@ const ChatPage: React.FC = () => {
                         <Tooltip
                             placement="left"
                             title={isAuthenticated ? (
-                                <div className="token-tooltip">
-                                    <div className="token-tooltip-title">账号 Token 额度</div>
-                                    <div className="token-usage-text">
+                                <div className={styles['token-tooltip']}>
+                                    <div className={styles['token-tooltip-title']}>账号 Token 额度</div>
+                                    <div className={styles['token-usage-text']}>
                                         <span>已使用</span>
                                         <span>{user?.used_tokens || 0} / {user?.max_tokens || 0}</span>
                                     </div>
-                                    <div className="token-progress-bar">
+                                    <div className={styles['token-progress-bar']}>
                                         <div
-                                            className="token-progress-fill"
+                                            className={styles['token-progress-fill']}
                                             style={{
                                                 width: `${Math.min(100, ((user?.used_tokens || 0) / (user?.max_tokens || 1)) * 100)}%`
                                             }}
@@ -83,12 +83,12 @@ const ChatPage: React.FC = () => {
                         >
                             <Button
                                 type="text"
-                                className="user-menu-btn"
+                                className={styles['user-menu-btn']}
                                 data-testid="user-menu-btn"
                                 icon={
                                     isAuthenticated
-                                        ? <div className="avatar-badge">{user?.username?.[0]?.toUpperCase()}</div>
-                                        : <div className="avatar-badge guest"><LogIn size={18} /></div>
+                                        ? <div className={styles['avatar-badge']}>{user?.username?.[0]?.toUpperCase()}</div>
+                                        : <div className={`${styles['avatar-badge']} ${styles['guest']}`}><LogIn size={18} /></div>
                                 }
                             />
                         </Tooltip>

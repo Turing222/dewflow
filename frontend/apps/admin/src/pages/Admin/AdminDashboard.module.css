@@ -75,7 +75,7 @@
 
 /* --- Table --- */
 
-.admin-layout .ant-table-thead>tr>th {
+.admin-layout :global(.ant-table-thead)>tr>th {
     font-weight: 600;
     font-size: 12px;
     text-transform: uppercase;
@@ -83,7 +83,7 @@
     color: #666;
 }
 
-.admin-layout .ant-table-tbody>tr:hover>td {
+.admin-layout :global(.ant-table-tbody)>tr:hover>td {
     background: rgba(22, 119, 255, 0.04) !important;
 }
 

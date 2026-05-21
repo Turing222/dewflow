@@ -4,7 +4,7 @@ import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, LogIn } f
 import type { ChatSession } from '../../types/chat';
 import { useChatSessionsQuery } from '../../query/hooks/chat';
 import { useAuth } from '../../context/useAuth';
-import './Sidebar.css';
+import styles from './Sidebar.module.css';
 
 interface SidebarProps {
     activeSessionId: string | null;
@@ -37,16 +37,16 @@ const Sidebar: React.FC<SidebarProps> = ({
 
     if (collapsed) {
         return (
-            <div className="sidebar collapsed-sidebar">
+            <div className={`${styles.sidebar} ${styles['collapsed-sidebar']}`}>
                 <Button
-                    className="toggle-btn"
+                    className={styles['toggle-btn']}
                     type="text"
                     icon={<ChevronRight size={18} />}
                     onClick={onToggle}
                 />
                 <Tooltip title="新对话" placement="right">
                     <Button
-                        className="collapsed-action-btn"
+                        className={styles['collapsed-action-btn']}
                         type="text"
                         icon={<Plus size={20} />}
                         onClick={onNewChat}
@@ -57,10 +57,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
 
     return (
-        <div className="sidebar">
-            <div className="sidebar-header">
+        <div className={styles.sidebar}>
+            <div className={styles['sidebar-header']}>
                 <Button
-                    className="new-chat-btn"
+                    className={styles['new-chat-btn']}
                     type="primary"
                     icon={<Plus size={16} />}
                     onClick={onNewChat}
@@ -69,43 +69,43 @@ const Sidebar: React.FC<SidebarProps> = ({
                     新对话
                 </Button>
                 <Button
-                    className="toggle-btn"
+                    className={styles['toggle-btn']}
                     type="text"
                     icon={<ChevronLeft size={18} />}
                     onClick={onToggle}
                 />
             </div>
 
-            <div className="sidebar-section-title">
+            <div className={styles['sidebar-section-title']}>
                 <Clock size={14} />
                 <span>历史记录</span>
             </div>
 
-            <div className="session-list">
+            <div className={styles['session-list']}>
                 {!isAuthenticated ? (
-                    <div className="sidebar-hint">
-                        <LogIn size={20} className="sidebar-hint-icon" />
+                    <div className={styles['sidebar-hint']}>
+                        <LogIn size={20} className={styles['sidebar-hint-icon']} />
                         登录后可查看历史记录
                     </div>
                 ) : loading ? (
-                    <div className="sidebar-loading"><Spin size="small" /></div>
+                    <div className={styles['sidebar-loading']}><Spin size="small" /></div>
                 ) : sessions.length === 0 ? (
-                    <div className="sidebar-hint">
-                        <Inbox size={20} className="sidebar-hint-icon" />
+                    <div className={styles['sidebar-hint']}>
+                        <Inbox size={20} className={styles['sidebar-hint-icon']} />
                         暂无对话记录
                     </div>
                 ) : (
                     sessions.map((s) => (
                         <div
                             key={s.id}
-                            className={`session-item ${s.id === activeSessionId ? 'active' : ''}`}
+                            className={`${styles['session-item']} ${s.id === activeSessionId ? styles.active : ''}`}
                             data-testid="session-item"
                             onClick={() => onSelectSession(s)}
                         >
-                            <MessageSquare size={14} className="session-icon" />
-                            <div className="session-info">
-                                <div className="session-title">{s.title}</div>
-                                <div className="session-time">{formatTime(s.updated_at)}</div>
+                            <MessageSquare size={14} className={styles['session-icon']} />
+                            <div className={styles['session-info']}>
+                                <div className={styles['session-title']}>{s.title}</div>
+                                <div className={styles['session-time']}>{formatTime(s.updated_at)}</div>
                             </div>
                         </div>
                     ))

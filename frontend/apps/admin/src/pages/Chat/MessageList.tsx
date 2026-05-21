@@ -3,7 +3,7 @@ import { Input, Button, Spin, Avatar, Upload, message as antdMessage } from 'ant
 import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw } from 'lucide-react';
 import type { ChatMessage } from '../../types/chat';
 import { uploadCSVAPI } from '../../api/upload';
-import './MessageList.css';
+import styles from './MessageList.module.css';
 
 const { TextArea } = Input;
 
@@ -62,24 +62,24 @@ const MessageList: React.FC<MessageListProps> = ({
     const renderMessage = (msg: ChatMessage) => {
         const isUser = msg.role === 'user';
         return (
-            <div key={msg.id} className={`chat-message ${isUser ? 'user' : 'assistant'}`}>
+            <div key={msg.id} className={`${styles['chat-message']} ${isUser ? styles.user : styles.assistant}`}>
                 <Avatar
-                    className="chat-avatar"
+                    className={styles['chat-avatar']}
                     style={{ backgroundColor: isUser ? '#e8f4fd' : '#f0f5ff', flexShrink: 0 }}
                     icon={isUser ? <UserIcon size={18} color="#1677ff" /> : <Bot size={18} color="#722ed1" />}
                 />
-                <div className={`chat-bubble ${isUser ? 'user-bubble' : 'assistant-bubble'}`}>
+                <div className={`${styles['chat-bubble']} ${isUser ? styles['user-bubble'] : styles['assistant-bubble']}`}>
                     {msg.status === 'failed' ? (
                         <>
-                            <div className="error-content">
+                            <div className={styles['error-content']}>
                                 <AlertCircle size={14} />
                                 <span>{msg.content || '请求处理失败'}</span>
                             </div>
                             {!isUser && onRetryFailedMessage && (
-                                <div className="error-actions">
+                                <div className={styles['error-actions']}>
                                     <Button
                                         type="link"
-                                        className="retry-btn"
+                                        className={styles['retry-btn']}
                                         icon={<RotateCcw size={14} />}
                                         onClick={() => onRetryFailedMessage(msg.id)}
                                         disabled={isStreaming}
@@ -90,10 +90,10 @@ const MessageList: React.FC<MessageListProps> = ({
                             )}
                         </>
                     ) : (
-                        <div className="message-text">{msg.content}</div>
+                        <div className={styles['message-text']}>{msg.content}</div>
                     )}
                     {msg.latency_ms && (
-                        <div className="message-meta">{msg.latency_ms}ms</div>
+                        <div className={styles['message-meta']}>{msg.latency_ms}ms</div>
                     )}
                 </div>
             </div>
@@ -101,49 +101,49 @@ const MessageList: React.FC<MessageListProps> = ({
     };
 
     return (
-        <div className="message-list-container">
-            <div className="messages-scroll">
+        <div className={styles['message-list-container']}>
+            <div className={styles['messages-scroll']}>
                 {isLoading ? (
-                    <div className="messages-loading">
+                    <div className={styles['messages-loading']}>
                         <Spin size="large" />
-                        <span className="loading-label">加载历史消息...</span>
+                        <span className={styles['loading-label']}>加载历史消息...</span>
                     </div>
                 ) : messages.length === 0 && !isStreaming ? (
-                    <div className="messages-empty">
-                        <div className="empty-hint">
-                            <Bot size={40} className="empty-hint-icon" />
+                    <div className={styles['messages-empty']}>
+                        <div className={styles['empty-hint']}>
+                            <Bot size={40} className={styles['empty-hint-icon']} />
                             <h3>开始你的对话</h3>
                             <p>在下方输入框中输入你的问题</p>
-                            <p className="empty-sub-prompt">支持文字对话与文件上传</p>
+                            <p className={styles['empty-sub-prompt']}>支持文字对话与文件上传</p>
                         </div>
                     </div>
                 ) : (
                     <>
                         {messages.map(renderMessage)}
                         {isStreaming && streamingText && (
-                            <div className="chat-message assistant">
+                            <div className={`${styles['chat-message']} ${styles.assistant}`}>
                                 <Avatar
-                                    className="chat-avatar"
+                                    className={styles['chat-avatar']}
                                     style={{ backgroundColor: '#f0f5ff', flexShrink: 0 }}
                                     icon={<Bot size={18} color="#722ed1" />}
                                 />
-                                <div className="chat-bubble assistant-bubble">
-                                    <div className="message-text">
+                                <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
+                                    <div className={styles['message-text']}>
                                         {streamingText}
-                                        <span className="cursor-blink">|</span>
+                                        <span className={styles['cursor-blink']}>|</span>
                                     </div>
                                 </div>
                             </div>
                         )}
                         {isStreaming && !streamingText && (
-                            <div className="chat-message assistant">
+                            <div className={`${styles['chat-message']} ${styles.assistant}`}>
                                 <Avatar
-                                    className="chat-avatar"
+                                    className={styles['chat-avatar']}
                                     style={{ backgroundColor: '#f0f5ff', flexShrink: 0 }}
                                     icon={<Bot size={18} color="#722ed1" />}
                                 />
-                                <div className="chat-bubble assistant-bubble">
-                                    <div className="thinking-dots">
+                                <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
+                                    <div className={styles['thinking-dots']}>
                                         <span></span><span></span><span></span>
                                     </div>
                                 </div>
@@ -154,8 +154,8 @@ const MessageList: React.FC<MessageListProps> = ({
                 <div ref={messagesEndRef} />
             </div>
 
-            <div className="input-area">
-                <div className={`input-row ${isStreaming ? 'input-disabled' : ''}`}>
+            <div className={styles['input-area']}>
+                <div className={`${styles['input-row']} ${isStreaming ? styles['input-disabled'] : ''}`}>
                     <Upload
                         showUploadList={false}
                         beforeUpload={handleUpload}
@@ -163,7 +163,7 @@ const MessageList: React.FC<MessageListProps> = ({
                         disabled={isStreaming}
                     >
                         <Button
-                            className="upload-btn"
+                            className={styles['upload-btn']}
                             icon={<Paperclip size={18} />}
                             type="text"
                             title="上传文件"
@@ -171,7 +171,7 @@ const MessageList: React.FC<MessageListProps> = ({
                         />
                     </Upload>
                     <TextArea
-                        className="chat-input"
+                        className={styles['chat-input']}
                         data-testid="chat-input"
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
@@ -181,7 +181,7 @@ const MessageList: React.FC<MessageListProps> = ({
                         disabled={isStreaming}
                     />
                     <Button
-                        className="send-btn"
+                        className={styles['send-btn']}
                         type="primary"
                         data-testid="send-btn"
                         icon={<Send size={18} />}

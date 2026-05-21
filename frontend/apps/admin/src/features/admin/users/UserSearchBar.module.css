@@ -5,12 +5,12 @@
     flex-wrap: wrap;
 }
 
-.user-search-bar .ant-input-search {
+.user-search-bar :global(.ant-input-search) {
     width: 280px;
 }
 
 @media (max-width: 768px) {
-    .user-search-bar .ant-input-search {
+    .user-search-bar :global(.ant-input-search) {
         width: 100%;
     }
 }
