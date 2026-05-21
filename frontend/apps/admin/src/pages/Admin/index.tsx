@@ -25,7 +25,7 @@ const AdminDashboard: React.FC = () => {
                         type="text"
                         icon={<ArrowLeft size={18} />}
                         onClick={() => navigate('/')}
-                        style={{ color: '#fff', marginRight: 12 }}
+                        className="back-btn"
                     />
                     <Shield size={22} color="#1677ff" />
                     <span className="header-title">管理后台</span>

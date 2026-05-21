@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Input, Button, Spin, Empty, Avatar, Upload, message as antdMessage } from 'antd';
+import { Input, Button, Spin, Avatar, Upload, message as antdMessage } from 'antd';
 import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw } from 'lucide-react';
 import type { ChatMessage } from '../../types/chat';
 import { uploadCSVAPI } from '../../api/upload';
@@ -106,20 +106,16 @@ const MessageList: React.FC<MessageListProps> = ({
                 {isLoading ? (
                     <div className="messages-loading">
                         <Spin size="large" />
-                        <p>加载历史消息...</p>
+                        <span className="loading-label">加载历史消息...</span>
                     </div>
                 ) : messages.length === 0 && !isStreaming ? (
                     <div className="messages-empty">
-                        <Empty
-                            image={Empty.PRESENTED_IMAGE_SIMPLE}
-                            description={
-                                <div className="empty-hint">
-                                    <Bot size={48} color="#d9d9d9" />
-                                    <h3>开始你的对话</h3>
-                                    <p>在下方输入框中输入你的问题</p>
-                                </div>
-                            }
-                        />
+                        <div className="empty-hint">
+                            <Bot size={40} className="empty-hint-icon" />
+                            <h3>开始你的对话</h3>
+                            <p>在下方输入框中输入你的问题</p>
+                            <p className="empty-sub-prompt">支持文字对话与文件上传</p>
+                        </div>
                     </div>
                 ) : (
                     <>
@@ -159,17 +155,19 @@ const MessageList: React.FC<MessageListProps> = ({
             </div>
 
             <div className="input-area">
-                <div className="input-row">
+                <div className={`input-row ${isStreaming ? 'input-disabled' : ''}`}>
                     <Upload
                         showUploadList={false}
                         beforeUpload={handleUpload}
                         accept=".csv,.xlsx,.xls"
+                        disabled={isStreaming}
                     >
                         <Button
                             className="upload-btn"
                             icon={<Paperclip size={18} />}
                             type="text"
                             title="上传文件"
+                            disabled={isStreaming}
                         />
                     </Upload>
                     <TextArea

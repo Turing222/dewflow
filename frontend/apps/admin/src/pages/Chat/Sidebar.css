@@ -24,7 +24,7 @@
 
 .new-chat-btn {
     flex: 1;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     height: 38px !important;
     font-weight: 500;
 }
@@ -59,7 +59,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 20px;
+    padding: 6px 20px;
     font-size: 12px;
     color: #999;
     text-transform: uppercase;
@@ -77,8 +77,8 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    padding: 10px 12px;
-    border-radius: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.15s ease;
     margin-bottom: 2px;
@@ -126,12 +126,17 @@
 .sidebar-loading {
     display: flex;
     justify-content: center;
-    padding: 24px;
+    padding: 32px 24px;
 }
 
 .sidebar-hint {
-    padding: 24px 16px;
+    padding: 32px 16px;
     text-align: center;
     font-size: 13px;
-    color: #bbb;
+    color: #999;
+}
+
+.sidebar-hint-icon {
+    color: #d9d9d9;
+    margin-bottom: 6px;
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Spin, Tooltip } from 'antd';
-import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, LogIn } from 'lucide-react';
 import type { ChatSession } from '../../types/chat';
 import { useChatSessionsQuery } from '../../query/hooks/chat';
 import { useAuth } from '../../context/useAuth';
@@ -83,11 +83,17 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             <div className="session-list">
                 {!isAuthenticated ? (
-                    <div className="sidebar-hint">登录后可查看历史记录</div>
+                    <div className="sidebar-hint">
+                        <LogIn size={20} className="sidebar-hint-icon" />
+                        登录后可查看历史记录
+                    </div>
                 ) : loading ? (
                     <div className="sidebar-loading"><Spin size="small" /></div>
                 ) : sessions.length === 0 ? (
-                    <div className="sidebar-hint">暂无对话记录</div>
+                    <div className="sidebar-hint">
+                        <Inbox size={20} className="sidebar-hint-icon" />
+                        暂无对话记录
+                    </div>
                 ) : (
                     sessions.map((s) => (
                         <div

@@ -1,8 +1,11 @@
 import React from 'react';
 import { Avatar, Button, Popconfirm, Space, Table, Tag, Tooltip } from 'antd';
 import type { TableColumnsType } from 'antd';
-import { Edit, Trash2 } from 'lucide-react';
-import type { User } from '../../../types/user';type UserTableProps = {
+import { Edit, Trash2, Search } from 'lucide-react';
+import type { User } from '../../../types/user';
+import './UserTable.css';
+
+type UserTableProps = {
     users: User[];
     loading: boolean;
     onEdit: (record: User) => void;
@@ -16,8 +19,8 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             dataIndex: 'username',
             key: 'username',
             render: (text: string) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Avatar style={{ background: 'linear-gradient(135deg, #1677ff, #722ed1)' }} size={32}>
+                <div className="user-cell">
+                    <Avatar className="user-cell-avatar" size={32}>
                         {text?.[0]?.toUpperCase()}
                     </Avatar>
                     <span>{text}</span>
@@ -52,29 +55,21 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
                 const used = record.used_tokens || 0;
                 const max = record.max_tokens || 0;
                 const percent = max > 0 ? Math.min(100, (used / max) * 100) : 0;
-                let color = 'blue';
-                if (percent > 90) color = 'red';
-                else if (percent > 70) color = 'orange';
+                let level = 'low';
+                if (percent > 90) level = 'high';
+                else if (percent > 70) level = 'mid';
 
                 return (
-                    <div style={{ width: 150 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                    <div className="token-cell">
+                        <div className="token-cell-header">
                             <span>{used} / {max}</span>
                             <span>{Math.round(percent)}%</span>
                         </div>
-                        <div style={{
-                            height: 6,
-                            background: '#f0f0f0',
-                            borderRadius: 3,
-                            overflow: 'hidden'
-                        }}>
-                            <div style={{
-                                width: `${percent}%`,
-                                height: '100%',
-                                background: color === 'red' ? '#ff4d4f' : color === 'orange' ? '#faad14' : '#1677ff',
-                                borderRadius: 3,
-                                transition: 'all 0.3s'
-                            }} />
+                        <div className="token-cell-track">
+                            <div
+                                className={`token-cell-fill level-${level}`}
+                                style={{ width: `${percent}%` }}
+                            />
                         </div>
                     </div>
                 );
@@ -111,7 +106,14 @@ const UserTable: React.FC<UserTableProps> = ({ users, loading, onEdit, onDeactiv
             rowKey="id"
             loading={loading}
             pagination={false}
-            locale={{ emptyText: '搜索用户以查看结果' }}
+            locale={{
+                emptyText: (
+                    <div className="user-table-empty">
+                        <Search size={32} className="user-table-empty-icon" />
+                        <div className="user-table-empty-text">搜索用户以查看结果</div>
+                    </div>
+                ),
+            }}
         />
     );
 };

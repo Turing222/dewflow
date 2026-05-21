@@ -1,0 +1,16 @@
+.user-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.user-search-bar .ant-input-search {
+    width: 280px;
+}
+
+@media (max-width: 768px) {
+    .user-search-bar .ant-input-search {
+        width: 100%;
+    }
+}

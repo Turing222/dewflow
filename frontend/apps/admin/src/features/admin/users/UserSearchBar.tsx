@@ -1,7 +1,8 @@
 import React from 'react';
-import { Button, Input, Space, Upload } from 'antd';
+import { Button, Input, Upload } from 'antd';
 import { Search, UserPlus, Upload as UploadIcon } from 'lucide-react';
 import type { UploadProps } from 'antd';
+import './UserSearchBar.css';
 
 type UserSearchBarProps = {
     searchValue: string;
@@ -25,14 +26,13 @@ const UserSearchBar: React.FC<UserSearchBarProps> = ({
     };
 
     return (
-        <Space>
+        <div className="user-search-bar">
             <Input.Search
                 placeholder="搜索用户名或邮箱"
                 value={searchValue}
                 onChange={(e) => onSearchValueChange(e.target.value)}
                 onSearch={onSearch}
                 enterButton={<Search size={14} />}
-                style={{ width: 280 }}
                 allowClear
             />
             <Button
@@ -45,7 +45,7 @@ const UserSearchBar: React.FC<UserSearchBarProps> = ({
             <Upload {...uploadProps}>
                 <Button icon={<UploadIcon size={14} />}>批量导入</Button>
             </Upload>
-        </Space>
+        </div>
     );
 };
 
