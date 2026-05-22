@@ -18,8 +18,8 @@ test.describe('Real backend: login + profile', () => {
 
     await expect(page.locator('.avatar-badge:not(.guest)')).toBeVisible();
 
-    await expect(
-      page.locator('.sidebar-hint').or(page.getByTestId('session-item')),
-    ).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.sidebar-hint, [data-testid="session-item"]').first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 });

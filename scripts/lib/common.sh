@@ -146,6 +146,8 @@ ensure_smoke_required_secrets() {
     ensure_smoke_secret_file "SMOKE_GEMINI_API_KEY_FILE" "./secrets/smoke/gemini_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GOOGLE_API_KEY_FILE" "./secrets/smoke/google_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_FILE" "./secrets/smoke/deepseek_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_BIFROST_API_KEY_FILE" "./secrets/smoke/bifrost_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_BIFROST_ENCRYPTION_KEY_FILE" "./secrets/smoke/bifrost_encryption_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_LLM_API_KEY_FILE" "./secrets/smoke/llm_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_RAG_EMBED_API_KEY_FILE" "./secrets/smoke/rag_embed_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_LANGFUSE_PUBLIC_KEY_FILE" "./secrets/smoke/langfuse_public_key.txt" "empty"
@@ -181,7 +183,19 @@ compose_smoke() {
     local smoke_env_path
     smoke_env_path="$(resolve_project_path "$SMOKE_ENV_FILE")"
     require_smoke_env_file
-    SMOKE_ENV_FILE="$smoke_env_path" docker compose --env-file "$smoke_env_path" -f "$SMOKE_COMPOSE_FILE" "$@"
+    local profile_args=()
+    local subcmd="${1:-}"
+    # For down, always include bifrost profile to ensure orphan cleanup.
+    if [[ "$subcmd" == "down" ]]; then
+        profile_args=(--profile bifrost)
+    elif [[ -f "$smoke_env_path" ]]; then
+        local llm_provider
+        llm_provider="$(sed -n 's/^LLM_PROVIDER=//p' "$smoke_env_path" 2>/dev/null | head -1)" || true
+        if [[ "${llm_provider%%/*}" == "bifrost" ]]; then
+            profile_args=(--profile bifrost)
+        fi
+    fi
+    SMOKE_ENV_FILE="$smoke_env_path" docker compose --env-file "$smoke_env_path" -f "$SMOKE_COMPOSE_FILE" "${profile_args[@]}" "$@"
 }
 
 print_smoke_logs() {

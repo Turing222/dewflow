@@ -22,6 +22,16 @@ profiles:
       - openai-compatible
       - external-api
 
+  bifrost:
+    provider: openai-compatible
+    model: deepseek/deepseek-chat
+    base_url: http://bifrost:8080/v1  # Docker network only
+    api_key_envs:
+      - BIFROST_API_KEY
+    aliases:
+      - bifrost
+      - llm-gateway
+      - ai-gateway
 
   deepseek_v4_flash:
     provider: deepseek

@@ -46,6 +46,11 @@ write_secret_for_provider() {
     local secret_path
     local secret_dir
 
+    if [[ "$provider" == "bifrost_encryption" ]]; then
+        secret_file_var="SMOKE_BIFROST_ENCRYPTION_KEY_FILE"
+        default_path="./secrets/smoke/bifrost_encryption_key.txt"
+    fi
+
     secret_path="$(smoke_env_value "$secret_file_var" "$default_path")"
     secret_path="$(resolve_project_path "$secret_path")"
     secret_dir="$(dirname "$secret_path")"
@@ -86,9 +91,28 @@ else
             exit 1
         fi
     fi
+    if [[ "$PROVIDER" == "bifrost" && "$KEY" != sk-bf-* ]]; then
+        log_error "Bifrost virtual keys must start with 'sk-bf-'."
+        exit 1
+    fi
 
     write_secret_for_provider "$PROVIDER" "$KEY"
     update_env_smoke "LLM_PROVIDER" "$PROVIDER"
+
+    if [[ "$PROVIDER" == "bifrost" ]]; then
+        BIFROST_ENC_KEY=""
+        if [[ ! -t 0 ]]; then
+            read -r BIFROST_ENC_KEY || true
+        else
+            read -rsp "Enter Bifrost Encryption Key: " BIFROST_ENC_KEY || true
+            echo ""
+        fi
+        if [[ -n "$BIFROST_ENC_KEY" ]]; then
+            write_secret_for_provider "bifrost_encryption" "$BIFROST_ENC_KEY"
+        else
+            log_warn "BIFROST_ENCRYPTION_KEY not set. Bifrost may fail to start."
+        fi
+    fi
 fi
 
 # --- Embed Provider ---

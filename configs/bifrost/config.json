@@ -1,0 +1,74 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "client": {
+    "drop_excess_requests": false,
+    "enable_logging": true,
+    "disable_content_logging": true,
+    "allow_per_request_content_storage_override": false,
+    "allow_per_request_raw_override": false,
+    "enforce_auth_on_inference": true,
+    "log_retention_days": 30
+  },
+  "providers": {
+    "deepseek": {
+      "keys": [
+        {
+          "name": "deepseek-primary",
+          "value": "env.DEEPSEEK_API_KEY",
+          "models": [
+            "deepseek-chat"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "https://api.deepseek.com",
+        "default_request_timeout_in_seconds": 120,
+        "max_retries": 1,
+        "stream_idle_timeout_in_seconds": 60
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "chat_completion": true,
+          "chat_completion_stream": true
+        }
+      }
+    }
+  },
+  "governance": {
+    "auth_config": {
+      "is_enabled": false,
+      "disable_auth_on_inference": true
+    },
+    "virtual_keys": [
+      {
+        "id": "vk-dewflow-platform",
+        "name": "dewflow-platform",
+        "value": "env.BIFROST_API_KEY",
+        "description": "Dewflow platform gateway key for backend chat traffic.",
+        "is_active": true,
+        "provider_configs": [
+          {
+            "provider": "deepseek",
+            "allowed_models": [
+              "deepseek-chat"
+            ],
+            "key_ids": [
+              "*"
+            ],
+            "weight": 1
+          }
+        ]
+      }
+    ]
+  },
+  "config_store": {
+    "enabled": true,
+    "type": "sqlite",
+    "config": {
+      "path": "./config.db"
+    }
+  }
+}

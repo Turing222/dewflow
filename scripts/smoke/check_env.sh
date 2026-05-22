@@ -33,6 +33,14 @@ if [[ "${LLM_PROVIDER:-mock}" != "mock" ]]; then
     # We only care about the base provider name.
     base_provider="${LLM_PROVIDER%%/*}"
     check_provider_secret "$base_provider"
+
+    if [[ "$base_provider" == "bifrost" ]]; then
+        enc_secret_path="$(resolve_project_path "$(smoke_env_value "SMOKE_BIFROST_ENCRYPTION_KEY_FILE" "./secrets/smoke/bifrost_encryption_key.txt")")"
+        if [[ ! -s "$enc_secret_path" ]]; then
+            log_warn "LLM_PROVIDER is 'bifrost' but BIFROST_ENCRYPTION_KEY secret file is empty or missing: $enc_secret_path"
+            log_warn "Bifrost may fail to start. Run: make set-llm PROVIDER=bifrost"
+        fi
+    fi
 fi
 
 # 2. Check RAG_EMBED_PROVIDER

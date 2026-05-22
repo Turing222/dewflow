@@ -42,6 +42,10 @@ def test_load_llm_model_config_resolves_aliases() -> None:
 
     assert config.resolve_profile("mock").provider == "mock"
     assert config.resolve_profile("openai-compatible").provider == "openai-compatible"
+    assert config.resolve_profile("bifrost").resolve_base_url() == (
+        "http://bifrost:8080/v1"
+    )
+    assert config.resolve_profile("bifrost").model == "deepseek/deepseek-chat"
     assert config.resolve_profile("gemini").model == "gemini-2.5-flash"
     assert [profile.model for profile in config.resolve_route("auto")] == [
         "deepseek-v4-flash",
@@ -127,6 +131,26 @@ def test_validate_llm_configs_accepts_provider_specific_key(
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
 
     validate_llm_configs()
+
+
+def test_validate_llm_configs_accepts_bifrost_gateway_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backend.config.settings.settings.LLM_PROVIDER", "bifrost")
+    monkeypatch.setenv("BIFROST_API_KEY", "sk-bf-test")
+
+    validate_llm_configs()
+
+
+def test_validate_llm_configs_reports_missing_bifrost_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backend.config.settings.settings.LLM_PROVIDER", "bifrost")
+    monkeypatch.setattr("backend.config.settings.settings.BIFROST_API_KEY", None)
+    monkeypatch.delenv("BIFROST_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="BIFROST_API_KEY"):
+        validate_llm_configs()
 
 
 def test_validate_llm_configs_reports_profile_key_envs(

@@ -46,6 +46,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
 	env-debug-up env-debug-down env-debug-logs env-debug-services \
 	set-llm seed-dev \
+	pr-report \
 	verify-smoke \
 	flow-static flow-runtime flow-dev-check flow-ci layer-deps \
 	lint format typecheck test check clean-cache
@@ -97,6 +98,7 @@ help:
 		'  env-debug-services   List services enabled by the debug compose stack' \
 		'  set-llm              Set API key securely (Usage: make set-llm PROVIDER=gemini [EMBED_PROVIDER=google])' \
 		'  seed-dev             Seed fixed local data for admin/permission testing' \
+		'  pr-report            Generate a local PR readiness Markdown report' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
 		'  env-smoke-down       Stop the smoke environment' \
 		'  env-smoke-logs       Show recent smoke logs' \
@@ -228,6 +230,9 @@ set-llm:
 
 seed-dev:
 	uv run python scripts/seed/dev_seed.py $(ARGS)
+
+pr-report:
+	uv run python scripts/qa/pr_report.py $(ARGS)
 
 env-smoke-down:
 	bash scripts/smoke/down.sh

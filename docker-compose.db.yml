@@ -13,6 +13,8 @@ x-app-secrets: &app-secrets
   - GEMINI_API_KEY
   - GOOGLE_API_KEY
   - DEEPSEEK_API_KEY
+  - BIFROST_API_KEY
+  - BIFROST_ENCRYPTION_KEY
   - LLM_API_KEY
   - RAG_EMBED_API_KEY
   - LANGFUSE_PUBLIC_KEY
@@ -29,6 +31,8 @@ x-secret-file-env: &secret-file-env
   GEMINI_API_KEY_FILE: /run/secrets/GEMINI_API_KEY
   GOOGLE_API_KEY_FILE: /run/secrets/GOOGLE_API_KEY
   DEEPSEEK_API_KEY_FILE: /run/secrets/DEEPSEEK_API_KEY
+  BIFROST_API_KEY_FILE: /run/secrets/BIFROST_API_KEY
+  BIFROST_ENCRYPTION_KEY_FILE: /run/secrets/BIFROST_ENCRYPTION_KEY
   LLM_API_KEY_FILE: /run/secrets/LLM_API_KEY
   RAG_EMBED_API_KEY_FILE: /run/secrets/RAG_EMBED_API_KEY
   LANGFUSE_PUBLIC_KEY_FILE: /run/secrets/LANGFUSE_PUBLIC_KEY
@@ -56,7 +60,7 @@ x-infra-env: &infra-env
 x-feature-env:
   # ── LLM / Embedding ────────────────────────────────────────
   &feature-env
-  LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+  LLM_PROVIDER: ${LLM_PROVIDER:-bifrost}
   RAG_EMBED_PROVIDER: ${RAG_EMBED_PROVIDER:-dashscope}
   RAG_EMBED_BATCH_SIZE: ${RAG_EMBED_BATCH_SIZE:-10}
   # ── RAG Retrieval ──────────────────────────────────────────
@@ -201,6 +205,41 @@ services:
     command: >
       sh -c "mkdir -p /data/knowledge_files && chown -R ${CURRENT_UID:-1000}:${CURRENT_GID:-1000} /data/knowledge_files"
     restart: "no"
+
+  bifrost:
+    image: maximhq/bifrost:v1.4.11
+    profiles: ["bifrost"]
+    logging: *default-logging
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+      LOG_LEVEL: ${BIFROST_LOG_LEVEL:-info}
+      LOG_STYLE: json
+    secrets:
+      - BIFROST_API_KEY
+      - BIFROST_ENCRYPTION_KEY
+      - DEEPSEEK_API_KEY
+    volumes:
+      - bifrost_data:/app/data
+      - ./configs/bifrost/config.json:/app/data/config.json:ro
+    entrypoint:
+      - sh
+      - -c
+      - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
+    ports:
+      - "${BIFROST_PORT:-18080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --header=\"x-bf-vk: $$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" http://localhost:8080/v1/models >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
 
   api:
     image: dewflow-backend:2.0.0-web
@@ -481,6 +520,8 @@ volumes:
     name: loki_data_db
   minio_data:
     name: minio_data
+  bifrost_data:
+    name: bifrost_data
 
 secrets:
   SECRET_KEY:
@@ -499,6 +540,10 @@ secrets:
     file: ${SMOKE_GOOGLE_API_KEY_FILE:-./secrets/smoke/google_api_key.txt}
   DEEPSEEK_API_KEY:
     file: ${SMOKE_DEEPSEEK_API_KEY_FILE:-./secrets/smoke/deepseek_api_key.txt}
+  BIFROST_API_KEY:
+    file: ${SMOKE_BIFROST_API_KEY_FILE:-./secrets/smoke/bifrost_api_key.txt}
+  BIFROST_ENCRYPTION_KEY:
+    file: ${SMOKE_BIFROST_ENCRYPTION_KEY_FILE:-./secrets/smoke/bifrost_encryption_key.txt}
   LLM_API_KEY:
     file: ${SMOKE_LLM_API_KEY_FILE:-./secrets/smoke/llm_api_key.txt}
   RAG_EMBED_API_KEY:

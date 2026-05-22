@@ -88,6 +88,7 @@ class AISettings(BaseSettings):
     GOOGLE_API_KEY: str | None = None
     DEEPSEEK_API_KEY: str | None = None
     DASHSCOPE_API_KEY: str | None = None
+    BIFROST_API_KEY: str | None = None
     # ── LLM Provider Config ───────────────────────────────────────
     LLM_PROVIDER: str = "mock"
     LLM_BASE_URL: str = "https://api.deepseek.com"

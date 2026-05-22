@@ -16,18 +16,22 @@ test.describe('Real backend: minimal chat chain', () => {
     await page.locator('.auth-modal').locator('button[type="submit"]').click();
     await expect(page.locator('.avatar-badge:not(.guest)')).toBeVisible();
 
+    const assistantMessages = page.locator('.chat-message.assistant .message-text');
+    const previousAssistantCount = await assistantMessages.count();
+
     await page.getByTestId('chat-input').fill('你好');
     await page.getByTestId('send-btn').click();
 
-    await expect(
-      page.locator('.thinking-dots').or(page.locator('.cursor-blink')),
-    ).toBeVisible({ timeout: 15000 });
-
-    await expect(page.locator('.chat-message.assistant .message-text')).toBeVisible({
+    await expect(assistantMessages.nth(previousAssistantCount)).toBeVisible({
       timeout: 30000,
     });
 
-    const responseText = await page.locator('.chat-message.assistant .message-text').textContent();
+    await expect.poll(
+      async () => (await assistantMessages.nth(previousAssistantCount).textContent())?.trim().length ?? 0,
+      { timeout: 30000 },
+    ).toBeGreaterThan(0);
+
+    const responseText = await assistantMessages.nth(previousAssistantCount).textContent();
     expect(responseText!.length).toBeGreaterThan(0);
   });
 });
