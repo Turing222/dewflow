@@ -48,7 +48,8 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 	set-llm seed-dev \
 	pr-report \
 	verify-smoke \
-	flow-static flow-runtime flow-dev-check flow-ci layer-deps \
+	flow-static flow-runtime flow-dev-check \
+	flow-fast flow-local flow-ci \
 	lint format typecheck test check clean-cache
 
 help:
@@ -105,7 +106,9 @@ help:
 		'  flow-static          Run L1 static checks and deterministic tests' \
 		'  flow-runtime         Run runtime checks (build+smoke up+smoke tests+smoke down)' \
 		'  flow-dev-check       Run the full dev verification flow (static + runtime)' \
-		'  flow-ci              Alias for the dev verification flow'
+		'  flow-fast            Quick feedback: backend static + unit + component; frontend check' \
+		'  flow-local           Full local verify: flow-fast + integration (with .env.smoke) + e2e-mock' \
+		'  flow-ci              PR gate baseline: flow-fast + integration (CI env) + e2e-mock'
 
 qa-lint:
 	uv run ruff check .
@@ -274,7 +277,25 @@ flow-dev-check:
 	$(MAKE) flow-static
 	$(MAKE) flow-runtime
 
-flow-ci: flow-dev-check
+# Automated test flows
+# flow-fast:  no external services needed, ~2min
+flow-fast:
+	$(MAKE) qa-lint
+	$(MAKE) qa-format-check
+	$(MAKE) qa-typecheck
+	$(MAKE) qa-test-unit
+	$(MAKE) qa-test-component
+	$(MAKE) frontend-check
+
+# flow-local: requires Docker smoke stack running (make env-smoke-up)
+flow-local: flow-fast
+	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "not performance" $(PYTEST_ARGS)
+	$(MAKE) frontend-e2e-mock
+
+# flow-ci: PR gate baseline; Docker smoke/full-stack coverage lives in smoke-ci.
+flow-ci: flow-fast
+	DEWFLOW_TEST_PROFILE=ci uv run pytest -m "not performance and not local_only and not requires_llm and not requires_s3" $(PYTEST_ARGS)
+	$(MAKE) frontend-e2e-mock
 
 lint: qa-lint
 

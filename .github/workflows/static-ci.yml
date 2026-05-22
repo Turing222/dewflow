@@ -1,0 +1,107 @@
+name: Static CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-static:
+    name: Backend static
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Cache Python virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock') }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
+
+      - name: Sync Python dependencies
+        run: uv sync --frozen --dev --all-extras
+
+      - name: Lint
+        run: make qa-lint
+
+      - name: Format check
+        run: make qa-format-check
+
+      - name: Typecheck
+        run: make qa-typecheck
+
+      - name: Boundaries
+        run: make qa-boundaries
+
+      - name: Test markers
+        run: make qa-test-markers
+
+      - name: Alembic check
+        run: make qa-alembic-check
+
+      - name: Unit tests
+        run: make qa-test-unit
+
+      - name: Component tests
+        run: make qa-test-component
+
+  frontend-static:
+    name: Frontend static
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --dir frontend --filter admin exec playwright install --with-deps chromium
+
+      - name: Lint
+        run: make frontend-lint
+
+      - name: Typecheck
+        run: make frontend-typecheck
+
+      - name: Unit tests
+        run: make frontend-test
+
+      - name: Build
+        run: make frontend-build
+
+      - name: E2E mock tests
+        run: make frontend-e2e-mock

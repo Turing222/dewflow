@@ -1,0 +1,107 @@
+name: PR Gate CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # This job runs PR-only baseline coverage that Static CI skips:
+  # backend integration (requires PG + Redis) and frontend e2e-mock.
+  # Docker smoke/full-stack coverage lives in Smoke CI.
+  pr-gate:
+    name: PR gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dewflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dewflow_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      APP_ENV: test
+      SECRET_KEY: ci-test-secret
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dewflow_test
+      REDIS_URL: redis://localhost:6379/0
+      TASKIQ_REDIS_URL: redis://localhost:6379/1
+      DEWFLOW_TEST_PROFILE: ci
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dewflow_test
+      TEST_REDIS_URL: redis://localhost:6379/0
+      TEST_TASKIQ_REDIS_URL: redis://localhost:6379/1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # Backend integration
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Cache Python virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock') }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
+
+      - name: Sync Python dependencies
+        run: uv sync --frozen --dev --all-extras
+
+      - name: Run backend integration tests
+        run: make qa-test-integration
+
+      - name: Run backend CI test suite
+        run: DEWFLOW_TEST_PROFILE=ci uv run pytest -m "not performance and not local_only and not requires_llm and not requires_s3"
+
+      # Frontend mock e2e
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --dir frontend --filter admin exec playwright install --with-deps chromium
+
+      - name: Run frontend e2e-mock
+        run: make frontend-e2e-mock
