@@ -5,6 +5,10 @@ export const API_URLS = {
         LOGIN: `${API_PREFIX}/auth/login`,
         REGISTER: `${API_PREFIX}/auth/register`,
         REFRESH_TOKEN: `${API_PREFIX}/auth/refresh`,
+        SMS_SEND: `${API_PREFIX}/auth/sms/send`,
+        SMS_LOGIN: `${API_PREFIX}/auth/sms/login`,
+        GOOGLE_URL: `${API_PREFIX}/auth/google/url`,
+        GOOGLE_CALLBACK: `${API_PREFIX}/auth/google/callback`,
     },
     USER: {
         PROFILE: `${API_PREFIX}/users/profile`,

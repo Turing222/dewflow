@@ -131,6 +131,8 @@ services:
     image: redis:7.4-alpine
     secrets:
       - REDIS_PASSWORD
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     deploy:
       resources:
         limits:

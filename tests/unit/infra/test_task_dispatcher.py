@@ -184,6 +184,7 @@ async def test_task_name_constants_match_expected() -> None:
 def test_build_taskiq_message_is_loadable_by_worker_broker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pytest.importorskip("taskiq")
     monkeypatch.setenv("DEBUG", "false")
 
     from backend.infra.task_broker import broker

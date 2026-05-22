@@ -50,8 +50,6 @@ const defaultAuth: AuthReturn = {
     showAuthModal: false,
     setShowAuthModal: vi.fn(),
     refreshUser: vi.fn(),
-    authTab: 'login',
-    setAuthTab: vi.fn(),
 };
 
 function makeQueryResult(overrides: Partial<ChatSessionsReturn> = {}): ChatSessionsReturn {

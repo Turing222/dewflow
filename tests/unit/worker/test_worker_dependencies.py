@@ -7,12 +7,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.worker import dependencies
-from backend.worker.dependencies import WorkerContainer
+pytestmark = pytest.mark.requires_taskiq
 
 
 @pytest.fixture(autouse=True)
 def reset_worker_container() -> None:
+    from backend.worker import dependencies
+
     dependencies.set_worker_container(None)
     yield
     dependencies.set_worker_container(None)
@@ -54,6 +55,8 @@ class DummyContainer:
 
 @pytest.mark.asyncio
 async def test_worker_container_close_disposes_engine_and_clears_refs() -> None:
+    from backend.worker.dependencies import WorkerContainer
+
     container = WorkerContainer()
     engine = DummyEngine()
     llm_service = AsyncMock()
@@ -81,6 +84,8 @@ async def test_worker_container_close_disposes_engine_and_clears_refs() -> None:
 
 
 def test_wrapper_functions_delegate_to_container_return_services() -> None:
+    from backend.worker import dependencies
+
     container = DummyContainer()
     dependencies.set_worker_container(container)
 

@@ -5,11 +5,14 @@ from fastapi import Depends
 from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.uow import get_uow
 from backend.config.settings import settings
+from backend.config.web_settings import get_web_settings
 from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.services.google_oauth_service import GoogleOAuthService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.object_storage import ObjectStorage, create_object_storage
 from backend.services.permission_service import PermissionService
 from backend.services.session_query_service import SessionQueryService
+from backend.services.sms_service import SMSService
 from backend.services.task_service import TaskService
 from backend.services.user_import_service import UserImportService
 from backend.services.user_service import UserService
@@ -67,3 +70,20 @@ def get_workspace_service(
     permission_service: PermissionService = Depends(get_permission_service),
 ) -> WorkspaceService:
     return WorkspaceService(uow=uow, permission_service=permission_service)
+
+
+def get_sms_service() -> SMSService:
+    ws = get_web_settings()
+    return SMSService(
+        sms_code_expire_seconds=ws.SMS_CODE_EXPIRE_SECONDS,
+        sms_code_rate_limit_seconds=ws.SMS_CODE_RATE_LIMIT_SECONDS,
+        sms_mock_mode=ws.SMS_MOCK_MODE,
+    )
+
+
+def get_google_oauth_service() -> GoogleOAuthService:
+    ws = get_web_settings()
+    return GoogleOAuthService(
+        google_client_id=ws.GOOGLE_CLIENT_ID,
+        google_client_secret=ws.GOOGLE_CLIENT_SECRET,
+    )

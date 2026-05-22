@@ -9,6 +9,7 @@ import { queryClient } from './query/query-client';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/useAuth';
 import ChatPage from './pages/Chat';
+import GoogleCallbackPage from './pages/Auth/GoogleCallbackPage';
 import { useThemeStore } from './stores/theme-store';
 
 const LazyAdminDashboard = React.lazy(() => import('./pages/Admin'));
@@ -194,6 +195,9 @@ const App: React.FC = () => {
             <Routes>
               {/* 聊天页（不需要登录，弹窗登录） */}
               <Route path="/" element={<ChatPage />} />
+
+              {/* Google OAuth 回调 */}
+              <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
 
               {/* 管理员后台 */}
               <Route path="/admin" element={<AdminRouteGuard />} />

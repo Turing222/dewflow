@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.models.schemas.chat.payloads import LLMTaskPayload
+pytestmark = [pytest.mark.asyncio, pytest.mark.requires_taskiq]
 
 
 def _make_generation_payload() -> dict:
@@ -45,6 +45,7 @@ def _make_nonstream_positional_args() -> tuple:
 @pytest.mark.asyncio
 async def test_stream_task_unpacks_new_payload_dict() -> None:
     """New format: single LLMTaskPayload dict as args[0]."""
+    from backend.models.schemas.chat.payloads import LLMTaskPayload
     from backend.worker.tasks.llm_tasks import generate_llm_stream_task
 
     gen_payload = _make_generation_payload()
@@ -112,7 +113,7 @@ async def test_stream_task_unpacks_old_positional_args() -> None:
 @pytest.mark.asyncio
 async def test_nonstream_task_unpacks_new_payload_dict() -> None:
     """New format: single LLMTaskPayload dict as args[0]."""
-    from backend.models.schemas.chat.payloads import GenerationResult
+    from backend.models.schemas.chat.payloads import GenerationResult, LLMTaskPayload
     from backend.worker.tasks.llm_tasks import generate_llm_nonstream_task
 
     gen_payload = _make_generation_payload()

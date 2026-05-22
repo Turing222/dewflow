@@ -12,8 +12,6 @@ export interface AuthContextType {
     showAuthModal: boolean;
     setShowAuthModal: (show: boolean) => void;
     refreshUser: () => Promise<void>;
-    authTab: 'login' | 'register';
-    setAuthTab: (tab: 'login' | 'register') => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);

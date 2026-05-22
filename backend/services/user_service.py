@@ -6,6 +6,8 @@
 """
 
 import logging
+import random
+import string
 import uuid
 from collections.abc import Sequence
 from typing import Any
@@ -64,7 +66,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
             user_in.email,
         )
 
-        if await self.uow.user_repo.get_by_email(email=user_in.email):
+        if user_in.email and await self.uow.user_repo.get_by_email(email=user_in.email):
             raise app_validation_error(
                 "该邮箱已被注册", code="EMAIL_ALREADY_REGISTERED"
             )
@@ -74,12 +76,13 @@ class UserService(BaseService[AbstractUnitOfWork]):
                 code="USERNAME_ALREADY_REGISTERED",
             )
 
-        # 明文密码只在 service 内短暂停留，repository 只接收哈希后的入库字段。
+        hashed_pw = await get_password_hash(user_in.password) if user_in.password else None
         obj_in_data = UserCreateData(
             username=user_in.username,
-            email=str(user_in.email),
-            hashed_password=await get_password_hash(user_in.password),
+            email=str(user_in.email) if user_in.email else None,
+            hashed_password=hashed_pw,
             max_tokens=user_in.max_tokens,
+            phone=user_in.phone,
         )
 
         try:
@@ -129,7 +132,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
         """验证用户名和密码，失败时返回 None。"""
 
         user = await self.uow.user_repo.get_by_username(user_in.username)
-        if not user:
+        if not user or not user.hashed_password:
             return None
         if not await verify_password(user_in.password, user.hashed_password):
             return None
@@ -141,4 +144,81 @@ class UserService(BaseService[AbstractUnitOfWork]):
 
     async def delete(self, id: int) -> User | None:
         user = await self.uow.user_repo.remove(id=id)
+        return user
+
+    # ── 手机号 / Google OAuth 自动注册 ──────────────────────────
+
+    async def _generate_unique_username(self) -> str:
+        """生成不与现有用户冲突的 user_ 前缀用户名。"""
+        for _ in range(10):
+            suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+            username = f"user_{suffix}"
+            if not await self.uow.user_repo.get_by_username(username):
+                return username
+        msg = "无法生成唯一用户名"
+        raise RuntimeError(msg)
+
+    async def find_or_create_by_phone(self, phone: str) -> User:
+        """按手机号查找用户，不存在则自动注册。"""
+        user = await self.uow.user_repo.get_by_phone(phone)
+        if user:
+            return user
+
+        username = await self._generate_unique_username()
+        obj_in_data = UserCreateData(
+            username=username,
+            email=None,
+            hashed_password=None,
+            max_tokens=100000,
+            phone=phone,
+            auth_provider="phone",
+        )
+        # 并发竞态由 endpoint 层捕获 IntegrityError 并重试。
+        user = await self.uow.user_repo.create(obj_in=obj_in_data)
+
+        await self._create_personal_workspace_for_user(user)
+        return user
+
+    async def find_or_create_by_google(
+        self, google_sub: str, email: str | None, name: str | None
+    ) -> User:
+        """按 Google sub 查找用户，不存在则自动注册或关联已有邮箱账号。"""
+        # 1. 按 google_sub 查找
+        user = await self.uow.user_repo.get_by_google_sub(google_sub)
+        if user:
+            return user
+
+        # 2. 按 email 查找并关联（如果 email 已注册）
+        if email:
+            user = await self.uow.user_repo.get_by_email(email)
+            if user:
+                await self.link_google_account(user.id, google_sub)
+                return user
+
+        # 3. 自动创建新用户
+        username = await self._generate_unique_username()
+        obj_in_data = UserCreateData(
+            username=username,
+            email=email,
+            hashed_password=None,
+            max_tokens=100000,
+            auth_provider="google",
+            google_sub=google_sub,
+        )
+        # 并发竞态由 endpoint 层捕获 IntegrityError 并重试。
+        user = await self.uow.user_repo.create(obj_in=obj_in_data)
+
+        await self._create_personal_workspace_for_user(user)
+        return user
+
+    async def link_google_account(self, user_id: uuid.UUID, google_sub: str) -> User:
+        """将 Google 账号关联到已有用户。"""
+        user = await self.uow.user_repo.get(id=user_id)
+        if not user:
+            raise app_not_found("用户不存在", code="USER_NOT_FOUND")
+
+        auth_provider = user.auth_provider or "google"
+        await self.uow.user_repo.update(
+            db_obj=user, obj_in={"google_sub": google_sub, "auth_provider": auth_provider}
+        )
         return user

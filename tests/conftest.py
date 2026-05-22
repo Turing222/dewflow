@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from tests.helpers.env import REQUIRED_ENV_BY_MARKER, get_test_profile, optional_env
+from tests.helpers.env import REQUIRED_ENV_BY_MARKER, REQUIRED_PKG_BY_MARKER, get_test_profile, optional_env, pkgs_available_for_marker
 
 
 def pytest_configure() -> None:
@@ -38,11 +38,19 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         if marker_name in marker_names and optional_env(env_name) is None:
             pytest.skip(f"{marker_name} requires {env_name}")
 
+    for marker_name in REQUIRED_PKG_BY_MARKER:
+        if marker_name in marker_names and not pkgs_available_for_marker(marker_name):
+            pytest.skip(f"{marker_name} requires missing Python package(s)")
+
 
 @pytest.fixture(autouse=True)
 def stable_token_counter(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep token counting local and deterministic in tests."""
-    from backend.ai.core import token_counter
+    try:
+        from backend.ai.core import token_counter
+    except ImportError:
+        return
+        yield  # never reached; pragma: no cover
 
     token_counter._encoding_cache.clear()
     monkeypatch.setattr(token_counter, "_tiktoken_available", False)

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Dropdown, message as antdMessage, Tooltip } from 'antd';
-import { LogOut, LogIn, UserPlus, Shield } from 'lucide-react';
+import { LogOut, LogIn, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/useAuth';
@@ -12,7 +12,7 @@ import AuthModal from '../Auth/AuthModal';
 import styles from './ChatPage.module.css';
 
 const ChatPage: React.FC = () => {
-    const { user, isAuthenticated, logout, setShowAuthModal, setAuthTab } = useAuth();
+    const { user, isAuthenticated, logout, setShowAuthModal } = useAuth();
     const navigate = useNavigate();
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [tracePanelCollapsed, setTracePanelCollapsed] = useState(false);
@@ -28,7 +28,6 @@ const ChatPage: React.FC = () => {
         ]
         : [
             { key: 'login', label: t('chat.user_menu.login'), icon: <LogIn size={14} /> },
-            { key: 'register', label: t('chat.user_menu.register'), icon: <UserPlus size={14} /> },
         ];
 
     const handleMenuClick = ({ key }: { key: string }) => {
@@ -36,8 +35,7 @@ const ChatPage: React.FC = () => {
             logout();
             antdMessage.success(t('chat.user_menu.logout'));
         }
-        if (key === 'login') { setAuthTab('login'); setShowAuthModal(true); }
-        if (key === 'register') { setAuthTab('register'); setShowAuthModal(true); }
+        if (key === 'login') { setShowAuthModal(true); }
         if (key === 'admin') navigate('/admin');
     };
 

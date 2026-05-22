@@ -10,10 +10,8 @@ import { AuthContext } from './auth-context';
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const token = useAuthStore((s) => s.token);
     const showAuthModal = useAuthStore((s) => s.showAuthModal);
-    const authTab = useAuthStore((s) => s.authTab);
     const setToken = useAuthStore((s) => s.setToken);
     const setShowAuthModal = useAuthStore((s) => s.setShowAuthModal);
-    const setAuthTab = useAuthStore((s) => s.setAuthTab);
     const clearAuth = useAuthStore((s) => s.clearAuth);
 
     const { data: user, isLoading, refetch } = useMeQuery();
@@ -60,9 +58,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         showAuthModal,
         setShowAuthModal,
         refreshUser,
-        authTab,
-        setAuthTab,
-    }), [user, token, login, logout, isLoading, showAuthModal, setShowAuthModal, refreshUser, authTab, setAuthTab]);
+    }), [user, token, login, logout, isLoading, showAuthModal, setShowAuthModal, refreshUser]);
 
     return (
         <AuthContext.Provider value={contextValue}>

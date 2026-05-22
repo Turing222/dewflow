@@ -6,6 +6,8 @@ export const userSchema = z.object({
     id: z.union([z.string(), z.number()]),
     username: requiredString,
     email: z.email().optional(),
+    phone: z.string().optional(),
+    auth_provider: z.string().optional(),
     role: z.enum(['user', 'admin']).optional(),
     avatar: z.string().optional(),
     is_superuser: z.boolean().optional(),

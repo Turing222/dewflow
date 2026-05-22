@@ -598,6 +598,7 @@ ai = [
 ]
 web = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "python-multipart" },
@@ -630,6 +631,7 @@ requires-dist = [
     { name = "asyncpg", specifier = "~=0.31.0" },
     { name = "boto3", specifier = "~=1.42.0" },
     { name = "fastapi", marker = "extra == 'web'", specifier = "~=0.128.0" },
+    { name = "httpx", marker = "extra == 'web'", specifier = "~=0.28.0" },
     { name = "jieba", specifier = "~=0.42.1" },
     { name = "jinja2", marker = "extra == 'ai'", specifier = "~=3.1.0" },
     { name = "langfuse", specifier = "~=3.14.0" },

@@ -224,6 +224,7 @@ async def test_idempotency_replay_with_success_message_returns_cached_answer() -
         status=MessageStatus.SUCCESS,
         latency_ms=123,
         search_context={"hits": []},
+        message_metadata={},
         created_at=now,
         updated_at=now,
     )
