@@ -130,15 +130,33 @@ else
 fi
 
 # --- Embed Provider ---
+# Alias map: embed profile → base provider whose secret file is reused.
+# Add entries here when an embed profile shares a key with another provider.
+readonly EMBED_SECRET_ALIAS=(
+    "bifrost_embedding:bifrost"
+)
+
+_resolve_embed_secret_provider() {
+    local embed="$1" entry
+    for entry in "${EMBED_SECRET_ALIAS[@]}"; do
+        if [[ "${entry%%:*}" == "$embed" ]]; then
+            echo "${entry##*:}"
+            return
+        fi
+    done
+    echo "$embed"
+}
+
 if [[ -n "$EMBED_PROVIDER" ]]; then
     if [[ "$EMBED_PROVIDER" == "mock" ]]; then
         update_env_smoke "RAG_EMBED_PROVIDER" "mock"
     else
+        _secret_provider="$(_resolve_embed_secret_provider "$EMBED_PROVIDER")"
         EMBED_KEY=""
-        existing_embed_secret="$(secret_path_for_provider "$EMBED_PROVIDER")"
+        existing_embed_secret="$(secret_path_for_provider "$_secret_provider")"
         if [[ -f "$existing_embed_secret" && -s "$existing_embed_secret" ]]; then
             EMBED_KEY="$(cat "$existing_embed_secret")"
-            log_info "Using existing embed API key from $existing_embed_secret"
+            log_info "Using existing embed API key from $existing_embed_secret (alias: ${EMBED_PROVIDER} -> ${_secret_provider})"
         elif [[ ! -t 0 ]]; then
             if ! read -r EMBED_KEY; then
                 log_error "Failed to read embed API key from stdin."
@@ -157,7 +175,7 @@ if [[ -n "$EMBED_PROVIDER" ]]; then
             fi
         fi
 
-        write_secret_for_provider "$EMBED_PROVIDER" "$EMBED_KEY"
+        write_secret_for_provider "$_secret_provider" "$EMBED_KEY"
         update_env_smoke "RAG_EMBED_PROVIDER" "$EMBED_PROVIDER"
     fi
 fi

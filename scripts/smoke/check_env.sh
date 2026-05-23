@@ -46,18 +46,20 @@ fi
 # 2. Check RAG_EMBED_PROVIDER
 if [[ "${RAG_EMBED_PROVIDER:-mock}" != "mock" ]]; then
     embed_provider="${RAG_EMBED_PROVIDER}"
-    
-    # Map specific embedding models to their generic provider keys if needed
-    if [[ "$embed_provider" == "qwen3-embedding" ]]; then
-        embed_provider="dashscope"
-    elif [[ "$embed_provider" == "google" ]]; then
-        embed_provider="google"
-    elif [[ "$embed_provider" == "openai" ]]; then
-        embed_provider="openai"
-    elif [[ "$embed_provider" == "gemini" ]]; then
-        embed_provider="gemini"
-    fi
-    
+
+    # Alias map: embed profile → base provider whose secret file is reused.
+    # Keep in sync with EMBED_SECRET_ALIAS in set_llm.sh.
+    readonly CHECK_EMBED_SECRET_ALIAS=(
+        "bifrost_embedding:bifrost"
+        "qwen3-embedding:dashscope"
+    )
+    for entry in "${CHECK_EMBED_SECRET_ALIAS[@]}"; do
+        if [[ "${entry%%:*}" == "$embed_provider" ]]; then
+            embed_provider="${entry##*:}"
+            break
+        fi
+    done
+
     check_provider_secret "$embed_provider"
 fi
 
