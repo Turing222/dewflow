@@ -24,6 +24,10 @@ def make_account(*, balance: int = 1000) -> SimpleNamespace:
     return SimpleNamespace(id=uuid.uuid4(), user_id=uuid.uuid4(), balance=balance)
 
 
+def make_user(*, max_tokens: int = 100000, used_tokens: int = 0) -> SimpleNamespace:
+    return SimpleNamespace(id=uuid.uuid4(), max_tokens=max_tokens, used_tokens=used_tokens)
+
+
 def make_uow() -> SimpleNamespace:
     credit_repo = AsyncMock()
     credit_repo.get_account.return_value = None
@@ -37,12 +41,18 @@ def make_uow() -> SimpleNamespace:
     credit_repo.get_already_expired_sum.return_value = 0
     credit_repo.get_expired_grants_sum.return_value = 0
 
+    user_repo = AsyncMock()
+    user_repo.get_with_lock.return_value = make_user()
+    user_repo.increment_used_tokens = AsyncMock()
+    user_repo.try_increment_used_tokens_with_limit = AsyncMock(return_value=True)
+
     @asynccontextmanager
     async def _noop_savepoint():
         yield uow
 
     uow = SimpleNamespace(
         credit_repo=credit_repo,
+        user_repo=user_repo,
         rollback=AsyncMock(),
         savepoint=_noop_savepoint,
     )
@@ -79,6 +89,7 @@ async def test_ensure_sufficient_balance_rejects_empty_balance() -> None:
     user_id = uuid.uuid4()
     account = make_account(balance=0)
     uow = make_uow()
+    uow.user_repo.get_with_lock.return_value = make_user(max_tokens=0, used_tokens=0)
     uow.credit_repo.get_account_with_lock.return_value = account
     service = CreditService(uow)
 
@@ -109,6 +120,7 @@ async def test_ensure_sufficient_balance_rejects_balance_below_estimated_cost() 
     user_id = uuid.uuid4()
     account = make_account(balance=3)
     uow = make_uow()
+    uow.user_repo.get_with_lock.return_value = make_user(max_tokens=0, used_tokens=0)
     uow.credit_repo.get_account_with_lock.return_value = account
     service = CreditService(uow)
 
@@ -241,3 +253,142 @@ async def test_expire_credits_charges_only_unspent_expired_grants() -> None:
     assert (
         uow.credit_repo.add_transaction.await_args.kwargs["metadata"]["spent_sum"] == 40
     )
+
+
+async def test_spend_sufficient_credits() -> None:
+    user_id = uuid.uuid4()
+    account = make_account(balance=100)
+    user = make_user(max_tokens=100000, used_tokens=0)
+    uow = make_uow()
+    uow.credit_repo.get_account_with_lock.return_value = account
+    uow.user_repo.get_with_lock.return_value = user
+    uow.credit_repo.try_decrement_balance.return_value = True
+    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(id=uuid.uuid4(), credit_cost=10)
+    uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
+
+    service = CreditService(uow)
+
+    # Cost calculation: 10000 input + 0 output = 10 credits
+    ur, tx = await service.spend_for_model_usage(
+        user_id=user_id,
+        tokens_input=10000,
+        tokens_output=0,
+        model_name="default",
+    )
+
+    uow.credit_repo.try_decrement_balance.assert_awaited_once_with(account.id, 10)
+    uow.user_repo.increment_used_tokens.assert_not_awaited()
+
+
+async def test_spend_partial_credits() -> None:
+    user_id = uuid.uuid4()
+    account = make_account(balance=4)
+    user = make_user(max_tokens=100000, used_tokens=0)
+    uow = make_uow()
+    uow.credit_repo.get_account_with_lock.return_value = account
+    uow.user_repo.get_with_lock.return_value = user
+    uow.credit_repo.try_decrement_balance.return_value = True
+    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(id=uuid.uuid4(), credit_cost=4)
+    uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
+
+    service = CreditService(uow)
+
+    # Cost calculation: 10000 input + 0 output = 10 credits.
+    # User only has 4 credits, so credits_to_deduct = 4.
+    # Unpaid credits = 6, which translates to 600 tokens.
+    ur, tx = await service.spend_for_model_usage(
+        user_id=user_id,
+        tokens_input=10000,
+        tokens_output=0,
+        model_name="default",
+    )
+
+    uow.credit_repo.try_decrement_balance.assert_awaited_once_with(account.id, 4)
+    uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
+        user_id, 600
+    )
+
+
+async def test_spend_zero_credits() -> None:
+    user_id = uuid.uuid4()
+    account = make_account(balance=0)
+    user = make_user(max_tokens=100000, used_tokens=0)
+    uow = make_uow()
+    uow.credit_repo.get_account_with_lock.return_value = account
+    uow.user_repo.get_with_lock.return_value = user
+    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(id=uuid.uuid4(), credit_cost=0)
+    uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
+
+    service = CreditService(uow)
+
+    # Cost calculation: 10000 input + 0 output = 10 credits.
+    # User has 0 credits, so credits_to_deduct = 0.
+    # Unpaid credits = 10, which translates to 1000 tokens.
+    ur, tx = await service.spend_for_model_usage(
+        user_id=user_id,
+        tokens_input=10000,
+        tokens_output=0,
+        model_name="default",
+    )
+
+    uow.credit_repo.try_decrement_balance.assert_not_awaited()
+    uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
+        user_id, 1000
+    )
+
+
+async def test_spend_rejects_when_token_quota_is_insufficient() -> None:
+    user_id = uuid.uuid4()
+    account = make_account(balance=0)
+    uow = make_uow()
+    uow.credit_repo.get_account_with_lock.return_value = account
+    uow.user_repo.get_with_lock.return_value = make_user(max_tokens=1000, used_tokens=500)
+    uow.user_repo.try_increment_used_tokens_with_limit.return_value = False
+
+    service = CreditService(uow)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.spend_for_model_usage(
+            user_id=user_id,
+            tokens_input=10000,
+            tokens_output=0,
+            model_name="default",
+        )
+
+    assert exc_info.value.code == "CREDIT_QUOTA_EXCEEDED"
+    uow.credit_repo.create_usage_record.assert_not_awaited()
+
+
+async def test_precheck_mixed_balance_pass() -> None:
+    user_id = uuid.uuid4()
+    account = make_account(balance=5)  # 500 tokens equivalent
+    user = make_user(max_tokens=1000, used_tokens=500)  # 500 tokens remaining
+    # Total capability = 500 + 500 = 1000 tokens.
+    # Estimated cost = 10 credits = 1000 tokens.
+    uow = make_uow()
+    uow.credit_repo.get_account_with_lock.return_value = account
+    uow.user_repo.get_with_lock.return_value = user
+
+    service = CreditService(uow)
+
+    # This should not raise, total capability is exactly 1000 tokens.
+    result = await service.ensure_sufficient_balance(user_id, estimated_cost=10)
+    assert result is account
+
+
+async def test_precheck_mixed_balance_fail() -> None:
+    user_id = uuid.uuid4()
+    account = make_account(balance=5)  # 500 tokens equivalent
+    user = make_user(max_tokens=1000, used_tokens=501)  # 499 tokens remaining
+    # Total capability = 500 + 499 = 999 tokens.
+    # Estimated cost = 10 credits = 1000 tokens.
+    uow = make_uow()
+    uow.credit_repo.get_account_with_lock.return_value = account
+    uow.user_repo.get_with_lock.return_value = user
+
+    service = CreditService(uow)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.ensure_sufficient_balance(user_id, estimated_cost=10)
+
+    assert exc_info.value.code == "CREDIT_QUOTA_EXCEEDED"

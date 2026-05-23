@@ -92,12 +92,16 @@ httpClient.interceptors.response.use(
         }
 
         const normalized = normalizeHttpError(error);
+        const isMeRequest = error.config?.url?.endsWith('/users/me');
 
-        if (normalized.code === 'unauthorized') {
+        if (normalized.code === 'unauthorized' || (isMeRequest && normalized.code === 'forbidden')) {
             handleUnauthorized();
         }
 
-        notifyHttpError(normalized);
+        if (!isMeRequest) {
+            notifyHttpError(normalized);
+        }
+
         return Promise.reject(normalized);
     },
 );

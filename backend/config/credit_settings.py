@@ -27,6 +27,7 @@ class CreditSettings(BaseSettings):
 
     CREDIT_DAILY_CHECKIN_AMOUNT: int = 100
     CREDIT_DAILY_CHECKIN_VALID_DAYS: int = 7
+    CREDIT_TO_TOKEN_RATIO: float = 100.0
     CREDIT_MINIMUM_ESTIMATED_COST: int = 10
     """Minimum estimated cost for credit pre-check before LLM generation."""
 

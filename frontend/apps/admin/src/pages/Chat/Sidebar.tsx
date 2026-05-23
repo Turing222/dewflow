@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Spin, Tooltip, Popover } from 'antd';
+import { Button, Spin, Tooltip } from 'antd';
 import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, Sun, Moon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatSession } from '../../types/chat';
@@ -17,14 +17,6 @@ interface SidebarProps {
     onToggle: () => void;
 }
 
-const BRAND_PRESETS = [
-    { key: 'blue', value: '#1677ff' },
-    { key: 'indigo', value: '#4f46e5' },
-    { key: 'purple', value: '#722ed1' },
-    { key: 'teal', value: '#0d9488' },
-    { key: 'orange', value: '#ea580c' },
-];
-
 const Sidebar: React.FC<SidebarProps> = ({
     activeSessionId,
     onSelectSession,
@@ -35,7 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     const { isAuthenticated } = useAuth();
     const { data, isLoading: loading } = useChatSessionsQuery();
     const sessions = data?.items || [];
-    const { theme, brandColor, setTheme, setBrandColor } = useThemeStore();
+    const { theme, setTheme } = useThemeStore();
     const { t, i18n } = useTranslation();
 
     const formatTime = (dateStr: string) => {
@@ -53,53 +45,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         const targetLng = i18n.language === 'zh-CN' ? 'en-US' : 'zh-CN';
         void changeAppLanguage(targetLng);
     };
-
-
-
-    const renderStylePopoverContent = () => (
-        <div className={styles['style-popover-content']} data-testid="style-popover-content">
-            <div className={styles['popover-section']}>
-                <span className={styles['popover-label']}>{t('sidebar.theme')}</span>
-                <Button
-                    className={styles['popover-btn']}
-                    type="text"
-                    icon={theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                    data-testid="theme-toggle-btn"
-                >
-                    {theme === 'dark' ? t('sidebar.light_mode') : t('sidebar.dark_mode')}
-                </Button>
-            </div>
-            <div className={styles['popover-section']}>
-                <span className={styles['popover-label']}>{t('sidebar.language')}</span>
-                <Button
-                    className={styles['popover-btn']}
-                    type="text"
-                    onClick={toggleLanguage}
-                    data-testid="language-toggle-btn"
-                >
-                    {i18n.language === 'zh-CN' ? 'English' : '中文'}
-                </Button>
-            </div>
-            <div className={styles['popover-section']}>
-                <span className={styles['popover-label']}>{t('sidebar.accent_color')}</span>
-                <div className={styles['brand-colors-row']}>
-                    {BRAND_PRESETS.map((color) => (
-                        <button
-                            key={color.value}
-                            className={`${styles['color-preset-btn']} ${brandColor === color.value ? styles['color-preset-active'] : ''}`}
-                            style={{ backgroundColor: color.value }}
-                            title={t(`sidebar.brand_colors.${color.key}`)}
-                            aria-label={t(`sidebar.brand_colors.${color.key}`)}
-                            aria-pressed={brandColor === color.value}
-                            onClick={() => setBrandColor(color.value)}
-                        />
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-
 
     if (collapsed) {
         return (
@@ -122,25 +67,29 @@ const Sidebar: React.FC<SidebarProps> = ({
                 
                 <div style={{ flex: 1 }} />
 
-                <Popover
-                    content={renderStylePopoverContent()}
-                    trigger="hover"
-                    placement="right"
-                    overlayClassName={styles['style-popover']}
-                    mouseEnterDelay={0.1}
-                    mouseLeaveDelay={0.2}
-                >
-                    <div 
-                        className={styles['style-toggle-icon']} 
-                        data-testid="style-popover-trigger"
-                        role="button"
-                        aria-label={t('sidebar.style_settings')}
-                    >
-                        <div className={styles['style-toggle-bar']} />
-                        <div className={styles['style-toggle-bar']} />
-                        <div className={styles['style-toggle-bar']} />
-                    </div>
-                </Popover>
+                <div className={styles['collapsed-footer']}>
+                    <Tooltip title={theme === 'dark' ? t('sidebar.light_mode') : t('sidebar.dark_mode')} placement="right">
+                        <Button
+                            className={styles['sidebar-footer-btn']}
+                            type="text"
+                            icon={theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                            data-testid="theme-toggle-btn"
+                        />
+                    </Tooltip>
+                    <Tooltip title={i18n.language === 'zh-CN' ? 'Switch to English' : '切换为中文'} placement="right">
+                        <Button
+                            className={styles['sidebar-footer-btn']}
+                            type="text"
+                            onClick={toggleLanguage}
+                            data-testid="language-toggle-btn"
+                        >
+                            <span className={styles['lang-toggle-text']}>
+                                {i18n.language === 'zh-CN' ? 'EN' : '中'}
+                            </span>
+                        </Button>
+                    </Tooltip>
+                </div>
             </div>
         );
     }
@@ -211,27 +160,29 @@ const Sidebar: React.FC<SidebarProps> = ({
                 )}
             </div>
 
-            {/* 底部主题与品牌色定制面板 */}
+            {/* 底部按钮：切换明暗 & 切换语言 */}
             <div className={styles['sidebar-footer']}>
-                <Popover
-                    content={renderStylePopoverContent()}
-                    trigger="hover"
-                    placement="top"
-                    overlayClassName={styles['style-popover']}
-                    mouseEnterDelay={0.1}
-                    mouseLeaveDelay={0.2}
-                >
-                    <div 
-                        className={styles['style-toggle-icon']} 
-                        data-testid="style-popover-trigger"
-                        role="button"
-                        aria-label={t('sidebar.style_settings')}
+                <Tooltip title={theme === 'dark' ? t('sidebar.light_mode') : t('sidebar.dark_mode')} placement="top">
+                    <Button
+                        className={styles['sidebar-footer-btn']}
+                        type="text"
+                        icon={theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                        data-testid="theme-toggle-btn"
+                    />
+                </Tooltip>
+                <Tooltip title={i18n.language === 'zh-CN' ? 'Switch to English' : '切换为中文'} placement="top">
+                    <Button
+                        className={styles['sidebar-footer-btn']}
+                        type="text"
+                        onClick={toggleLanguage}
+                        data-testid="language-toggle-btn"
                     >
-                        <div className={styles['style-toggle-bar']} />
-                        <div className={styles['style-toggle-bar']} />
-                        <div className={styles['style-toggle-bar']} />
-                    </div>
-                </Popover>
+                        <span className={styles['lang-toggle-text']}>
+                            {i18n.language === 'zh-CN' ? 'EN' : '中'}
+                        </span>
+                    </Button>
+                </Tooltip>
             </div>
         </div>
     );

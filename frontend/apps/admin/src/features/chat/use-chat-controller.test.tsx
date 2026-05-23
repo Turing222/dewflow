@@ -540,7 +540,7 @@ describe('useChatController', () => {
         expect(result.current.citations[0].relevanceScore).toBe(0.85);
     });
 
-    it('retryFailedMessage deletes the error message and triggers sendQuery with a fresh clientRequestId', async () => {
+    it('retryFailedMessage deletes the error message and retries with the original clientRequestId', async () => {
         const capturedOptions: StreamOptions[] = [];
         mockStreamChatQuery.mockImplementation((options: StreamOptions, callbacks: StreamCallbacks) => {
             capturedOptions.push(options);
@@ -572,7 +572,7 @@ describe('useChatController', () => {
         
         const secondClientId = capturedOptions[1].clientRequestId;
         expect(secondClientId).toBeDefined();
-        expect(secondClientId).not.toBe(firstClientId);
+        expect(secondClientId).toBe(firstClientId);
     });
 
     it('preserves historical messages when sending a new query in an active historical session', async () => {

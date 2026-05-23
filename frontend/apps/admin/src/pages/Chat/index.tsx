@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { Button, Dropdown, message as antdMessage, Tooltip } from 'antd';
-import { LogOut, LogIn, Shield, Coins } from 'lucide-react';
+import { Button, Popover, message as antdMessage } from 'antd';
+import { LogOut, LogIn, Shield, Coins, Edit2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/useAuth';
 import { useChatController } from '../../features/chat/use-chat-controller';
-import { useMyCreditsQuery } from '../../query/hooks/credits';
+import { useMyCreditsQuery, useDailyCheckinMutation } from '../../query/hooks/credits';
 import Sidebar from './Sidebar';
 import MessageList from './MessageList';
 import AgentTracePanel from './AgentTracePanel';
+import UserProfileModal from './UserProfileModal';
 import styles from './ChatPage.module.css';
 
 const ChatPage: React.FC = () => {
@@ -16,31 +17,140 @@ const ChatPage: React.FC = () => {
     const navigate = useNavigate();
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [tracePanelCollapsed, setTracePanelCollapsed] = useState(false);
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const { t } = useTranslation();
 
     const controller = useChatController();
     const { data: credits, isLoading: loadingCredits } = useMyCreditsQuery();
+    const checkinMutation = useDailyCheckinMutation();
 
-    const userMenuItems = isAuthenticated
-        ? [
-            { key: 'user', label: user?.username || 'User', disabled: true },
-            { key: 'credits', label: t('credits.title'), icon: <Coins size={14} /> },
-            ...(user?.is_superuser ? [{ key: 'admin', label: t('chat.user_menu.admin_panel'), icon: <Shield size={14} /> }] : []),
-            { key: 'logout', label: t('chat.user_menu.logout'), icon: <LogOut size={14} />, danger: true },
-        ]
-        : [
-            { key: 'login', label: t('chat.user_menu.login'), icon: <LogIn size={14} /> },
-        ];
-
-    const handleMenuClick = ({ key }: { key: string }) => {
-        if (key === 'logout') {
-            logout();
-            antdMessage.success(t('chat.user_menu.logout'));
+    const handleCheckin = async () => {
+        try {
+            const response = await checkinMutation.mutateAsync();
+            antdMessage.success(t('credits.success_earn', { amount: response.amount_earned }));
+        } catch (err: unknown) {
+            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+            const message = (err as { message?: string })?.message;
+            if (detail === 'ALREADY_CHECKED_IN' || message?.includes('ALREADY_CHECKED_IN')) {
+                antdMessage.warning(t('credits.checked_in_today'));
+            } else {
+                antdMessage.error(message || t('credits.checkin_error'));
+            }
         }
-        if (key === 'login') { setShowAuthModal(true); }
-        if (key === 'admin') navigate('/admin');
-        if (key === 'credits') navigate('/credits');
     };
+
+    const renderUserPopoverContent = () => {
+        const usagePercent = Math.min(100, ((user?.used_tokens || 0) / (user?.max_tokens || 1)) * 100);
+        return (
+            <div className={styles['user-popover-content']}>
+                {/* User Info Header */}
+                <div
+                    className={styles['user-popover-header']}
+                    onClick={() => setIsProfileModalOpen(true)}
+                    style={{ cursor: 'pointer' }}
+                >
+                    <div className={styles['popover-avatar']}>
+                        {user?.username?.[0]?.toUpperCase()}
+                    </div>
+                    <div className={styles['popover-user-details']} style={{ flex: 1 }}>
+                        <div className={styles['popover-username']} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>{user?.username}</span>
+                            <Edit2 size={12} style={{ opacity: 0.6 }} />
+                        </div>
+                        <div className={styles['popover-email']}>{user?.email || t('chat.user_menu.user_role', '普通用户')}</div>
+                    </div>
+                </div>
+
+                {/* Credits Section */}
+                <div className={styles['popover-section']}>
+                    <div className={styles['popover-section-header']}>
+                        <div
+                            className={styles['popover-section-title-link']}
+                            onClick={() => navigate('/credits')}
+                        >
+                            <Coins size={14} className={styles['popover-coin-icon']} />
+                            <span>{t('credits.title')} ↗</span>
+                        </div>
+                    </div>
+                    <div className={styles['popover-credit-balance-card']}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-desc)', marginBottom: '2px' }}>
+                                {t('credits.my_balance', '当前可用积分')}
+                            </span>
+                            <div className={styles['popover-credit-balance-value']}>
+                                {loadingCredits ? '—' : (credits?.balance ?? 0)}
+                            </div>
+                        </div>
+                        {credits?.is_checked_in_today ? (
+                            <Button
+                                type="primary"
+                                size="small"
+                                className={styles['popover-recharge-btn']}
+                                style={{ opacity: 0.7, cursor: 'default' }}
+                                onClick={() => antdMessage.info(t('credits.checked_in_today', '今日已签到'))}
+                            >
+                                {t('credits.checked_in_today', '已签到')}
+                            </Button>
+                        ) : (
+                            <Button
+                                type="primary"
+                                size="small"
+                                className={styles['popover-recharge-btn']}
+                                loading={checkinMutation.isPending}
+                                onClick={handleCheckin}
+                            >
+                                {t('credits.checkin_btn', '签到领积分')}
+                            </Button>
+                        )}
+                    </div>
+                </div>
+
+                {/* Token Usage Section */}
+                <div className={styles['popover-section']}>
+                    <div className={styles['popover-section-title']}>
+                        {t('chat.user_menu.token_quota')}
+                    </div>
+                    <div className={styles['popover-token-usage']}>
+                        <span>{t('chat.user_menu.used')}</span>
+                        <span>{user?.used_tokens || 0} / {user?.max_tokens || 0}</span>
+                    </div>
+                    <div className={styles['popover-progress-bar']}>
+                        <div
+                            className={styles['popover-progress-fill']}
+                            style={{ width: `${usagePercent}%` }}
+                        />
+                    </div>
+                </div>
+
+                {/* Action Buttons Section */}
+                <div className={styles['popover-actions']}>
+                    {user?.is_superuser && (
+                        <Button
+                            type="text"
+                            icon={<Shield size={14} />}
+                            className={styles['popover-action-btn']}
+                            onClick={() => navigate('/admin')}
+                        >
+                            {t('chat.user_menu.admin_panel')}
+                        </Button>
+                    )}
+                    <Button
+                        type="text"
+                        danger
+                        icon={<LogOut size={14} />}
+                        className={styles['popover-action-btn']}
+                        onClick={() => {
+                            logout();
+                            antdMessage.success(t('chat.user_menu.logout'));
+                        }}
+                    >
+                        {t('chat.user_menu.logout')}
+                    </Button>
+                </div>
+            </div>
+        );
+    };
+
 
     return (
         <div className={`${styles['chat-page']} chat-page`}>
@@ -71,64 +181,36 @@ const ChatPage: React.FC = () => {
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            {isAuthenticated && (
-                                <Button
-                                    type="text"
-                                    className={styles['credit-btn']}
-                                    onClick={() => navigate('/credits')}
-                                    icon={
-                                        <div className={styles['credit-btn-content']}>
-                                            <Coins size={16} className={styles['credit-icon']} />
-                                            <span className={styles['credit-value']}>
-                                                {loadingCredits ? '—' : (credits?.balance ?? '—')}
-                                            </span>
-                                        </div>
-                                    }
-                                />
-                            )}
-
-                            <Dropdown
-                                menu={{ items: userMenuItems, onClick: handleMenuClick }}
-                                placement="bottomRight"
-                                trigger={['click']}
-                            >
-                                <Tooltip
-                                    placement="left"
-                                    title={isAuthenticated ? (
-                                        <div className={styles['token-tooltip']}>
-                                            <div className={styles['token-tooltip-title']}>{t('credits.title')}</div>
-                                            <div className={styles['token-usage-text']} style={{ marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                                                <span>{t('credits.my_balance')}</span>
-                                                <span style={{ color: 'var(--color-primary)', fontWeight: 'bold' }}>{credits?.balance ?? 0}</span>
-                                            </div>
-                                            <div className={styles['token-tooltip-title']}>{t('chat.user_menu.token_quota')}</div>
-                                            <div className={styles['token-usage-text']}>
-                                                <span>{t('chat.user_menu.used')}</span>
-                                                <span>{user?.used_tokens || 0} / {user?.max_tokens || 0}</span>
-                                            </div>
-                                            <div className={styles['token-progress-bar']}>
-                                                <div
-                                                    className={styles['token-progress-fill']}
-                                                    style={{
-                                                        width: `${Math.min(100, ((user?.used_tokens || 0) / (user?.max_tokens || 1)) * 100)}%`
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    ) : null}
+                            {isAuthenticated ? (
+                                <Popover
+                                    content={renderUserPopoverContent()}
+                                    placement="bottomRight"
+                                    trigger="hover"
                                 >
                                     <Button
                                         type="text"
                                         className={styles['user-menu-btn']}
                                         data-testid="user-menu-btn"
                                         icon={
-                                            isAuthenticated
-                                                ? <div className={`${styles['avatar-badge']} avatar-badge`}>{user?.username?.[0]?.toUpperCase()}</div>
-                                                : <div className={`${styles['avatar-badge']} avatar-badge ${styles['guest']} guest`}><LogIn size={18} /></div>
+                                            <div className={`${styles['avatar-badge']} avatar-badge`}>
+                                                {user?.username?.[0]?.toUpperCase()}
+                                            </div>
                                         }
                                     />
-                                </Tooltip>
-                            </Dropdown>
+                                </Popover>
+                            ) : (
+                                <Button
+                                    type="text"
+                                    className={styles['user-menu-btn']}
+                                    data-testid="user-menu-btn"
+                                    onClick={() => setShowAuthModal(true)}
+                                    icon={
+                                        <div className={`${styles['avatar-badge']} avatar-badge ${styles['guest']} guest`}>
+                                            <LogIn size={18} />
+                                        </div>
+                                    }
+                                />
+                            )}
                         </div>
                     </div>
                     <MessageList
@@ -149,6 +231,10 @@ const ChatPage: React.FC = () => {
                     onToggle={() => setTracePanelCollapsed(!tracePanelCollapsed)}
                 />
             </div>
+            <UserProfileModal
+                isOpen={isProfileModalOpen}
+                onClose={() => setIsProfileModalOpen(false)}
+            />
         </div>
     );
 };

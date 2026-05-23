@@ -163,6 +163,20 @@ class UserImportResponse(BaseModel):
     message: str
 
 
+class UserProfileUpdate(BaseModel):
+    """用户个人信息更新请求（安全隔离，仅限基本信息）。"""
+
+    username: UsernameStr | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        from_attributes=True,
+        extra="forbid",
+    )
+
+
 class Token(BaseModel):
     """访问令牌响应。"""
 

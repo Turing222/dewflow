@@ -127,7 +127,37 @@ class UserService(BaseService[AbstractUnitOfWork]):
         if not db_obj:
             raise app_not_found("用户不存在", code="USER_NOT_FOUND")
 
-        user = await self.uow.user_repo.update(db_obj=db_obj, obj_in=user_in)
+        if user_in.username is not None and user_in.username != db_obj.username:
+            existing_user = await self.uow.user_repo.get_by_username(user_in.username)
+            if existing_user and existing_user.id != user_id:
+                raise app_validation_error(
+                    "该用户名已被注册",
+                    code="USERNAME_ALREADY_REGISTERED",
+                )
+
+        if user_in.email is not None and user_in.email != db_obj.email:
+            existing_user = await self.uow.user_repo.get_by_email(str(user_in.email))
+            if existing_user and existing_user.id != user_id:
+                raise app_validation_error(
+                    "该邮箱已被注册",
+                    code="EMAIL_ALREADY_REGISTERED",
+                )
+
+        if user_in.phone is not None and user_in.phone != db_obj.phone:
+            existing_user = await self.uow.user_repo.get_by_phone(user_in.phone)
+            if existing_user and existing_user.id != user_id:
+                raise app_validation_error(
+                    "该手机号已被注册",
+                    code="PHONE_ALREADY_REGISTERED",
+                )
+
+        try:
+            user = await self.uow.user_repo.update(db_obj=db_obj, obj_in=user_in)
+        except IntegrityError as exc:
+            raise app_validation_error(
+                "用户名、邮箱或手机号已被注册",
+                code="USER_ALREADY_REGISTERED",
+            ) from exc
         return user
 
     async def authenticate(self, user_in: UserLogin) -> User | None:

@@ -204,22 +204,22 @@ describe('Sidebar', () => {
         expect(props.onToggle).toHaveBeenCalledOnce();
     });
 
-    it('updates the brand color in store when preset is clicked', async () => {
+    it('updates the theme in store when theme button is clicked', async () => {
         const user = userEvent.setup();
         mockUseAuth.mockReturnValue({ ...defaultAuth, isAuthenticated: true });
-        
-        renderSidebar();
-        
-        const trigger = screen.getByTestId('style-popover-trigger');
-        await user.hover(trigger);
 
-        const presetIndigo = await screen.findByTitle('靛蓝');
-        expect(presetIndigo).toBeInTheDocument();
-        
-        await user.click(presetIndigo);
-        
+        renderSidebar();
+
+        const themeToggleBtn = screen.getByTestId('theme-toggle-btn');
+        expect(themeToggleBtn).toBeInTheDocument();
+
         const { useThemeStore } = await import('../../stores/theme-store');
-        expect(useThemeStore.getState().brandColor).toBe('#4f46e5');
+        const initialTheme = useThemeStore.getState().theme;
+
+        await user.click(themeToggleBtn);
+
+        const expectedTheme = initialTheme === 'dark' ? 'light' : 'dark';
+        expect(useThemeStore.getState().theme).toBe(expectedTheme);
     });
 
     it('toggles language and translates UI elements correctly when language switch is clicked', async () => {
@@ -230,16 +230,12 @@ describe('Sidebar', () => {
         
         expect(screen.getByText('新对话')).toBeInTheDocument();
         
-        const trigger = screen.getByTestId('style-popover-trigger');
-        await user.hover(trigger);
-
-        const langBtn = await screen.findByRole('button', { name: 'English' });
+        const langBtn = screen.getByTestId('language-toggle-btn');
         await user.click(langBtn);
         
         expect(await screen.findByText('New Chat')).toBeInTheDocument();
         
-        const backBtn = await screen.findByRole('button', { name: '中文' });
-        await user.click(backBtn);
+        await user.click(langBtn);
         expect(await screen.findByText('新对话')).toBeInTheDocument();
     });
 
@@ -266,10 +262,7 @@ describe('Sidebar', () => {
 
         expect(screen.getByText('昨天')).toBeInTheDocument();
 
-        const trigger = screen.getByTestId('style-popover-trigger');
-        await user.hover(trigger);
-
-        const langBtn = await screen.findByRole('button', { name: 'English' });
+        const langBtn = screen.getByTestId('language-toggle-btn');
         await user.click(langBtn);
 
         expect(await screen.findByText('Yesterday')).toBeInTheDocument();

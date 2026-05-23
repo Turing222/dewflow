@@ -284,5 +284,5 @@ def _estimate_credit_cost(
     input_rate = rates.get("input", 1.0)
     output_rate = rates.get("output", 1.0)
 
-    raw_cost = input_tokens * input_rate + output_tokens * output_rate
+    raw_cost = (input_tokens * input_rate + output_tokens * output_rate) / 1000.0
     return max(math.ceil(raw_cost), credit_settings.CREDIT_MINIMUM_ESTIMATED_COST)

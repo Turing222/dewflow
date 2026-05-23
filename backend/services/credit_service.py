@@ -72,17 +72,37 @@ class CreditService(BaseService[AbstractUnitOfWork]):
     async def ensure_sufficient_balance(
         self, user_id: uuid.UUID, *, estimated_cost: int | None = None
     ) -> CreditAccount:
-        """锁定 Credits 账户并确认余额可发起模型生成。"""
-        cost = estimated_cost if estimated_cost is not None else credit_settings.CREDIT_MINIMUM_ESTIMATED_COST
+        """锁定用户和积分账户，并确认总额度可发起模型生成。"""
+        # 1. 悲观锁依次读取 User 和 CreditAccount，避免并发竞态与死锁
+        user = await self.uow.user_repo.get_with_lock(user_id)
+        if not user:
+            raise app_validation_error("用户不存在", code="USER_NOT_FOUND")
+
         account = await self._get_or_create_account_with_lock(user_id)
 
-        if account.balance < cost:
+        # 2. 计算预估的积分和 Token 消耗
+        cost_in_credits = (
+            estimated_cost
+            if estimated_cost is not None
+            else credit_settings.CREDIT_MINIMUM_ESTIMATED_COST
+        )
+
+        # 3. 混合余额校验：
+        # 积分余额可折算的 Token 数
+        credits_in_tokens = account.balance * credit_settings.CREDIT_TO_TOKEN_RATIO
+        # 用户账户剩余的 Token 额度
+        remaining_tokens = max(0, user.max_tokens - user.used_tokens)
+
+        # 本次请求所需的总 Token 预估
+        required_tokens = cost_in_credits * credit_settings.CREDIT_TO_TOKEN_RATIO
+
+        if remaining_tokens + credits_in_tokens < required_tokens:
             raise app_validation_error(
                 "Credits 余额不足，请先签到获取额度",
                 code="CREDIT_QUOTA_EXCEEDED",
                 details={
                     "balance": account.balance,
-                    "estimated_cost": cost,
+                    "estimated_cost": cost_in_credits,
                 },
             )
 
@@ -177,7 +197,7 @@ class CreditService(BaseService[AbstractUnitOfWork]):
         model_name: str,
         chat_message_id: uuid.UUID | None = None,
     ) -> tuple[UsageRecord, CreditTransaction]:
-        """根据大模型 Token 用量和折算费率扣除 Credits。"""
+        """根据大模型 Token 用量和折算费率扣除 Credits。优先扣积分，不足部分扣 Token。"""
         # 1. 费率折算
         rates = credit_settings.CREDIT_MODEL_RATES.get(
             model_name
@@ -185,7 +205,7 @@ class CreditService(BaseService[AbstractUnitOfWork]):
         input_rate = rates.get("input", 1.0)
         output_rate = rates.get("output", 1.0)
 
-        raw_cost = tokens_input * input_rate + tokens_output * output_rate
+        raw_cost = (tokens_input * input_rate + tokens_output * output_rate) / 1000.0
         cost = math.ceil(raw_cost)
         spend_idempotency_key = (
             f"spend:{chat_message_id}" if chat_message_id is not None else None
@@ -224,43 +244,79 @@ class CreditService(BaseService[AbstractUnitOfWork]):
                 return existing_usage_record, tx
 
         # 2. 锁定账户并校验余额
+        user = await self.uow.user_repo.get_with_lock(user_id)
+        if not user:
+            raise app_validation_error("用户不存在", code="USER_NOT_FOUND")
         account = await self._get_or_create_account_with_lock(user_id)
 
-        if account.balance < cost:
-            raise app_validation_error(
-                "您的 Credits 余额不足，请先签到获取额度",
-                code="INSUFFICIENT_CREDITS",
-            )
+        # 3. 混合抵扣算法
+        if account.balance >= cost:
+            # 情况 A: 积分充足，全额由积分抵扣
+            credits_to_deduct = cost
+            tokens_to_deduct = 0
+        else:
+            # 情况 B: 积分不足，积分扣空，剩余部分扣除 Token
+            credits_to_deduct = account.balance
+            unpaid_credits = cost - credits_to_deduct
+            tokens_to_deduct = math.ceil(unpaid_credits * credit_settings.CREDIT_TO_TOKEN_RATIO)
 
-        # 3. 原子扣减额度并写入详细消费记录
-        ok = await self.uow.credit_repo.try_decrement_balance(account.id, cost)
-        if not ok:
-            raise app_validation_error(
-                "您的 Credits 余额不足，请先签到获取额度",
-                code="INSUFFICIENT_CREDITS",
-            )
+        # 4. 原子扣减积分
+        if credits_to_deduct > 0:
+            ok = await self.uow.credit_repo.try_decrement_balance(account.id, credits_to_deduct)
+            if not ok:
+                raise app_validation_error(
+                    "您的 Credits 余额不足，请先签到获取额度",
+                    code="INSUFFICIENT_CREDITS",
+                )
 
+        # 5. 原子扣减 Token 额度
+        if tokens_to_deduct > 0:
+            can_deduct_tokens = (
+                await self.uow.user_repo.try_increment_used_tokens_with_limit(
+                    user_id, tokens_to_deduct
+                )
+            )
+            if not can_deduct_tokens:
+                raise app_validation_error(
+                    "Credits 余额不足，请先签到获取额度",
+                    code="CREDIT_QUOTA_EXCEEDED",
+                    details={
+                        "balance": account.balance,
+                        "estimated_cost": cost,
+                    },
+                )
+
+        # 6. 写入详细消费记录与交易流水
         ur = await self.uow.credit_repo.create_usage_record(
             user_id=user_id,
             chat_message_id=chat_message_id,
             model_name=model_name,
             input_tokens=tokens_input,
             output_tokens=tokens_output,
-            credit_cost=cost,
+            credit_cost=credits_to_deduct,
+            metadata={
+                "token_deduction": tokens_to_deduct,
+                "credit_deduction": credits_to_deduct,
+                "ratio_applied": credit_settings.CREDIT_TO_TOKEN_RATIO,
+            },
         )
 
         tx = await self.uow.credit_repo.add_transaction(
             account_id=account.id,
-            amount=-cost,
+            amount=-credits_to_deduct,
             source="spend",
             idempotency_key=spend_idempotency_key,
-            metadata={"usage_record_id": str(ur.id)},
+            metadata={
+                "usage_record_id": str(ur.id),
+                "token_deduction": tokens_to_deduct,
+            },
         )
 
         logger.info(
-            "User %s spent %d credits for model %s (input: %d, output: %d). Message ID: %s.",
+            "User %s spent %d credits and %d tokens for model %s (input: %d, output: %d). Message ID: %s.",
             user_id,
-            cost,
+            credits_to_deduct,
+            tokens_to_deduct,
             model_name,
             tokens_input,
             tokens_output,

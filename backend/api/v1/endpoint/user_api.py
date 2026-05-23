@@ -15,6 +15,7 @@ from backend.models.orm.user import User
 from backend.models.schemas.user_schema import (
     UserCreate,
     UserImportResponse,
+    UserProfileUpdate,
     UserResponse,
     UserSearch,
     UserUpdate,
@@ -39,6 +40,34 @@ async def read_users_me(
 ) -> UserResponse:
     user_resp_data = UserResponse.model_validate(current_user)
     return user_resp_data
+
+
+@router.patch("/me")
+async def update_my_profile(
+    user_in: UserProfileUpdate,
+    current_user: CurrentUserDep,
+    user_service: UserServiceDep,
+    audit_service: AuditServiceDep,
+) -> UserResponse:
+    """
+    更新当前登录用户本人的个人信息。
+    """
+    update_data = UserUpdate.model_validate(user_in.model_dump(exclude_unset=True))
+    async with capture_audit(
+        audit_service,
+        action=AuditAction.USER_UPDATE,
+        actor_user_id=current_user.id,
+        resource_type="user",
+        resource_id=current_user.id,
+        metadata={"updated_fields": list(user_in.model_fields_set)},
+    ):
+        async with user_service.write():
+            updated_user = await user_service.user_update(
+                user_id=current_user.id, user_in=update_data
+            )
+            if not updated_user:
+                raise app_not_found("用户不存在", code="USER_NOT_FOUND")
+        return UserResponse.model_validate(updated_user)
 
 
 @router.get("")

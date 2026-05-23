@@ -210,3 +210,178 @@
     border-radius: 3px;
     transition: width 0.3s ease;
 }
+
+/* --- User Hover Popover --- */
+.user-popover-content {
+    min-width: 220px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.user-popover-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 8px 12px 8px;
+    margin: -6px -8px 0 -8px;
+    border-bottom: 1px solid var(--color-border);
+    transition: background-color 0.2s ease;
+    border-radius: 8px 8px 0 0;
+}
+
+.user-popover-header:hover {
+    background-color: var(--color-bg-subtle);
+}
+
+.popover-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: var(--color-primary);
+    color: var(--color-text-light);
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px var(--color-primary-shadow);
+}
+
+.popover-user-details {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.popover-username {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-main);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.popover-email {
+    font-size: 11px;
+    color: var(--color-text-desc);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.popover-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.popover-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.popover-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-desc);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.popover-section-title-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-desc);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.popover-section-title-link:hover {
+    color: var(--color-primary);
+}
+
+.popover-coin-icon {
+    color: var(--color-coin);
+}
+
+.popover-link-btn {
+    padding: 0 !important;
+    height: auto !important;
+    font-size: 11px !important;
+}
+
+.popover-credit-balance-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--color-bg-subtle);
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+}
+
+.popover-credit-balance-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-text-main);
+}
+
+.popover-recharge-btn {
+    height: 24px !important;
+    padding: 0 8px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+}
+
+.popover-token-usage {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--color-text-desc);
+}
+
+.popover-progress-bar {
+    height: 6px;
+    background: var(--color-bg-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.popover-progress-fill {
+    height: 100%;
+    background: var(--color-primary);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.popover-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-border);
+}
+
+.popover-action-btn {
+    width: 100%;
+    justify-content: flex-start !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px;
+    border-radius: 6px !important;
+    height: 32px !important;
+    padding: 0 8px !important;
+    font-size: 12px !important;
+}
+
+.popover-action-btn:hover {
+    background: var(--color-bg-subtle) !important;
+}

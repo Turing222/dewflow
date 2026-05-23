@@ -34,6 +34,11 @@ export const getUserProfileAPI = () =>
         .get<unknown, unknown>(API_URLS.USER.ME)
         .then((response) => parseWithSchema(userSchema, response, '用户信息响应格式无效'));
 
+export const updateUserProfileAPI = (data: { username?: string; email?: string; phone?: string }) =>
+    request
+        .patch<unknown, unknown>(API_URLS.USER.ME, data)
+        .then((response) => parseWithSchema(userSchema, response, '更新个人信息响应格式无效'));
+
 // ── SMS Verification ──────────────────────────────────────────
 
 export const sendSMSCodeAPI = (phone: string) => {

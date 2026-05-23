@@ -25,6 +25,7 @@ def user_service_ctx() -> SimpleNamespace:
     repo = SimpleNamespace(
         get_by_email=AsyncMock(),
         get_by_username=AsyncMock(),
+        get_by_phone=AsyncMock(),
         create=AsyncMock(),
         get=AsyncMock(),
         update=AsyncMock(),
@@ -179,6 +180,98 @@ async def test_user_update_raises_not_found_when_user_missing(
     with pytest.raises(AppException, match="用户不存在"):
         await user_service_ctx.service.user_update(
             user_id=uuid.uuid4(),
+            user_in=UserUpdate(username="new_name"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_user_update_rejects_existing_username(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    user_id = uuid.uuid4()
+    user_service_ctx.repo.get.return_value = SimpleNamespace(
+        id=user_id,
+        username="old_name",
+        email="old@example.com",
+        phone=None,
+    )
+    user_service_ctx.repo.get_by_username.return_value = SimpleNamespace(
+        id=uuid.uuid4(),
+        username="new_name",
+    )
+
+    with pytest.raises(AppException, match="该用户名已被注册"):
+        await user_service_ctx.service.user_update(
+            user_id=user_id,
+            user_in=UserUpdate(username="new_name"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_user_update_rejects_existing_email(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    user_id = uuid.uuid4()
+    user_service_ctx.repo.get.return_value = SimpleNamespace(
+        id=user_id,
+        username="old_name",
+        email="old@example.com",
+        phone=None,
+    )
+    user_service_ctx.repo.get_by_email.return_value = SimpleNamespace(
+        id=uuid.uuid4(),
+        email="new@example.com",
+    )
+
+    with pytest.raises(AppException, match="该邮箱已被注册"):
+        await user_service_ctx.service.user_update(
+            user_id=user_id,
+            user_in=UserUpdate(email="new@example.com"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_user_update_rejects_existing_phone(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    user_id = uuid.uuid4()
+    user_service_ctx.repo.get.return_value = SimpleNamespace(
+        id=user_id,
+        username="old_name",
+        email="old@example.com",
+        phone="13800000000",
+    )
+    user_service_ctx.repo.get_by_phone.return_value = SimpleNamespace(
+        id=uuid.uuid4(),
+        phone="13900000000",
+    )
+
+    with pytest.raises(AppException, match="该手机号已被注册"):
+        await user_service_ctx.service.user_update(
+            user_id=user_id,
+            user_in=UserUpdate(phone="13900000000"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_user_update_maps_integrity_error_to_validation_error(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    user_id = uuid.uuid4()
+    user_service_ctx.repo.get.return_value = SimpleNamespace(
+        id=user_id,
+        username="old_name",
+        email="old@example.com",
+        phone=None,
+    )
+    user_service_ctx.repo.get_by_username.return_value = None
+    user_service_ctx.repo.update.side_effect = IntegrityError(
+        "update users", {"username": "new_name"}, Exception("duplicate key")
+    )
+
+    with pytest.raises(AppException, match="用户名、邮箱或手机号已被注册"):
+        await user_service_ctx.service.user_update(
+            user_id=user_id,
             user_in=UserUpdate(username="new_name"),
         )
 
