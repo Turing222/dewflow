@@ -23,14 +23,14 @@
         }
       ],
       "network_config": {
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode",
         "default_request_timeout_in_seconds": 60,
         "max_retries": 1
       },
       "custom_provider_config": {
         "base_provider_type": "openai",
         "allowed_requests": {
-          "embeddings": true
+          "embedding": true
         }
       }
     },

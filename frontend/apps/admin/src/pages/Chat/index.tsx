@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Popover, message as antdMessage } from 'antd';
 import { LogOut, LogIn, Shield, Coins, Edit2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +21,14 @@ const ChatPage: React.FC = () => {
     const { t } = useTranslation();
 
     const controller = useChatController();
+    
+    useEffect(() => {
+        if (controller.isIngestionSidebarOpen) {
+            setTracePanelCollapsed(false);
+            controller.setIsIngestionSidebarOpen(false);
+        }
+    }, [controller.isIngestionSidebarOpen, controller]);
+
     const { data: credits, isLoading: loadingCredits } = useMyCreditsQuery();
     const checkinMutation = useDailyCheckinMutation();
 
@@ -222,11 +230,16 @@ const ChatPage: React.FC = () => {
                         onRetryFailedMessage={controller.retryFailedMessage}
                         chatMode={controller.chatMode}
                         setChatMode={controller.setChatMode}
+                        onUploadKBFile={controller.uploadKBFile}
+                        isIngesting={controller.isIngesting}
                     />
                 </div>
                 <AgentTracePanel
                     traceSteps={controller.traceSteps}
                     citations={controller.citations}
+                    ingestionSteps={controller.ingestionSteps}
+                    activeTraceTab={controller.activeTraceTab}
+                    setActiveTraceTab={controller.setActiveTraceTab}
                     collapsed={tracePanelCollapsed}
                     onToggle={() => setTracePanelCollapsed(!tracePanelCollapsed)}
                 />

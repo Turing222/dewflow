@@ -51,6 +51,24 @@ export function createInitialTraceSteps(): AgentTraceStep[] {
     }));
 }
 
+export const INGESTION_TRACE_STEP_DEFS = [
+    { id: 'file-upload' },
+    { id: 'content-audit' },
+    { id: 'semantic-chunk' },
+    { id: 'vector-index' },
+    { id: 'ingestion-complete' },
+] as const;
+
+export function createInitialIngestionSteps(): AgentTraceStep[] {
+    return INGESTION_TRACE_STEP_DEFS.map((def) => ({
+        id: def.id,
+        status: 'idle' as const,
+        description: '',
+        startedAt: null,
+        finishedAt: null,
+    }));
+}
+
 function parseMetrics<T>(
     payload: Record<string, unknown> | null | undefined,
     parser: { safeParse: (value: unknown) => { success: true; data: T } | { success: false } },

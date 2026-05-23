@@ -8,6 +8,9 @@ import styles from './AgentTracePanel.module.css';
 interface AgentTracePanelProps {
     traceSteps: AgentTraceStep[];
     citations: CitationItem[];
+    ingestionSteps?: AgentTraceStep[];
+    activeTraceTab?: 'rag' | 'ingestion';
+    setActiveTraceTab?: (tab: 'rag' | 'ingestion') => void;
     collapsed?: boolean;
     onToggle?: () => void;
 }
@@ -15,14 +18,26 @@ interface AgentTracePanelProps {
 const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
     traceSteps,
     citations,
+    ingestionSteps = [],
+    activeTraceTab = 'rag',
+    setActiveTraceTab,
     collapsed = false,
     onToggle,
 }) => {
     const [citationsExpanded, setCitationsExpanded] = useState(false);
     const { t } = useTranslation();
 
-    const hasTrace = traceSteps.length > 0;
-    const summaryMetrics = getSummaryMetrics(traceSteps);
+    const ingestionStepNames: Record<string, string> = {
+        'file-upload': t('trace.ingestion.file-upload'),
+        'content-audit': t('trace.ingestion.content-audit'),
+        'semantic-chunk': t('trace.ingestion.semantic-chunk'),
+        'vector-index': t('trace.ingestion.vector-index'),
+        'ingestion-complete': t('trace.ingestion.ingestion-complete'),
+    };
+
+    const currentSteps = activeTraceTab === 'ingestion' ? ingestionSteps : traceSteps;
+    const hasTrace = currentSteps.length > 0;
+    const summaryMetrics = activeTraceTab === 'rag' ? getSummaryMetrics(traceSteps) : [];
 
     if (collapsed) {
         return (
@@ -62,9 +77,20 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                         />
                     </Tooltip>
                 )}
-                <span className={styles['trace-panel-title']}>
-                    {t('trace.title')}
-                </span>
+                <div className={styles['trace-tabs']}>
+                    <button
+                        className={`${styles['trace-tab-btn']} ${activeTraceTab === 'rag' ? styles['active'] : ''}`}
+                        onClick={() => setActiveTraceTab?.('rag')}
+                    >
+                        {t('trace.tab_rag')}
+                    </button>
+                    <button
+                        className={`${styles['trace-tab-btn']} ${activeTraceTab === 'ingestion' ? styles['active'] : ''}`}
+                        onClick={() => setActiveTraceTab?.('ingestion')}
+                    >
+                        {t('trace.tab_ingestion')}
+                    </button>
+                </div>
             </div>
 
             <div className={styles['trace-panel-body']}>
@@ -85,7 +111,7 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                             </div>
                         )}
                         <div className={styles['trace-timeline']}>
-                            {traceSteps.map((step, index) => (
+                            {currentSteps.map((step, index) => (
                                 <div
                                     key={step.id}
                                     className={`${styles['trace-step']} ${styles[`trace-step-${step.status}`]}`}
@@ -102,7 +128,7 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                         <div
                                             className={styles['trace-step-dot']}
                                         />
-                                        {index < traceSteps.length - 1 && (
+                                        {index < currentSteps.length - 1 && (
                                             <div
                                                 className={
                                                     styles['trace-step-line']
@@ -118,7 +144,9 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                                 styles['trace-step-title']
                                             }
                                         >
-                                            {t(`trace.steps.${step.id}`)}
+                                            {activeTraceTab === 'ingestion'
+                                                ? ingestionStepNames[step.id] || step.id
+                                                : t(`trace.steps.${step.id}`)}
                                         </div>
                                         {step.description && (
                                             <div
@@ -133,7 +161,7 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                             <div className={styles['trace-step-details']}>
                                                 {Object.entries(step.metricDetails).map(([key, value]) => (
                                                     <span key={key}>
-                                                        {t(`trace.metrics.${key}`, key)}: {formatMetricValue(key, value)}
+                                                        {key}: {formatMetricValue(key, value)}
                                                     </span>
                                                 ))}
                                             </div>
@@ -165,108 +193,109 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                             ))}
                         </div>
 
-                        <div className={styles['trace-citations']}>
-                            <div
-                                className={
-                                    styles['trace-citations-header']
-                                }
-                                data-testid="trace-citations-header"
-                                onClick={() =>
-                                    setCitationsExpanded(!citationsExpanded)
-                                }
-                                role="button"
-                                tabIndex={0}
-                                onKeyDown={(e) => {
-                                    if (
-                                        e.key === 'Enter' ||
-                                        e.key === ' '
-                                    ) {
-                                        setCitationsExpanded(
-                                            !citationsExpanded,
-                                        );
-                                    }
-                                }}
-                            >
-                                <span>
-                                    {t('trace.citations_count', {
-                                        count: citations.length,
-                                    })}
-                                </span>
-                                <ChevronDown
-                                    size={14}
-                                    className={
-                                        citationsExpanded
-                                            ? styles['rotated']
-                                            : ''
-                                    }
-                                />
-                            </div>
-                            {citationsExpanded && (
+                        {activeTraceTab === 'rag' && (
+                            <div className={styles['trace-citations']}>
                                 <div
                                     className={
-                                        styles['trace-citations-list']
+                                        styles['trace-citations-header']
                                     }
-                                    data-testid="trace-citations-list"
+                                    data-testid="trace-citations-header"
+                                    onClick={() =>
+                                        setCitationsExpanded(!citationsExpanded)
+                                    }
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                        if (
+                                            e.key === 'Enter' ||
+                                            e.key === ' '
+                                        ) {
+                                            setCitationsExpanded(
+                                                !citationsExpanded,
+                                            );
+                                        }
+                                    }}
                                 >
-                                    {citations.length === 0 ? (
-                                        <div
-                                            className={
-                                                styles[
-                                                    'trace-citations-empty'
-                                                ]
-                                            }
-                                            data-testid="trace-citations-empty"
-                                        >
-                                            {t('trace.no_citations')}
-                                        </div>
-                                    ) : (
-                                        citations.map((cit) => (
+                                    <span>
+                                        {t('trace.citations_count', {
+                                            count: citations.length,
+                                        })}
+                                    </span>
+                                    <ChevronDown
+                                        size={14}
+                                        className={
+                                            citationsExpanded
+                                                ? styles['rotated']
+                                                : ''
+                                        }
+                                    />
+                                </div>
+                                {citationsExpanded && (
+                                    <div
+                                        className={
+                                            styles['trace-citations-list']
+                                        }
+                                        data-testid="trace-citations-list"
+                                    >
+                                        {citations.length === 0 ? (
                                             <div
-                                                key={cit.chunkId}
-                                                data-testid="citation-card"
                                                 className={
-                                                    styles['citation-card']
+                                                    styles[
+                                                        'trace-citations-empty'
+                                                    ]
                                                 }
+                                                data-testid="trace-citations-empty"
                                             >
+                                                {t('trace.no_citations')}
+                                            </div>
+                                        ) : (
+                                            citations.map((cit) => (
                                                 <div
+                                                    key={cit.chunkId}
+                                                    data-testid="citation-card"
                                                     className={
-                                                        styles[
-                                                            'citation-card-name'
-                                                        ]
+                                                        styles['citation-card']
                                                     }
                                                 >
-                                                    {cit.documentName}
-                                                </div>
-                                                <div
-                                                    className={
-                                                        styles[
-                                                            'citation-card-meta'
-                                                        ]
-                                                    }
-                                                >
-                                                    {cit.chunkId && (
-                                                        <span>
-                                                            {t(
-                                                                'trace.chunk_id',
-                                                            )}
-                                                            : {cit.chunkId}
-                                                        </span>
-                                                    )}
-                                                    {cit.relevanceScore >
-                                                        0 && (
-                                                        <span>
-                                                            {t('trace.score')}
-                                                            :{' '}
-                                                            {(
-                                                                cit.relevanceScore *
-                                                                100
-                                                            ).toFixed(0)}
-                                                            %
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                {cit.summarySnippet && (
                                                     <div
+                                                        className={
+                                                            styles[
+                                                                'citation-card-name'
+                                                            ]
+                                                        }
+                                                    >
+                                                        {cit.documentName}
+                                                    </div>
+                                                    <div
+                                                        className={
+                                                            styles[
+                                                                'citation-card-meta'
+                                                            ]
+                                                        }
+                                                    >
+                                                        {cit.chunkId && (
+                                                            <span>
+                                                                {t(
+                                                                    'trace.chunk_id',
+                                                                )}
+                                                                : {cit.chunkId}
+                                                            </span>
+                                                        )}
+                                                        {cit.relevanceScore >
+                                                            0 && (
+                                                            <span>
+                                                                {t('trace.score')}
+                                                                :{' '}
+                                                                {(
+                                                                    cit.relevanceScore *
+                                                                    100
+                                                                ).toFixed(0)}
+                                                                %
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {cit.summarySnippet && (
+                                                        <div
                                                         className={
                                                             styles[
                                                                 'citation-card-snippet'
@@ -282,6 +311,7 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                 </div>
                             )}
                         </div>
+                    )}
                     </>
                 )}
             </div>

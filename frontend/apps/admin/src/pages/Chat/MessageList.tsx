@@ -1,10 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Input, Button, Spin, Avatar, Upload, message as antdMessage } from 'antd';
+import { Input, Button, Spin, Avatar, Upload } from 'antd';
 import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw, MessageSquare, Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatMessage } from '../../types/chat';
 import type { ChatMode } from '../../features/chat/use-chat-controller';
-import { uploadCSVAPI } from '../../api/upload';
 import styles from './MessageList.module.css';
 
 const { TextArea } = Input;
@@ -18,6 +17,8 @@ interface MessageListProps {
     onRetryFailedMessage?: (messageId: string) => void;
     chatMode: ChatMode;
     setChatMode: (mode: ChatMode) => void;
+    onUploadKBFile?: (file: File) => Promise<void>;
+    isIngesting?: boolean;
 }
 
 const MessageList: React.FC<MessageListProps> = ({
@@ -29,6 +30,8 @@ const MessageList: React.FC<MessageListProps> = ({
     onRetryFailedMessage,
     chatMode,
     setChatMode,
+    onUploadKBFile,
+    isIngesting = false,
 }) => {
     const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -56,14 +59,11 @@ const MessageList: React.FC<MessageListProps> = ({
         }
     };
 
-    const handleUpload = async (file: File) => {
-        try {
-            await uploadCSVAPI(file);
-            antdMessage.success(t('chat.upload_success', { name: file.name }));
-        } catch {
-            // error handled by interceptor
+    const handleUpload = (file: File) => {
+        if (onUploadKBFile) {
+            void onUploadKBFile(file);
         }
-        return false; // prevent default upload
+        return false;
     };
 
     const renderMessage = (msg: ChatMessage) => {
@@ -189,40 +189,42 @@ const MessageList: React.FC<MessageListProps> = ({
             </div>
 
             <div className={styles['input-area']}>
-                <div className={`${styles['input-row']} ${isStreaming ? styles['input-disabled'] : ''}`}>
-                    <Upload
-                        showUploadList={false}
-                        beforeUpload={handleUpload}
-                        accept=".csv,.xlsx,.xls"
-                        disabled={isStreaming}
-                    >
-                        <Button
-                            className={styles['upload-btn']}
-                            icon={<Paperclip size={18} />}
-                            type="text"
-                            title={t('chat.upload_file')}
+                <div className={styles['input-container-wrapper']}>
+                    <div className={`${styles['input-row']} ${isStreaming || isIngesting ? styles['input-disabled'] : ''}`}>
+                        <Upload
+                            showUploadList={false}
+                            beforeUpload={handleUpload}
+                            accept=".md,.markdown"
+                            disabled={isStreaming || isIngesting}
+                        >
+                            <Button
+                                className={styles['upload-btn']}
+                                icon={<Paperclip size={18} />}
+                                type="text"
+                                title={t('chat.upload_file')}
+                                disabled={isStreaming || isIngesting}
+                            />
+                        </Upload>
+                        <TextArea
+                            className={styles['chat-input']}
+                            data-testid="chat-input"
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            placeholder={t('chat.input_tip')}
+                            autoSize={{ minRows: 1, maxRows: 4 }}
                             disabled={isStreaming}
                         />
-                    </Upload>
-                    <TextArea
-                        className={styles['chat-input']}
-                        data-testid="chat-input"
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder={t('chat.input_tip')}
-                        autoSize={{ minRows: 1, maxRows: 4 }}
-                        disabled={isStreaming}
-                    />
-                    <Button
-                        className={styles['send-btn']}
-                        type="primary"
-                        data-testid="send-btn"
-                        icon={<Send size={18} />}
-                        onClick={handleSend}
-                        disabled={!inputValue.trim() || isStreaming}
-                        loading={isStreaming}
-                    />
+                        <Button
+                            className={styles['send-btn']}
+                            type="primary"
+                            data-testid="send-btn"
+                            icon={<Send size={18} />}
+                            onClick={handleSend}
+                            disabled={!inputValue.trim() || isStreaming}
+                            loading={isStreaming}
+                        />
+                    </div>
                 </div>
             </div>
         </div>

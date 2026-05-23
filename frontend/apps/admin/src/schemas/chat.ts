@@ -128,3 +128,27 @@ export const knowledgeBaseResponseSchema = z.object({
 });
 
 export type KnowledgeBaseResponse = z.infer<typeof knowledgeBaseResponseSchema>;
+
+export const knowledgeUploadResponseSchema = z.object({
+    task_id: requiredString,
+    file_id: requiredString,
+    kb_id: z.string().nullable().optional(),
+    file_status: z.string(),
+    task_status: z.string(),
+    deduplicated: z.boolean().optional().default(false),
+});
+
+export type KnowledgeUploadResponse = z.infer<typeof knowledgeUploadResponseSchema>;
+
+export const kbTaskResponseSchema = z.object({
+    id: requiredString,
+    action_type: z.string(),
+    status: z.string(),
+    progress: z.number().int(),
+    payload: z.record(z.string(), z.unknown()),
+    error_log: z.string().nullable().optional(),
+    created_at: z.string(),
+    updated_at: z.string(),
+});
+
+export type KBTaskResponse = z.infer<typeof kbTaskResponseSchema>;

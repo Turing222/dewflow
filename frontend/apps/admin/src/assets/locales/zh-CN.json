@@ -102,6 +102,8 @@
     "score": "相关度",
     "expand": "展开执行面板",
     "collapse": "收起执行面板",
+    "tab_rag": "RAG对话诊断",
+    "tab_ingestion": "知识库入库",
     "summary": {
       "first_token": "首字",
       "total": "总耗时",
@@ -125,6 +127,13 @@
       "generate-answer": "生成回答",
       "organize-citations": "整理引用",
       "complete": "完成"
+    },
+    "ingestion": {
+      "file-upload": "文件存储上传",
+      "content-audit": "提取解析文本",
+      "semantic-chunk": "切片安全审计",
+      "vector-index": "写入向量索引",
+      "ingestion-complete": "成功导入知识库"
     }
   },
   "credits": {

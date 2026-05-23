@@ -29,6 +29,8 @@ export const API_URLS = {
     },
     KNOWLEDGE: {
         DEFAULT: `${API_PREFIX}/knowledge/default`,
+        DEFAULT_UPLOAD: `${API_PREFIX}/knowledge/default/upload`,
+        TASK_STATUS: (id: string) => `${API_PREFIX}/knowledge/tasks/${id}`,
     },
     CREDITS: {
         ME: `${API_PREFIX}/credits/me`,

@@ -102,6 +102,8 @@
     "score": "Relevance",
     "expand": "Expand execution panel",
     "collapse": "Collapse execution panel",
+    "tab_rag": "RAG Diagnostics",
+    "tab_ingestion": "KB Ingestion",
     "summary": {
       "first_token": "First token",
       "total": "Total",
@@ -125,6 +127,13 @@
       "generate-answer": "Generate Answer",
       "organize-citations": "Organize Citations",
       "complete": "Complete"
+    },
+    "ingestion": {
+      "file-upload": "File Upload",
+      "content-audit": "Content Parsing",
+      "semantic-chunk": "Semantic Chunking",
+      "vector-index": "Vector Indexing",
+      "ingestion-complete": "Ingestion Complete"
     }
   },
   "credits": {

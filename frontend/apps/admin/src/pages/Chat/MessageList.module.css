@@ -409,3 +409,102 @@
     line-height: 1.5;
     color: var(--color-text-desc);
 }
+
+/* --- Premium File Ingestion Status Styles --- */
+
+.input-container-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 800px;
+    gap: 8px;
+}
+
+.upload-status-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--color-primary-shadow);
+    border: 1px solid var(--color-primary);
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--color-text-main);
+    animation: slideUp 0.25s ease-out;
+    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.05);
+}
+
+.upload-status-banner.error {
+    background: rgba(255, 77, 79, 0.04);
+    border-color: var(--color-error);
+    color: var(--color-text-main);
+    box-shadow: 0 4px 12px rgba(255, 77, 79, 0.05);
+}
+
+.upload-status-banner.error .upload-status-text {
+    color: var(--color-error);
+}
+
+.upload-status-banner.success {
+    background: rgba(82, 196, 26, 0.04);
+    border-color: #52c41a;
+    color: var(--color-text-main);
+    box-shadow: 0 4px 12px rgba(82, 196, 26, 0.05);
+}
+
+.upload-status-banner.success .upload-status-text {
+    color: #52c41a;
+}
+
+.upload-status-details {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.upload-status-text {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.upload-status-subtext {
+    color: var(--color-text-desc);
+    margin-left: 6px;
+    font-size: 12px;
+}
+
+.upload-spinner-icon {
+    animation: rotate-spin 1s linear infinite;
+    color: var(--color-primary);
+    flex-shrink: 0;
+}
+
+.upload-spinner-icon.error {
+    color: var(--color-error);
+    animation: none;
+}
+
+.upload-spinner-icon.success {
+    color: #52c41a;
+    animation: none;
+}
+
+@keyframes rotate-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
