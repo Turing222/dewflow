@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -14,6 +15,9 @@ from typing import TYPE_CHECKING
 import redis.asyncio as redis
 
 from backend.application.chat.history_projection import history_to_conversation_messages
+from backend.utils.token_estimation import count_messages_tokens, count_tokens
+from backend.config.credit_settings import credit_settings
+from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.concurrency import db_concurrency_slot
@@ -139,10 +143,6 @@ class ChatSessionOrchestrator:
                     f"{span_prefix}.create_session_and_messages",
                     trace_attrs,
                 ) as span:
-                    await CreditService(self.uow).ensure_sufficient_balance(
-                        command.user_id
-                    )
-
                     session_manager = self._session_manager
                     resolved_kb_id = command.kb_id
 
@@ -198,8 +198,28 @@ class ChatSessionOrchestrator:
                         span, {"chat.history.message_count": len(history_messages)}
                     )
 
+                with trace_span(f"{span_prefix}.credit_precheck", trace_attrs) as span:
+                    conversation_history = history_to_conversation_messages(
+                        history_messages
+                    )
+                    model_name = _resolve_billing_model_name()
+                    estimated_cost = _estimate_credit_cost(
+                        query_text=command.query_text,
+                        conversation_history=conversation_history,
+                        model_name=model_name,
+                    )
+                    set_span_attributes(
+                        span,
+                        {
+                            "credit.estimated_cost": estimated_cost,
+                            "credit.model_name": model_name,
+                        },
+                    )
+                    await CreditService(self.uow).ensure_sufficient_balance(
+                        command.user_id, estimated_cost=estimated_cost
+                    )
+
         with trace_span(f"{span_prefix}.prepare_worker_payload", trace_attrs) as span:
-            conversation_history = history_to_conversation_messages(history_messages)
             set_span_attributes(
                 span,
                 {
@@ -233,3 +253,36 @@ class ChatSessionOrchestrator:
             idempotency.lock_key,
             idempotency.lock_token,
         )
+
+
+def _resolve_billing_model_name() -> str:
+    """Resolve the model name used for credit billing (first candidate)."""
+    try:
+        config = get_llm_model_config()
+        profiles = config.resolve_route(settings.LLM_PROVIDER)
+        return profiles[0].model
+    except Exception:
+        return "default"
+
+
+def _estimate_credit_cost(
+    *,
+    query_text: str,
+    conversation_history: list[dict],
+    model_name: str,
+) -> int:
+    """Estimate credit cost based on input tokens + estimated output tokens."""
+    model_for_counting = "gpt-4"
+    input_tokens = count_tokens(query_text, model_for_counting)
+    if conversation_history:
+        input_tokens += count_messages_tokens(
+            conversation_history, model_for_counting
+        )
+
+    output_tokens = credit_settings.CREDIT_ESTIMATED_OUTPUT_TOKENS
+    rates = credit_settings.CREDIT_MODEL_RATES.get(model_name) or credit_settings.CREDIT_MODEL_RATES.get("default", {})
+    input_rate = rates.get("input", 1.0)
+    output_rate = rates.get("output", 1.0)
+
+    raw_cost = input_tokens * input_rate + output_tokens * output_rate
+    return max(math.ceil(raw_cost), credit_settings.CREDIT_MINIMUM_ESTIMATED_COST)

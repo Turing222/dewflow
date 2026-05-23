@@ -70,18 +70,19 @@ class CreditService(BaseService[AbstractUnitOfWork]):
         return await self._get_or_create_account_with_lock(user_id, lock=False)
 
     async def ensure_sufficient_balance(
-        self, user_id: uuid.UUID, *, estimated_cost: int = 1
+        self, user_id: uuid.UUID, *, estimated_cost: int | None = None
     ) -> CreditAccount:
         """锁定 Credits 账户并确认余额可发起模型生成。"""
+        cost = estimated_cost if estimated_cost is not None else credit_settings.CREDIT_MINIMUM_ESTIMATED_COST
         account = await self._get_or_create_account_with_lock(user_id)
 
-        if account.balance < estimated_cost:
+        if account.balance < cost:
             raise app_validation_error(
                 "Credits 余额不足，请先签到获取额度",
                 code="CREDIT_QUOTA_EXCEEDED",
                 details={
                     "balance": account.balance,
-                    "estimated_cost": estimated_cost,
+                    "estimated_cost": cost,
                 },
             )
 

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.ai.core.token_counter import count_tokens
+from backend.utils.token_estimation import count_tokens
 from backend.services.vector_index_service import CHUNKING_VERSION, VectorIndexService
 
 pytestmark = pytest.mark.asyncio

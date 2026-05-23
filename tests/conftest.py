@@ -52,13 +52,9 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 @pytest.fixture(autouse=True)
 def stable_token_counter(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep token counting local and deterministic in tests."""
-    try:
-        from backend.ai.core import token_counter
-    except ImportError:
-        return
-        yield  # never reached; pragma: no cover
+    from backend.utils import token_estimation
 
-    token_counter._encoding_cache.clear()
-    monkeypatch.setattr(token_counter, "_tiktoken_available", False)
+    token_estimation._encoding_cache.clear()
+    monkeypatch.setattr(token_estimation, "_tiktoken_available", False)
     yield
-    token_counter._encoding_cache.clear()
+    token_estimation._encoding_cache.clear()

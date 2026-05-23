@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
-from backend.ai.core.token_counter import count_tokens
+from backend.utils.token_estimation import count_tokens
 from backend.application.chat.timing import (
     elapsed_ms,
     merge_metrics,

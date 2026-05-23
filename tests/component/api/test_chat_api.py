@@ -214,15 +214,18 @@ class FakeKnowledgeRepo:
 class FakeCreditRepo:
     """积分仓储模拟，防止 Workflow 内 CreditService 访问失败。"""
 
+    def __init__(self, balance: int = 10_000):
+        self._balance = balance
+
     async def get_account(self, user_id: uuid.UUID):
         from backend.models.orm.credits import CreditAccount
 
-        return CreditAccount(user_id=user_id, balance=100)
+        return CreditAccount(user_id=user_id, balance=self._balance)
 
     async def get_account_with_lock(self, user_id: uuid.UUID):
         from backend.models.orm.credits import CreditAccount
 
-        return CreditAccount(user_id=user_id, balance=100)
+        return CreditAccount(user_id=user_id, balance=self._balance)
 
     async def get_account_by_id_with_lock(self, account_id: uuid.UUID):
         return None
@@ -332,7 +335,7 @@ def stable_test_environment():
     token_counter._encoding_cache.clear()
     with (
         patch(
-            "backend.ai.core.token_counter.tiktoken.get_encoding",
+            "backend.utils.token_estimation.tiktoken.get_encoding",
             return_value=_FakeEncoding(),
         ),
         patch(

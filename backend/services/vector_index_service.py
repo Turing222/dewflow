@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Literal, NotRequired, TypedDict
 
-from backend.ai.core.token_counter import count_tokens
+from backend.utils.token_estimation import count_tokens
 from backend.contracts.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.observability.trace_utils import set_span_attributes, trace_span

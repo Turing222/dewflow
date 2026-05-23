@@ -43,7 +43,7 @@ def _build_orchestrator() -> tuple[ChatSessionOrchestrator, MagicMock]:
     # Mock credit_repo
     uow.credit_repo = AsyncMock()
     credit_account = MagicMock()
-    credit_account.balance = 1000
+    credit_account.balance = 10_000
     uow.credit_repo.get_account_with_lock = AsyncMock(return_value=credit_account)
     uow.credit_repo.create_account = AsyncMock(return_value=credit_account)
     uow.credit_repo.get_transaction_by_idempotency_key = AsyncMock(return_value=None)

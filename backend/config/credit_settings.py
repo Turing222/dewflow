@@ -27,11 +27,26 @@ class CreditSettings(BaseSettings):
 
     CREDIT_DAILY_CHECKIN_AMOUNT: int = 100
     CREDIT_DAILY_CHECKIN_VALID_DAYS: int = 7
+    CREDIT_MINIMUM_ESTIMATED_COST: int = 10
+    """Minimum estimated cost for credit pre-check before LLM generation."""
+
+    CREDIT_ESTIMATED_OUTPUT_TOKENS: int = 512
+    """Estimated output tokens for credit pre-check cost calculation."""
+
     CREDIT_MODEL_RATES: dict[str, dict[str, float]] = {
-        "default": {"input": 1.0, "output": 1.0},
+        "default": {"input": 1.0, "output": 2.0},
+        # OpenAI
+        "gpt-4o-mini": {"input": 0.15, "output": 0.6},
         "gpt-4": {"input": 10.0, "output": 30.0},
         "gpt-3.5-turbo": {"input": 1.5, "output": 2.0},
+        # DeepSeek
         "deepseek-chat": {"input": 1.0, "output": 2.0},
+        "deepseek-v4-flash": {"input": 0.5, "output": 1.0},
+        "deepseek-v4-pro": {"input": 2.0, "output": 8.0},
+        # Gemini
+        "gemini-2.5-flash": {"input": 0.15, "output": 0.6},
+        # Bifrost gateway passthrough (deepseek/deepseek-chat)
+        "deepseek/deepseek-chat": {"input": 1.0, "output": 2.0},
     }
 
     model_config = SettingsConfigDict(

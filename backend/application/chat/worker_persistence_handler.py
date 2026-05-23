@@ -87,7 +87,7 @@ class WorkerPersistenceHandler:
                     )
                     await updater.update_as_failed(
                         message_id=assistant_message_id,
-                        error_content="Credits 余额不足，本次生成未记录",
+                        error_content="Credits 余额不足，本次生成未记录。已生成的内容不会被扣费，请签到后再试。",
                         message_metadata=build_safety_metadata(
                             response_outcome=ResponseOutcome.FAILED,
                         ),

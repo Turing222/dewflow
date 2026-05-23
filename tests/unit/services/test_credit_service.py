@@ -86,7 +86,7 @@ async def test_ensure_sufficient_balance_rejects_empty_balance() -> None:
         await service.ensure_sufficient_balance(user_id)
 
     assert exc_info.value.code == "CREDIT_QUOTA_EXCEEDED"
-    assert exc_info.value.details == {"balance": 0, "estimated_cost": 1}
+    assert exc_info.value.details == {"balance": 0, "estimated_cost": 10}
     uow.credit_repo.create_account.assert_not_awaited()
 
 
