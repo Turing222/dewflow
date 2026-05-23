@@ -211,11 +211,80 @@ class FakeKnowledgeRepo:
         return None
 
 
+class FakeCreditRepo:
+    """积分仓储模拟，防止 Workflow 内 CreditService 访问失败。"""
+
+    async def get_account(self, user_id: uuid.UUID):
+        from backend.models.orm.credits import CreditAccount
+
+        return CreditAccount(user_id=user_id, balance=100)
+
+    async def get_account_with_lock(self, user_id: uuid.UUID):
+        from backend.models.orm.credits import CreditAccount
+
+        return CreditAccount(user_id=user_id, balance=100)
+
+    async def get_account_by_id_with_lock(self, account_id: uuid.UUID):
+        return None
+
+    async def create_account(self, user_id: uuid.UUID):
+        from backend.models.orm.credits import CreditAccount
+
+        return CreditAccount(user_id=user_id, balance=100)
+
+    async def update_account_balance(self, account_id: uuid.UUID, balance: int):
+        pass
+
+    async def try_decrement_balance(self, account_id: uuid.UUID, cost: int) -> bool:
+        return True
+
+    async def add_transaction(self, **kwargs):
+        from backend.models.orm.credits import CreditTransaction
+
+        return CreditTransaction(
+            account_id=kwargs["account_id"],
+            amount=kwargs["amount"],
+            source=kwargs["source"],
+        )
+
+    async def get_transaction_by_idempotency_key(self, idempotency_key: str):
+        return None
+
+    async def create_usage_record(self, **kwargs):
+        from backend.models.orm.credits import UsageRecord
+
+        return UsageRecord(user_id=kwargs["user_id"], credit_cost=0)
+
+    async def get_usage_record_by_chat_message_id(self, chat_message_id: uuid.UUID):
+        return None
+
+    async def list_transactions(self, **kwargs):
+        return []
+
+    async def count_transactions(
+        self, account_id: uuid.UUID, source: str | None = None
+    ) -> int:
+        return 0
+
+    async def get_expired_grants_sum(self, account_id: uuid.UUID, now=None) -> int:
+        return 0
+
+    async def get_already_expired_sum(self, account_id: uuid.UUID) -> int:
+        return 0
+
+    async def get_spent_sum(self, account_id: uuid.UUID) -> int:
+        return 0
+
+    async def list_accounts_needing_expiration(self, now=None):
+        return []
+
+
 class FakeUnitOfWork:
     def __init__(self, user_repo: FakeUserRepo, chat_repo: FakeChatRepo):
         self.user_repo = user_repo
         self.chat_repo = chat_repo
         self.knowledge_repo = FakeKnowledgeRepo()
+        self.credit_repo = FakeCreditRepo()
         self.commits = 0
         self.rollbacks = 0
 
@@ -234,6 +303,9 @@ class FakeUnitOfWork:
 
     async def rollback(self):
         self.rollbacks += 1
+
+    def savepoint(self):
+        return self
 
 
 class RecordingLLMService:

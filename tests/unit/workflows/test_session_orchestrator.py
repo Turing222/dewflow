@@ -33,10 +33,27 @@ def _make_idempotency() -> ChatIdempotencyState:
 
 def _build_orchestrator() -> tuple[ChatSessionOrchestrator, MagicMock]:
     """Build orchestrator with mocked UoW; return (orchestrator, uow)."""
+    from contextlib import asynccontextmanager
+
     uow = MagicMock()
     uow.user_repo = AsyncMock()
     uow.knowledge_repo = AsyncMock()
     uow.chat_repo = AsyncMock()
+
+    # Mock credit_repo
+    uow.credit_repo = AsyncMock()
+    credit_account = MagicMock()
+    credit_account.balance = 1000
+    uow.credit_repo.get_account_with_lock = AsyncMock(return_value=credit_account)
+    uow.credit_repo.create_account = AsyncMock(return_value=credit_account)
+    uow.credit_repo.get_transaction_by_idempotency_key = AsyncMock(return_value=None)
+    uow.credit_repo.get_usage_record_by_chat_message_id = AsyncMock(return_value=None)
+
+    @asynccontextmanager
+    async def _noop_savepoint():
+        yield uow
+
+    uow.savepoint = _noop_savepoint
     uow.__aenter__.return_value = uow
 
     redis_client = AsyncMock()

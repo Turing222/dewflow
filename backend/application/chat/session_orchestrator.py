@@ -17,13 +17,13 @@ from backend.application.chat.history_projection import history_to_conversation_
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.concurrency import db_concurrency_slot
-from backend.core.exceptions import AppException, app_bad_request, app_validation_error
+from backend.core.exceptions import AppException, app_bad_request
 from backend.infra.redis import safe_release_lock
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import SessionManager
-from backend.services.knowledge_service import DEFAULT_KNOWLEDGE_BASE_NAME
+from backend.services.credit_service import CreditService
 from backend.services.permission_service import PermissionService
 
 if TYPE_CHECKING:
@@ -139,16 +139,9 @@ class ChatSessionOrchestrator:
                     f"{span_prefix}.create_session_and_messages",
                     trace_attrs,
                 ) as span:
-                    user = await self.uow.user_repo.get_with_lock(command.user_id)
-                    if user and user.used_tokens >= user.max_tokens:
-                        raise app_validation_error(
-                            "Token 余额不足",
-                            code="TOKEN_QUOTA_EXCEEDED",
-                            details={
-                                "used": user.used_tokens,
-                                "max": user.max_tokens,
-                            },
-                        )
+                    await CreditService(self.uow).ensure_sufficient_balance(
+                        command.user_id
+                    )
 
                     session_manager = self._session_manager
                     resolved_kb_id = command.kb_id

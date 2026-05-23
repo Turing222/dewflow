@@ -15,6 +15,7 @@ from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.repositories.access_repo import AccessRepository
 from backend.repositories.audit_repo import AuditRepository
 from backend.repositories.chat_repo import ChatRepository
+from backend.repositories.credit_repo import CreditRepository
 from backend.repositories.knowledge_repo import KnowledgeRepository
 from backend.repositories.task_repo import TaskRepository
 from backend.repositories.user_repo import UserRepository
@@ -60,6 +61,14 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
                 self._session = None
 
     @asynccontextmanager
+    async def savepoint(self) -> AsyncIterator["SQLAlchemyUnitOfWork"]:
+        """Create a nested transaction (SAVEPOINT) for partial rollback."""
+        if self._session is None:
+            raise RuntimeError("UnitOfWork session is not initialized.")
+        async with self._session.begin_nested():
+            yield self
+
+    @asynccontextmanager
     async def read_context(self) -> AsyncIterator["SQLAlchemyUnitOfWork"]:
         """创建只读 UoW 上下文；正常退出不提交事务。"""
         if self._session is not None:
@@ -90,3 +99,4 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
         self.chat_repo = ChatRepository(session)
         self.knowledge_repo = KnowledgeRepository(session)
         self.task_repo = TaskRepository(session)
+        self.credit_repo = CreditRepository(session)

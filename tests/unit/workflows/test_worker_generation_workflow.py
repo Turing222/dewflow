@@ -198,7 +198,6 @@ async def test_worker_generation_persists_success_and_publishes_done(
     user_id = uuid.uuid4()
     updated_message = object()
     uow.chat_repo.update_message_status.return_value = updated_message
-    uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
 
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -238,11 +237,6 @@ async def test_worker_generation_persists_success_and_publishes_done(
     assert message_metadata["response_outcome"] == "answered"
     assert message_metadata["metrics"]["tokens_output"] == 7
     assert "first_token_latency_ms" in message_metadata["metrics"]
-    total_tokens = update_kwargs["tokens_input"] + 7
-    uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
-        user_id,
-        total_tokens,
-    )
     assert redis.set_calls == [("idempotency:test", str(assistant_message_id), 3600)]
     assert slot_calls == [
         {
@@ -372,7 +366,6 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     assistant_message_id = uuid.uuid4()
     user_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
-    uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
     llm_service = NonStreamingLLM(
         LLMResultDTO(content="full answer", completion_tokens=5, latency_ms=12)
     )
@@ -402,11 +395,6 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
     assert update_kwargs["tokens_output"] == 5
     assert update_kwargs["message_metadata"]["schema_version"] == 1
     assert update_kwargs["message_metadata"]["response_outcome"] == "answered"
-    total_tokens = update_kwargs["tokens_input"] + 5
-    uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
-        user_id,
-        total_tokens,
-    )
     assert redis.set_calls == [("idempotency:test", str(assistant_message_id), 3600)]
     assert slot_calls == [
         {

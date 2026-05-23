@@ -10,6 +10,7 @@ from backend.contracts.repository_protocols import (
     AccessRepositoryProtocol,
     AuditRepositoryProtocol,
     ChatRepositoryProtocol,
+    CreditRepositoryProtocol,
     KnowledgeRepositoryProtocol,
     TaskRepositoryProtocol,
     UserRepositoryProtocol,
@@ -25,6 +26,7 @@ class AbstractUnitOfWork(ABC):
     chat_repo: ChatRepositoryProtocol
     knowledge_repo: KnowledgeRepositoryProtocol
     task_repo: TaskRepositoryProtocol
+    credit_repo: CreditRepositoryProtocol
 
     async def __aenter__(self) -> "AbstractUnitOfWork":
         return self
@@ -45,6 +47,9 @@ class AbstractUnitOfWork(ABC):
 
     @abstractmethod
     async def rollback(self) -> None: ...
+
+    @abstractmethod
+    def savepoint(self) -> AbstractAsyncContextManager["AbstractUnitOfWork"]: ...
 
     @abstractmethod
     def read_context(self) -> AbstractAsyncContextManager["AbstractUnitOfWork"]: ...

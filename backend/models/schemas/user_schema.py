@@ -57,7 +57,9 @@ class UserLogin(BaseModel):
 class SMSSendRequest(BaseModel):
     """发送短信验证码请求。"""
 
-    phone: str = Field(..., pattern=r"^\+?\d{7,15}$", description="手机号（含可选国际区号）")
+    phone: str = Field(
+        ..., pattern=r"^\+?\d{7,15}$", description="手机号（含可选国际区号）"
+    )
 
 
 class PhoneLoginRequest(BaseModel):
@@ -108,9 +110,12 @@ class UserCreate(UserBase):
 
     @model_validator(mode="after")
     def check_passwords_match(self) -> Self:
-        if self.password is not None and self.confirm_password is not None:
-            if self.password != self.confirm_password:
-                raise ValueError("两次输入的密码不一致")
+        if (
+            self.password is not None
+            and self.confirm_password is not None
+            and self.password != self.confirm_password
+        ):
+            raise ValueError("两次输入的密码不一致")
         return self
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")

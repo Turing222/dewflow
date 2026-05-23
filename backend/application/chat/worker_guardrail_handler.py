@@ -192,6 +192,7 @@ class WorkerGuardrailHandler:
             search_context=search_context,
             start_time=start_time,
             message_metadata=message_metadata,
+            model_name="default",
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
             await self._persistence_handler.write_idempotency_message(

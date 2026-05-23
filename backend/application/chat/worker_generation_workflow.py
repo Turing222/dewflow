@@ -198,6 +198,7 @@ class LLMGenerationWorkerWorkflow:
         start_time: float,
         message_metadata: dict | None,
         idempotency_lock_key: str | None,
+        model_name: str = "default",
     ) -> None:
         """Persist success state and write idempotency marker if applicable."""
         await self.persistence_handler.persist_success(
@@ -209,6 +210,7 @@ class LLMGenerationWorkerWorkflow:
             search_context=search_context,
             start_time=start_time,
             message_metadata=message_metadata,
+            model_name=model_name,
         )
         if idempotency_lock_key is not None and assistant_message_id is not None:
             await self.persistence_handler.write_idempotency_message(
@@ -408,6 +410,7 @@ class LLMGenerationWorkerWorkflow:
                         },
                     ),
                     idempotency_lock_key=idempotency_lock_key,
+                    model_name=getattr(self.llm_service, "model_name", "default"),
                 )
 
                 citation_attrs: dict[str, object] = {}
@@ -546,11 +549,7 @@ class LLMGenerationWorkerWorkflow:
                     citation_result = validate_citations(full_content, valid_ref_ids)
                     search_context = merge_metrics(
                         search_context,
-                        {
-                            "citation_validate_ms": elapsed_ms(
-                                citation_validate_started
-                            )
-                        },
+                        {"citation_validate_ms": elapsed_ms(citation_validate_started)},
                     )
                     full_content = citation_result.cleaned_content
             tokens_output = (
@@ -588,6 +587,7 @@ class LLMGenerationWorkerWorkflow:
                     },
                 ),
                 idempotency_lock_key=idempotency_lock_key,
+                model_name=getattr(self.llm_service, "model_name", "default"),
             )
 
             if citation_result is not None:

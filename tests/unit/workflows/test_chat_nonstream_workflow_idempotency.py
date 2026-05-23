@@ -55,6 +55,12 @@ async def test_orchestrator_without_injected_session_manager_uses_default() -> N
     uow.knowledge_repo.get_kb_by_name_for_user = AsyncMock(return_value=None)
     uow.chat_repo = AsyncMock()
     uow.chat_repo.get_context_state = AsyncMock(return_value=ContextState())
+    uow.credit_repo = AsyncMock()
+    credit_account = MagicMock()
+    credit_account.balance = 1000
+    uow.credit_repo.get_account_with_lock = AsyncMock(return_value=credit_account)
+    uow.credit_repo.get_transaction_by_idempotency_key = AsyncMock(return_value=None)
+    uow.credit_repo.get_usage_record_by_chat_message_id = AsyncMock(return_value=None)
     uow.__aenter__.return_value = uow
 
     orchestrator = ChatSessionOrchestrator(
@@ -118,6 +124,12 @@ async def test_idempotency_lock_prevents_duplicate_request() -> None:
     uow.user_repo = AsyncMock()
     uow.user_repo.get = AsyncMock(return_value=mock_user)
     uow.user_repo.get_with_lock = AsyncMock(return_value=mock_user)
+    uow.credit_repo = AsyncMock()
+    credit_account = MagicMock()
+    credit_account.balance = 1000
+    uow.credit_repo.get_account_with_lock = AsyncMock(return_value=credit_account)
+    uow.credit_repo.get_transaction_by_idempotency_key = AsyncMock(return_value=None)
+    uow.credit_repo.get_usage_record_by_chat_message_id = AsyncMock(return_value=None)
     uow.__aenter__.return_value = uow
 
     first_call_error: Exception | None = None
@@ -158,9 +170,15 @@ async def test_token_quota_exceeded_raises_error() -> None:
     uow.user_repo = AsyncMock()
     uow.user_repo.get = AsyncMock(return_value=mock_user)
     uow.user_repo.get_with_lock = AsyncMock(return_value=mock_user)
+    uow.credit_repo = AsyncMock()
+    credit_account = MagicMock()
+    credit_account.balance = 0
+    uow.credit_repo.get_account_with_lock = AsyncMock(return_value=credit_account)
+    uow.credit_repo.get_transaction_by_idempotency_key = AsyncMock(return_value=None)
+    uow.credit_repo.get_usage_record_by_chat_message_id = AsyncMock(return_value=None)
     uow.__aenter__.return_value = uow
 
-    with pytest.raises(Exception, match="Token 余额不足"):
+    with pytest.raises(Exception, match="Credits 余额不足"):
         await workflow.handle_query(
             ChatQueryCommand(
                 user_id=user_id,
@@ -283,6 +301,12 @@ async def test_worker_dispatch_on_success() -> None:
     uow.knowledge_repo.get_kb_by_name_for_user = AsyncMock(return_value=None)
     uow.chat_repo = AsyncMock()
     uow.chat_repo.get_context_state = AsyncMock(return_value=ContextState())
+    uow.credit_repo = AsyncMock()
+    credit_account = MagicMock()
+    credit_account.balance = 1000
+    uow.credit_repo.get_account_with_lock = AsyncMock(return_value=credit_account)
+    uow.credit_repo.get_transaction_by_idempotency_key = AsyncMock(return_value=None)
+    uow.credit_repo.get_usage_record_by_chat_message_id = AsyncMock(return_value=None)
     uow.__aenter__.return_value = uow
 
     session = MagicMock(id=uuid.uuid4(), title="Test Session", kb_id=None)

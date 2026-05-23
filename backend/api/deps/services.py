@@ -7,6 +7,7 @@ from backend.api.deps.uow import get_uow
 from backend.config.settings import settings
 from backend.config.web_settings import get_web_settings
 from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.services.credit_service import CreditService
 from backend.services.google_oauth_service import GoogleOAuthService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.object_storage import ObjectStorage, create_object_storage
@@ -87,3 +88,9 @@ def get_google_oauth_service() -> GoogleOAuthService:
         google_client_id=ws.GOOGLE_CLIENT_ID,
         google_client_secret=ws.GOOGLE_CLIENT_SECRET,
     )
+
+
+def get_credit_service(
+    uow: AbstractUnitOfWork = Depends(get_uow),
+) -> CreditService:
+    return CreditService(uow=uow)

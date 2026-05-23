@@ -65,8 +65,12 @@ class WebSettings(BaseSettings):
     SMS_CODE_EXPIRE_SECONDS: int = Field(300, description="短信验证码有效期（秒）")
     SMS_CODE_RATE_LIMIT_SECONDS: int = Field(60, description="同一手机号发送间隔（秒）")
     SMS_SEND_RATE_LIMIT_TIMES: int = Field(5, description="短信发送接口限流次数")
-    SMS_SEND_RATE_LIMIT_SECONDS: int = Field(60, description="短信发送接口限流窗口（秒）")
-    SMS_MOCK_MODE: bool = Field(True, description="Mock 模式下验证码写入日志并返回给调用方")
+    SMS_SEND_RATE_LIMIT_SECONDS: int = Field(
+        60, description="短信发送接口限流窗口（秒）"
+    )
+    SMS_MOCK_MODE: bool = Field(
+        True, description="Mock 模式下验证码写入日志并返回给调用方"
+    )
 
     # ── Rate Limiting ─────────────────────────────────────────────
     RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = ""

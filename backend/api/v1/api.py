@@ -4,6 +4,7 @@ from backend.api.v1.endpoint import (
     audit_api,
     auth_api,
     chat_api,
+    credit_api,
     health_check,
     knowledge_api,
     permission_api,
@@ -65,6 +66,12 @@ api_router.include_router(
     prefix="/telemetry",
     tags=["telemetry"],
     dependencies=[Depends(frontend_telemetry_limiter)],
+)
+api_router.include_router(
+    credit_api.router,
+    prefix="/credits",
+    tags=["credits"],
+    dependencies=[Depends(business_limiter)],
 )
 api_router.include_router(
     health_check.router, prefix="/health_check", tags=["health_check"]

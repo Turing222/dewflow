@@ -31,10 +31,16 @@ class User(Base, BaseIdModel, AuditMixin):
         String(255), unique=True, index=True, nullable=True
     )
     phone: Mapped[str | None] = mapped_column(
-        String(20), unique=True, index=True, nullable=True, comment="手机号（短信登录标识）"
+        String(20),
+        unique=True,
+        index=True,
+        nullable=True,
+        comment="手机号（短信登录标识）",
     )
     auth_provider: Mapped[str | None] = mapped_column(
-        String(20), nullable=True, server_default=text("'local'"),
+        String(20),
+        nullable=True,
+        server_default=text("'local'"),
         comment="注册渠道: local/phone/google",
     )
     google_sub: Mapped[str | None] = mapped_column(

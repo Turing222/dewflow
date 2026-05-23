@@ -17,6 +17,7 @@ from backend.api.deps.auth import (
 )
 from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.services import (
+    get_credit_service,
     get_knowledge_service,
     get_object_storage,
     get_session_query_service,
@@ -45,6 +46,7 @@ __all__ = [
     "get_audit_service",
     "get_chat_nonstream_workflow",
     "get_chat_workflow",
+    "get_credit_service",
     "get_current_active_user",
     "get_current_superuser",
     "get_current_user",

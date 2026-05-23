@@ -76,7 +76,9 @@ class UserService(BaseService[AbstractUnitOfWork]):
                 code="USERNAME_ALREADY_REGISTERED",
             )
 
-        hashed_pw = await get_password_hash(user_in.password) if user_in.password else None
+        hashed_pw = (
+            await get_password_hash(user_in.password) if user_in.password else None
+        )
         obj_in_data = UserCreateData(
             username=user_in.username,
             email=str(user_in.email) if user_in.email else None,
@@ -151,7 +153,9 @@ class UserService(BaseService[AbstractUnitOfWork]):
     async def _generate_unique_username(self) -> str:
         """生成不与现有用户冲突的 user_ 前缀用户名。"""
         for _ in range(10):
-            suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+            suffix = "".join(
+                random.choices(string.ascii_lowercase + string.digits, k=8)
+            )
             username = f"user_{suffix}"
             if not await self.uow.user_repo.get_by_username(username):
                 return username
@@ -219,6 +223,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
 
         auth_provider = user.auth_provider or "google"
         await self.uow.user_repo.update(
-            db_obj=user, obj_in={"google_sub": google_sub, "auth_provider": auth_provider}
+            db_obj=user,
+            obj_in={"google_sub": google_sub, "auth_provider": auth_provider},
         )
         return user

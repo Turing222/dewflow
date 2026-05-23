@@ -154,7 +154,6 @@ async def test_nonstream_idempotency_lock_written_on_success(monkeypatch) -> Non
     assistant_message_id = uuid.uuid4()
     user_id = uuid.uuid4()
     uow.chat_repo.update_message_status.return_value = object()
-    uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
 
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
@@ -187,7 +186,6 @@ async def test_nonstream_idempotency_lock_skipped_when_key_none(monkeypatch) -> 
 
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
-    uow.user_repo.try_increment_used_tokens_with_limit.return_value = True
 
     workflow = LLMGenerationWorkerWorkflow(
         uow=uow,
