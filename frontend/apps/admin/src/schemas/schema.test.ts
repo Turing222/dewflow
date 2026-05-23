@@ -5,6 +5,11 @@ import {
     searchContextSchema,
 } from './chat';
 import { userRegistrationPayloadSchema } from './user';
+import {
+    creditAccountResponseSchema,
+    checkinResponseSchema,
+    creditTransactionResponseSchema,
+} from './credit';
 
 describe('schema layer', () => {
     it('validates user registration payloads before requests are sent', () => {
@@ -89,5 +94,42 @@ describe('schema layer', () => {
             tokens_per_second: 12.5,
         });
         expect(searchContext.metrics?.retrieval_mode).toBe('hybrid');
+    });
+
+    describe('credit schema', () => {
+        it('parses credit account response', () => {
+            const result = creditAccountResponseSchema.safeParse({
+                id: '88888888-8888-4888-8888-888888888888',
+                user_id: '11111111-1111-4111-a111-111111111111',
+                balance: 1000,
+                is_checked_in_today: true,
+                created_at: '2026-05-22T12:00:00Z',
+                updated_at: '2026-05-22T12:00:00Z',
+            });
+            expect(result.success).toBe(true);
+        });
+
+        it('parses checkin response', () => {
+            const result = checkinResponseSchema.safeParse({
+                success: true,
+                balance: 600,
+                amount_earned: 100,
+                expires_at: '2026-06-22T12:00:00Z',
+            });
+            expect(result.success).toBe(true);
+        });
+
+        it('parses credit transaction response', () => {
+            const result = creditTransactionResponseSchema.safeParse({
+                id: '22222222-2222-4222-a222-222222222222',
+                account_id: '88888888-8888-4888-8888-888888888888',
+                amount: 100,
+                source: 'checkin',
+                expires_at: '2026-06-22T12:00:00Z',
+                idempotency_key: 'key-1',
+                created_at: '2026-05-22T12:00:00Z',
+            });
+            expect(result.success).toBe(true);
+        });
     });
 });

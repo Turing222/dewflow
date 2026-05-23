@@ -5,6 +5,7 @@ import { afterEach, beforeAll, vi } from 'vitest';
 import { useAuthStore } from '../stores/auth-store';
 import { setupServerLifecycle } from './msw/server';
 import { resetFactoryCounters } from './msw/factories';
+import { resetCreditMocks } from './msw/handlers/credits';
 import appI18n from '../lib/i18n';
 import { initReactI18next } from 'react-i18next';
 import mockZhCN from '../assets/locales/zh-CN.json';
@@ -71,4 +72,5 @@ afterEach(async () => {
     vi.unstubAllGlobals();
     window.history.pushState({}, '', '/');
     resetFactoryCounters();
+    resetCreditMocks();
 });

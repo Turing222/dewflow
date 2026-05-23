@@ -54,8 +54,43 @@ httpClient.interceptors.request.use(
 );
 
 httpClient.interceptors.response.use(
-    (response) => response.data,
+    (response) => {
+        if (import.meta.env.DEV) {
+            const traceId = response.headers['x-trace-id'];
+            const requestId = response.headers['x-request-id'];
+            const method = response.config.method?.toUpperCase() ?? '?';
+            const url = response.config.url ?? '';
+            const status = response.status;
+            if (traceId || requestId) {
+                console.log(
+                    `%c[trace] %c${method} ${url} ${status}`,
+                    'color:#6366f1;font-weight:bold',
+                    'color:#94a3b8',
+                    `\n  x-trace-id:   ${traceId ?? '—'}`,
+                    `\n  x-request-id: ${requestId ?? '—'}`,
+                );
+            }
+        }
+        return response.data;
+    },
     (error) => {
+        if (import.meta.env.DEV && error?.response) {
+            const traceId = error.response.headers?.['x-trace-id'];
+            const requestId = error.response.headers?.['x-request-id'];
+            const method = error.config?.method?.toUpperCase() ?? '?';
+            const url = error.config?.url ?? '';
+            const status = error.response.status;
+            if (traceId || requestId) {
+                console.log(
+                    `%c[trace] %c${method} ${url} ${status} ❌`,
+                    'color:#ef4444;font-weight:bold',
+                    'color:#94a3b8',
+                    `\n  x-trace-id:   ${traceId ?? '—'}`,
+                    `\n  x-request-id: ${requestId ?? '—'}`,
+                );
+            }
+        }
+
         const normalized = normalizeHttpError(error);
 
         if (normalized.code === 'unauthorized') {

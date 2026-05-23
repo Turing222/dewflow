@@ -126,5 +126,32 @@
       "organize-citations": "Organize Citations",
       "complete": "Complete"
     }
+  },
+  "credits": {
+    "title": "Credits Center",
+    "my_balance": "Available Credits",
+    "checkin_btn": "Check In",
+    "checked_in_today": "Checked In Today",
+    "success_earn": "Checked in successfully! Received +{{amount}} credits",
+    "expires_on": "Valid until {{date}}",
+    "no_expire": "Permanent",
+    "calendar_title": "Sign-in Records",
+    "calendar_tip": "Check in daily to earn more",
+    "history_title": "Transaction History",
+    "history_empty": "No transactions found",
+    "column_source": "Type",
+    "column_amount": "Amount",
+    "column_time": "Time",
+    "column_expire": "Expires On",
+    "source_checkin": "Daily Check-in",
+    "source_spend": "Chat Usage",
+    "source_expire": "Credits Expired",
+    "source_adjust": "Adjustment",
+    "guest_tip": "Log in to explore Credits Center and get free daily quotas",
+    "guest_btn": "Log In Now",
+    "back_home": "Back to Home",
+    "history_desc": "Showing recent 20 transactions",
+    "checkin_error": "Check-in failed, please try again later",
+    "week_days": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
   }
 }

@@ -10,9 +10,11 @@ import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/useAuth';
 import ChatPage from './pages/Chat';
 import GoogleCallbackPage from './pages/Auth/GoogleCallbackPage';
+import AuthModal from './pages/Auth/AuthModal';
 import { useThemeStore } from './stores/theme-store';
 
 const LazyAdminDashboard = React.lazy(() => import('./pages/Admin'));
+const LazyCreditsPage = React.lazy(() => import('./pages/Credits'));
 
 const BRAND_PALETTES = {
   '#1677ff': {
@@ -202,10 +204,18 @@ const App: React.FC = () => {
               {/* 管理员后台 */}
               <Route path="/admin" element={<AdminRouteGuard />} />
 
+              {/* 积分中心 */}
+              <Route path="/credits" element={
+                <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
+                  <LazyCreditsPage />
+                </React.Suspense>
+              } />
+
               {/* 404 跳转 */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
+          <AuthModal />
         </AuthProvider>
       </QueryClientProvider>
     </ConfigProvider>

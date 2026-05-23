@@ -86,21 +86,24 @@ const PhoneLoginForm: React.FC = () => {
                 />
             </Form.Item>
 
-            <Form.Item
-                name="code"
-                rules={[
-                    { required: true, message: t('auth.validation.code_required') },
-                    { len: 6, message: t('auth.validation.code_invalid') },
-                ]}
-            >
+            <Form.Item>
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <Input
-                        prefix={<KeyRound size={16} color="#999" />}
-                        placeholder={t('auth.code_placeholder')}
-                        size="large"
-                        maxLength={6}
-                        style={{ flex: 1 }}
-                    />
+                    <Form.Item
+                        name="code"
+                        noStyle
+                        rules={[
+                            { required: true, message: t('auth.validation.code_required') },
+                            { len: 6, message: t('auth.validation.code_invalid') },
+                        ]}
+                    >
+                        <Input
+                            prefix={<KeyRound size={16} color="#999" />}
+                            placeholder={t('auth.code_placeholder')}
+                            size="large"
+                            maxLength={6}
+                            style={{ flex: 1 }}
+                        />
+                    </Form.Item>
                     <Button
                         size="large"
                         onClick={handleSendCode}

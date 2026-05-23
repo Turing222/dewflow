@@ -30,4 +30,9 @@ export const API_URLS = {
     KNOWLEDGE: {
         DEFAULT: `${API_PREFIX}/knowledge/default`,
     },
+    CREDITS: {
+        ME: `${API_PREFIX}/credits/me`,
+        CHECKIN: `${API_PREFIX}/credits/checkin`,
+        TRANSACTIONS: `${API_PREFIX}/credits/transactions`,
+    },
 } as const;

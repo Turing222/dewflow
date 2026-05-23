@@ -5,17 +5,17 @@ const requiredString = z.string().trim().min(1);
 export const userSchema = z.object({
     id: z.union([z.string(), z.number()]),
     username: requiredString,
-    email: z.email().optional(),
-    phone: z.string().optional(),
-    auth_provider: z.string().optional(),
-    role: z.enum(['user', 'admin']).optional(),
-    avatar: z.string().optional(),
-    is_superuser: z.boolean().optional(),
-    is_active: z.boolean().optional(),
-    max_tokens: z.number().int().nonnegative().optional(),
-    used_tokens: z.number().int().nonnegative().optional(),
-    created_at: z.string().optional(),
-    updated_at: z.string().optional(),
+    email: z.string().nullable().optional(),
+    phone: z.string().nullable().optional(),
+    auth_provider: z.string().nullable().optional(),
+    role: z.enum(['user', 'admin']).nullable().optional(),
+    avatar: z.string().nullable().optional(),
+    is_superuser: z.boolean().nullable().optional(),
+    is_active: z.boolean().nullable().optional(),
+    max_tokens: z.number().int().nonnegative().nullable().optional(),
+    used_tokens: z.number().int().nonnegative().nullable().optional(),
+    created_at: z.string().nullable().optional(),
+    updated_at: z.string().nullable().optional(),
 });
 
 export const userRegistrationPayloadSchema = z

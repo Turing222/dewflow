@@ -16,6 +16,20 @@ export async function mockLoginRoute(
       body: JSON.stringify(mockAuthResponse(authOverrides)),
     });
   });
+  await page.route('**/api/v1/auth/sms/send', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Code sent', code: '123456' }),
+    });
+  });
+  await page.route('**/api/v1/auth/sms/login', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockAuthResponse(authOverrides)),
+    });
+  });
   await page.route('**/api/v1/users/me', async (route) => {
     await route.fulfill({
       status: 200,
@@ -54,12 +68,12 @@ export async function seedAuthState(page: Page, token = 'mock-jwt-token-abc123')
 
 export async function performLogin(
   page: Page,
-  username = 'testuser',
-  password = 'password123',
+  phone = '13800000000',
+  code = '123456',
 ) {
   await page.getByTestId('user-menu-btn').click();
   await page.getByRole('menuitem', { name: '登录' }).click();
-  await page.locator('.auth-modal').getByPlaceholder('用户名').fill(username);
-  await page.locator('.auth-modal').getByPlaceholder('密码').fill(password);
+  await page.locator('.auth-modal').locator('input#phone-login_phone').fill(phone);
+  await page.locator('.auth-modal').locator('input[maxlength="6"]').fill(code);
   await page.locator('.auth-modal').locator('button[type="submit"]').click();
 }

@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { Button, Dropdown, message as antdMessage, Tooltip } from 'antd';
-import { LogOut, LogIn, Shield } from 'lucide-react';
+import { LogOut, LogIn, Shield, Coins } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/useAuth';
 import { useChatController } from '../../features/chat/use-chat-controller';
+import { useMyCreditsQuery } from '../../query/hooks/credits';
 import Sidebar from './Sidebar';
 import MessageList from './MessageList';
 import AgentTracePanel from './AgentTracePanel';
-import AuthModal from '../Auth/AuthModal';
 import styles from './ChatPage.module.css';
 
 const ChatPage: React.FC = () => {
@@ -19,10 +19,12 @@ const ChatPage: React.FC = () => {
     const { t } = useTranslation();
 
     const controller = useChatController();
+    const { data: credits, isLoading: loadingCredits } = useMyCreditsQuery();
 
     const userMenuItems = isAuthenticated
         ? [
             { key: 'user', label: user?.username || 'User', disabled: true },
+            { key: 'credits', label: t('credits.title'), icon: <Coins size={14} /> },
             ...(user?.is_superuser ? [{ key: 'admin', label: t('chat.user_menu.admin_panel'), icon: <Shield size={14} /> }] : []),
             { key: 'logout', label: t('chat.user_menu.logout'), icon: <LogOut size={14} />, danger: true },
         ]
@@ -37,6 +39,7 @@ const ChatPage: React.FC = () => {
         }
         if (key === 'login') { setShowAuthModal(true); }
         if (key === 'admin') navigate('/admin');
+        if (key === 'credits') navigate('/credits');
     };
 
     return (
@@ -67,43 +70,66 @@ const ChatPage: React.FC = () => {
                             )}
                         </div>
 
-                        <Dropdown
-                            menu={{ items: userMenuItems, onClick: handleMenuClick }}
-                            placement="bottomRight"
-                            trigger={['click']}
-                        >
-                            <Tooltip
-                                placement="left"
-                                title={isAuthenticated ? (
-                                    <div className={styles['token-tooltip']}>
-                                        <div className={styles['token-tooltip-title']}>{t('chat.user_menu.token_quota')}</div>
-                                        <div className={styles['token-usage-text']}>
-                                            <span>{t('chat.user_menu.used')}</span>
-                                            <span>{user?.used_tokens || 0} / {user?.max_tokens || 0}</span>
-                                        </div>
-                                        <div className={styles['token-progress-bar']}>
-                                            <div
-                                                className={styles['token-progress-fill']}
-                                                style={{
-                                                    width: `${Math.min(100, ((user?.used_tokens || 0) / (user?.max_tokens || 1)) * 100)}%`
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                ) : null}
-                            >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {isAuthenticated && (
                                 <Button
                                     type="text"
-                                    className={styles['user-menu-btn']}
-                                    data-testid="user-menu-btn"
+                                    className={styles['credit-btn']}
+                                    onClick={() => navigate('/credits')}
                                     icon={
-                                        isAuthenticated
-                                            ? <div className={`${styles['avatar-badge']} avatar-badge`}>{user?.username?.[0]?.toUpperCase()}</div>
-                                            : <div className={`${styles['avatar-badge']} avatar-badge ${styles['guest']} guest`}><LogIn size={18} /></div>
+                                        <div className={styles['credit-btn-content']}>
+                                            <Coins size={16} className={styles['credit-icon']} />
+                                            <span className={styles['credit-value']}>
+                                                {loadingCredits ? '—' : (credits?.balance ?? '—')}
+                                            </span>
+                                        </div>
                                     }
                                 />
-                            </Tooltip>
-                        </Dropdown>
+                            )}
+
+                            <Dropdown
+                                menu={{ items: userMenuItems, onClick: handleMenuClick }}
+                                placement="bottomRight"
+                                trigger={['click']}
+                            >
+                                <Tooltip
+                                    placement="left"
+                                    title={isAuthenticated ? (
+                                        <div className={styles['token-tooltip']}>
+                                            <div className={styles['token-tooltip-title']}>{t('credits.title')}</div>
+                                            <div className={styles['token-usage-text']} style={{ marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                                <span>{t('credits.my_balance')}</span>
+                                                <span style={{ color: 'var(--color-primary)', fontWeight: 'bold' }}>{credits?.balance ?? 0}</span>
+                                            </div>
+                                            <div className={styles['token-tooltip-title']}>{t('chat.user_menu.token_quota')}</div>
+                                            <div className={styles['token-usage-text']}>
+                                                <span>{t('chat.user_menu.used')}</span>
+                                                <span>{user?.used_tokens || 0} / {user?.max_tokens || 0}</span>
+                                            </div>
+                                            <div className={styles['token-progress-bar']}>
+                                                <div
+                                                    className={styles['token-progress-fill']}
+                                                    style={{
+                                                        width: `${Math.min(100, ((user?.used_tokens || 0) / (user?.max_tokens || 1)) * 100)}%`
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                >
+                                    <Button
+                                        type="text"
+                                        className={styles['user-menu-btn']}
+                                        data-testid="user-menu-btn"
+                                        icon={
+                                            isAuthenticated
+                                                ? <div className={`${styles['avatar-badge']} avatar-badge`}>{user?.username?.[0]?.toUpperCase()}</div>
+                                                : <div className={`${styles['avatar-badge']} avatar-badge ${styles['guest']} guest`}><LogIn size={18} /></div>
+                                        }
+                                    />
+                                </Tooltip>
+                            </Dropdown>
+                        </div>
                     </div>
                     <MessageList
                         messages={controller.messages}
@@ -123,7 +149,6 @@ const ChatPage: React.FC = () => {
                     onToggle={() => setTracePanelCollapsed(!tracePanelCollapsed)}
                 />
             </div>
-            <AuthModal />
         </div>
     );
 };

@@ -126,5 +126,32 @@
       "organize-citations": "整理引用",
       "complete": "完成"
     }
+  },
+  "credits": {
+    "title": "积分中心",
+    "my_balance": "当前可用积分",
+    "checkin_btn": "签到领积分",
+    "checked_in_today": "今日已签到",
+    "success_earn": "签到成功！获得 +{{amount}} 积分",
+    "expires_on": "有效至 {{date}}",
+    "no_expire": "永久有效",
+    "calendar_title": "本月签到记录",
+    "calendar_tip": "坚持签到，积少成多",
+    "history_title": "收支明细",
+    "history_empty": "暂无收支明细",
+    "column_source": "来源",
+    "column_amount": "变动额度",
+    "column_time": "时间",
+    "column_expire": "有效期至",
+    "source_checkin": "每日签到",
+    "source_spend": "对话消耗",
+    "source_expire": "额度过期",
+    "source_adjust": "系统调整",
+    "guest_tip": "登录后探索积分中心，获取每日免费额度",
+    "guest_btn": "立即登录",
+    "back_home": "返回主页",
+    "history_desc": "展示最近 20 条收支变动",
+    "checkin_error": "签到失败，请稍后重试",
+    "week_days": ["日", "一", "二", "三", "四", "五", "六"]
   }
 }

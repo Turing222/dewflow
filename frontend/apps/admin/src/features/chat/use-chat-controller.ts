@@ -91,6 +91,13 @@ export function useChatController(): UseChatControllerReturn {
 
     const isLoadingHistory = detailLoading && isSessionFromHistory;
 
+    const displayedActiveSession = isSessionFromHistory && sessionDetailData
+        ? sessionDetailData.session
+        : activeSession;
+    const displayedMessages = isSessionFromHistory && sessionDetailData
+        ? sessionDetailData.messages || []
+        : messages;
+
     useEffect(() => {
         if (!isSessionFromHistory || !sessionDetailData) return;
         // Historical session selection hydrates local chat state from query data.
@@ -214,6 +221,11 @@ export function useChatController(): UseChatControllerReturn {
                     updated_at: new Date().toISOString(),
                 };
                 setMessages((prev) => [...prev, errorMsg]);
+                retryCacheRef.current.set(failedMessageId, {
+                    clientRequestId,
+                    query: normalizedText,
+                    createdAt: Date.now(),
+                });
                 return;
             }
         }
@@ -371,17 +383,56 @@ export function useChatController(): UseChatControllerReturn {
     }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId, advanceToStep]);
 
     const retryFailedMessage = useCallback((messageId: string) => {
-        if (isStreaming) return;
+        console.log('[retry] 点击重试, messageId=', messageId, 'isStreaming=', isStreaming);
+        console.log('[retry] 当前缓存 keys=', [...retryCacheRef.current.keys()]);
+        if (isStreaming) {
+            console.log('[retry] 放弃：正在流式中');
+            return;
+        }
         pruneRetryCache();
+
+        let queryText = '';
+        let clientRequestId: string | undefined = undefined;
+
         const entry = retryCacheRef.current.get(messageId);
-        if (!entry) return;
-        setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
-        void sendQuery(entry.query, {
-            clientRequestId: undefined,
+        if (entry) {
+            queryText = entry.query;
+            clientRequestId = entry.clientRequestId;
+            console.log('[retry] 命中缓存，queryText=', queryText);
+        } else {
+            console.log('[retry] 缓存未命中，尝试从消息历史查找');
+            const msgIndex = displayedMessages.findIndex((msg) => msg.id === messageId);
+            if (msgIndex > 0) {
+                const prevMsg = displayedMessages[msgIndex - 1];
+                if (prevMsg && prevMsg.role === 'user') {
+                    queryText = prevMsg.content;
+                    console.log('[retry] 从消息历史中找到前一条用户提问作为重试内容:', queryText);
+                }
+            }
+        }
+
+        if (!queryText) {
+            console.log('[retry] 放弃：缓存里找不到该 messageId，且在消息列表中找不到对应的用户提问');
+            return;
+        }
+
+        if (entry) {
+            retryCacheRef.current.delete(messageId);
+        }
+
+        setMessages(() => {
+            const baseMessages = isSessionFromHistory && sessionDetailData
+                ? sessionDetailData.messages || []
+                : messages;
+            return baseMessages.filter((msg) => msg.id !== messageId);
+        });
+
+        void sendQuery(queryText, {
+            clientRequestId,
             addUserMessage: false,
             retryMessageId: messageId,
         });
-    }, [sendQuery, isStreaming, pruneRetryCache]);
+    }, [sendQuery, isStreaming, pruneRetryCache, displayedMessages, isSessionFromHistory, sessionDetailData, messages]);
 
     const selectSession = useCallback((session: ChatSession) => {
         setIsSessionFromHistory(true);
@@ -408,12 +459,7 @@ export function useChatController(): UseChatControllerReturn {
         setCitations([]);
     }, []);
 
-    const displayedActiveSession = isSessionFromHistory && sessionDetailData
-        ? sessionDetailData.session
-        : activeSession;
-    const displayedMessages = isSessionFromHistory && sessionDetailData
-        ? sessionDetailData.messages || []
-        : messages;
+
 
     return {
         activeSessionId,
