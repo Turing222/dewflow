@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Loader, AlertCircle, Minus, ChevronDown, ChevronLeft, ChevronRight, Activity } from 'lucide-react';
+import { Check, Loader, AlertCircle, Minus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Activity, Globe, Database, ExternalLink } from 'lucide-react';
 import { Button, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 import type { AgentTraceStep, CitationItem } from '../../types/agent-trace';
@@ -25,7 +25,15 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
     onToggle,
 }) => {
     const [citationsExpanded, setCitationsExpanded] = useState(false);
+    const [expandedCitations, setExpandedCitations] = useState<Record<string, boolean>>({});
     const { t } = useTranslation();
+
+    const toggleCitationExpand = (chunkId: string) => {
+        setExpandedCitations(prev => ({
+            ...prev,
+            [chunkId]: !prev[chunkId],
+        }));
+    };
 
     const ingestionStepNames: Record<string, string> = {
         'file-upload': t('trace.ingestion.file-upload'),
@@ -249,64 +257,106 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                                 {t('trace.no_citations')}
                                             </div>
                                         ) : (
-                                            citations.map((cit) => (
-                                                <div
-                                                    key={cit.chunkId}
-                                                    data-testid="citation-card"
-                                                    className={
-                                                        styles['citation-card']
-                                                    }
-                                                >
+                                             citations.map((cit) => {
+                                                const isWebUrl = cit.documentName.startsWith('http://') || cit.documentName.startsWith('https://');
+                                                const pageLabel = cit.metaInfo?.page_label || cit.metaInfo?.page;
+                                                const locationText = pageLabel
+                                                    ? `${t('trace.page_label', '第')} ${pageLabel} ${t('trace.page_unit', '页')}`
+                                                    : (typeof cit.chunkIndex === 'number' ? `${t('trace.paragraph_label', '第')} ${cit.chunkIndex + 1} ${t('trace.paragraph_unit', '段')}` : '');
+                                                const sectionPath = cit.metaInfo?.section_path;
+                                                const isExpanded = !!expandedCitations[cit.chunkId];
+                                                const needsTruncation = cit.summarySnippet.length > 150;
+
+                                                return (
                                                     <div
-                                                        className={
-                                                            styles[
-                                                                'citation-card-name'
-                                                            ]
-                                                        }
+                                                        key={cit.chunkId}
+                                                        data-testid="citation-card"
+                                                        className={styles['citation-card']}
                                                     >
-                                                        {cit.documentName}
-                                                    </div>
-                                                    <div
-                                                        className={
-                                                            styles[
-                                                                'citation-card-meta'
-                                                            ]
-                                                        }
-                                                    >
-                                                        {cit.chunkId && (
-                                                            <span>
-                                                                {t(
-                                                                    'trace.chunk_id',
+                                                        <div 
+                                                            className={`${styles['citation-card-header']} ${needsTruncation ? styles['clickable-header'] : ''}`}
+                                                            onClick={needsTruncation ? () => toggleCitationExpand(cit.chunkId) : undefined}
+                                                        >
+                                                            {isWebUrl ? (
+                                                                <Globe size={14} className={styles['citation-icon-web']} />
+                                                            ) : (
+                                                                <Database size={14} className={styles['citation-icon-db']} />
+                                                            )}
+                                                            <div className={styles['citation-card-name-container']}>
+                                                                {isWebUrl ? (
+                                                                    <a 
+                                                                        href={cit.documentName} 
+                                                                        target="_blank" 
+                                                                        rel="noopener noreferrer"
+                                                                        className={styles['citation-web-link']}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                    >
+                                                                        {cit.documentName}
+                                                                        <ExternalLink size={11} className={styles['citation-link-icon']} />
+                                                                    </a>
+                                                                ) : (
+                                                                    <span className={styles['citation-card-name']}>
+                                                                        {cit.documentName}
+                                                                    </span>
                                                                 )}
-                                                                : {cit.chunkId}
-                                                            </span>
+                                                            </div>
+                                                            {needsTruncation && (
+                                                                <div className={styles['header-chevron-container']}>
+                                                                    <ChevronDown 
+                                                                        size={14} 
+                                                                        className={`${styles['header-chevron']} ${isExpanded ? styles['rotated'] : ''}`} 
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className={styles['citation-card-meta']}>
+                                                            {cit.chunkId && (
+                                                                <span className={styles['citation-meta-badge']}>
+                                                                    {cit.chunkId}
+                                                                </span>
+                                                            )}
+                                                            {locationText && (
+                                                                <span className={styles['citation-meta-location']}>
+                                                                    {locationText}
+                                                                </span>
+                                                            )}
+                                                            {cit.relevanceScore > 0 && (
+                                                                <span className={styles['citation-meta-score']}>
+                                                                    {(cit.relevanceScore * 100).toFixed(0)}% {t('trace.score', '相关度')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {sectionPath && (
+                                                            <div className={styles['citation-card-section-path']} title={sectionPath}>
+                                                                <span className={styles['citation-section-label']}>{t('trace.section_path_label', '📖 章节：')}</span>
+                                                                <span className={styles['citation-section-value']}>{sectionPath}</span>
+                                                            </div>
                                                         )}
-                                                        {cit.relevanceScore >
-                                                            0 && (
-                                                            <span>
-                                                                {t('trace.score')}
-                                                                :{' '}
-                                                                {(
-                                                                    cit.relevanceScore *
-                                                                    100
-                                                                ).toFixed(0)}
-                                                                %
-                                                            </span>
+                                                        {cit.summarySnippet && (
+                                                            <div className={styles['citation-card-snippet-container']}>
+                                                                <div className={styles['citation-card-snippet']}>
+                                                                    {isExpanded 
+                                                                        ? cit.summarySnippet 
+                                                                        : (needsTruncation ? `${cit.summarySnippet.slice(0, 150)}...` : cit.summarySnippet)}
+                                                                </div>
+                                                                {needsTruncation && (
+                                                                    <div className={styles['expand-btn-wrapper']}>
+                                                                        <Button
+                                                                            type="link"
+                                                                            size="small"
+                                                                            className={styles['citation-expand-btn']}
+                                                                            icon={isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                                                            onClick={() => toggleCitationExpand(cit.chunkId)}
+                                                                        >
+                                                                            {isExpanded ? t('trace.show_less', '收起段落') : t('trace.show_more', '展开完整段落')}
+                                                                        </Button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    {cit.summarySnippet && (
-                                                        <div
-                                                        className={
-                                                            styles[
-                                                                'citation-card-snippet'
-                                                            ]
-                                                        }
-                                                    >
-                                                        {cit.summarySnippet}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))
+                                                );
+                                            })
                                     )}
                                 </div>
                             )}

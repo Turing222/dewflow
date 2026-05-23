@@ -30,6 +30,8 @@ export const API_URLS = {
     KNOWLEDGE: {
         DEFAULT: `${API_PREFIX}/knowledge/default`,
         DEFAULT_UPLOAD: `${API_PREFIX}/knowledge/default/upload`,
+        DEFAULT_FILES: `${API_PREFIX}/knowledge/default/files`,
+        DELETE_FILE: (id: string) => `${API_PREFIX}/knowledge/files/${id}`,
         TASK_STATUS: (id: string) => `${API_PREFIX}/knowledge/tasks/${id}`,
     },
     CREDITS: {

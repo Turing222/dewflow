@@ -45,6 +45,7 @@
     "mode_rag_desc": "Retrieve relevant context from your default personal knowledge base for precise answers.",
     "mode_rag": "RAG Chat",
     "mode_normal": "Normal Chat",
+    "section_path_label": "📖 Section:",
     "user_menu": {
       "login": "Log In",
       "register": "Register",
@@ -134,7 +135,8 @@
       "semantic-chunk": "Semantic Chunking",
       "vector-index": "Vector Indexing",
       "ingestion-complete": "Ingestion Complete"
-    }
+    },
+    "section_path_label": "📖 Section:"
   },
   "credits": {
     "title": "Credits Center",

@@ -152,3 +152,19 @@ export const kbTaskResponseSchema = z.object({
 });
 
 export type KBTaskResponse = z.infer<typeof kbTaskResponseSchema>;
+
+export const knowledgeFileSchema = z.object({
+    id: requiredString,
+    kb_id: requiredString,
+    filename: requiredString,
+    file_size: z.number().int(),
+    content_sha256: z.string().nullable().optional(),
+    status: z.string(),
+    created_at: requiredString,
+    updated_at: requiredString,
+});
+
+export const knowledgeFilesListSchema = z.array(knowledgeFileSchema);
+
+export type KnowledgeFile = z.infer<typeof knowledgeFileSchema>;
+

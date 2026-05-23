@@ -231,3 +231,53 @@ async def test_get_or_create_default_kb_creates_missing_kb(
         description="系统自动创建的默认知识库",
         user_id=user_id,
     )
+
+
+async def test_list_files_by_kb_id_returns_files(
+    knowledge_service: tuple[KnowledgeService, SimpleNamespace, Path],
+) -> None:
+    service, repo, _ = knowledge_service
+    kb_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    files = [SimpleNamespace(id=uuid.uuid4(), filename="file1.md")]
+    repo.get_kb_for_user.return_value = SimpleNamespace(id=kb_id, user_id=user_id, workspace_id=None)
+    repo.list_files_by_kb = AsyncMock(return_value=files)
+
+    result = await service.list_files_by_kb_id(kb_id=kb_id, user_id=user_id)
+    assert result == files
+    repo.list_files_by_kb.assert_awaited_once_with(kb_id)
+
+
+async def test_remove_file_success(
+    knowledge_service: tuple[KnowledgeService, SimpleNamespace, Path],
+) -> None:
+    service, repo, _ = knowledge_service
+    file_id = uuid.uuid4()
+    kb_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    file_obj = SimpleNamespace(
+        id=file_id,
+        kb_id=kb_id,
+        filename="test.md",
+        file_path="mock_path",
+        file_size=10,
+        content_sha256="sha256",
+        storage_backend="local",
+        storage_bucket=None,
+        storage_key="test_key",
+    )
+    repo.get_file = AsyncMock(return_value=file_obj)
+    repo.get_kb_for_user.return_value = SimpleNamespace(id=kb_id, user_id=user_id, workspace_id=None)
+    repo.delete_chunks_for_file = AsyncMock()
+    repo.delete_file_record = AsyncMock()
+
+    service.storage.delete = AsyncMock()
+
+    await service.remove_file(file_id=file_id, user_id=user_id)
+
+    repo.get_file.assert_awaited_once_with(file_id)
+    service.storage.delete.assert_awaited_once()
+    repo.delete_chunks_for_file.assert_awaited_once_with(file_id)
+    repo.delete_file_record.assert_awaited_once_with(file_id)
+

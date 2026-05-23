@@ -22,6 +22,8 @@ export interface CitationItem {
     chunkId: string;
     relevanceScore: number;
     summarySnippet: string;
+    chunkIndex?: number;
+    metaInfo?: Record<string, any>;
 }
 
 export interface AgentTraceState {
@@ -181,23 +183,44 @@ export function parseCitations(
 ): CitationItem[] {
     if (!searchContext || typeof searchContext !== 'object') return [];
 
-    const result = searchContextSchema.safeParse(searchContext);
-    if (!result.success) {
-        if (import.meta.env.DEV) {
-            console.warn(
-                '[parseCitations] search_context does not match expected schema',
-                result.error.flatten(),
-            );
+    // Support real backend RAG refs structure
+    if (searchContext.refs && Array.isArray(searchContext.refs)) {
+        const items: CitationItem[] = [];
+        for (const ref of searchContext.refs) {
+            if (ref && typeof ref === 'object') {
+                const filename = (ref.filename as string) || (ref.file_id as string) || 'Unknown File';
+                if (ref.chunks && Array.isArray(ref.chunks)) {
+                    for (const ch of ref.chunks) {
+                        if (ch && typeof ch === 'object') {
+                            items.push({
+                                documentName: filename,
+                                chunkId: (ch.ref_id as string) || (ch.chunk_id as string) || '',
+                                relevanceScore: typeof ch.score === 'number' ? ch.score : 0,
+                                summarySnippet: (ch.text as string) || (ch.content as string) || '',
+                                chunkIndex: typeof ch.chunk_index === 'number' ? ch.chunk_index : undefined,
+                                metaInfo: (ch.meta_info && typeof ch.meta_info === 'object') ? ch.meta_info as Record<string, any> : undefined,
+                            });
+                        }
+                    }
+                }
+            }
         }
-        return [];
+        return items;
     }
 
-    return result.data.citations
-        .map((raw): CitationItem => ({
-            documentName: raw.document_name,
-            chunkId: raw.chunk_id,
-            relevanceScore: raw.score,
-            summarySnippet: raw.summary,
-        }))
-        .filter((c) => c.documentName || c.summarySnippet);
+    // Fallback to mock flat citations
+    const result = searchContextSchema.safeParse(searchContext);
+    if (result.success && result.data.citations) {
+        return result.data.citations
+            .map((raw): CitationItem => ({
+                documentName: raw.document_name,
+                chunkId: raw.chunk_id,
+                relevanceScore: raw.score,
+                summarySnippet: raw.summary,
+            }))
+            .filter((c) => c.documentName || c.summarySnippet);
+    }
+
+    return [];
 }
+

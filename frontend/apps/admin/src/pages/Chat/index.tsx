@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Popover, message as antdMessage } from 'antd';
-import { LogOut, LogIn, Shield, Coins, Edit2 } from 'lucide-react';
+import { LogOut, LogIn, Shield, Coins, Edit2, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/useAuth';
@@ -10,6 +10,7 @@ import Sidebar from './Sidebar';
 import MessageList from './MessageList';
 import AgentTracePanel from './AgentTracePanel';
 import UserProfileModal from './UserProfileModal';
+import KBFilesModal from './KBFilesModal';
 import styles from './ChatPage.module.css';
 
 const ChatPage: React.FC = () => {
@@ -18,6 +19,7 @@ const ChatPage: React.FC = () => {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [tracePanelCollapsed, setTracePanelCollapsed] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+    const [isKBModalOpen, setIsKBModalOpen] = useState(false);
     const { t } = useTranslation();
 
     const controller = useChatController();
@@ -132,6 +134,14 @@ const ChatPage: React.FC = () => {
 
                 {/* Action Buttons Section */}
                 <div className={styles['popover-actions']}>
+                    <Button
+                        type="text"
+                        icon={<Database size={14} />}
+                        className={styles['popover-action-btn']}
+                        onClick={() => setIsKBModalOpen(true)}
+                    >
+                        {t('chat.manage_kb_files', '管理知识库文档')}
+                    </Button>
                     {user?.is_superuser && (
                         <Button
                             type="text"
@@ -247,6 +257,10 @@ const ChatPage: React.FC = () => {
             <UserProfileModal
                 isOpen={isProfileModalOpen}
                 onClose={() => setIsProfileModalOpen(false)}
+            />
+            <KBFilesModal
+                visible={isKBModalOpen}
+                onClose={() => setIsKBModalOpen(false)}
             />
         </div>
     );

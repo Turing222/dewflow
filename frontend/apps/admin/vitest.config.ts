@@ -31,5 +31,16 @@ export default defineConfig({
             '**/backend/**',
             '**/logs/**',
         ],
+        testTimeout: 30000,
+        hookTimeout: 30000,
+        teardownTimeout: 30000,
+        poolOptions: {
+            threads: {
+                singleThread: true,
+            },
+            forks: {
+                singleFork: true,
+            },
+        },
     },
 });

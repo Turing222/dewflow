@@ -405,10 +405,10 @@ export function useChatController(): UseChatControllerReturn {
     }, [activeSessionId, pruneRetryCache, refreshUser, user?.id, queryClient, chatMode, fetchDefaultKbId, advanceToStep]);
 
     const retryFailedMessage = useCallback((messageId: string) => {
-        console.log('[retry] 点击重试, messageId=', messageId, 'isStreaming=', isStreaming);
-        console.log('[retry] 当前缓存 keys=', [...retryCacheRef.current.keys()]);
+        if (import.meta.env.DEV) console.log('[retry] 点击重试, messageId=', messageId, 'isStreaming=', isStreaming);
+        if (import.meta.env.DEV) console.log('[retry] 当前缓存 keys=', [...retryCacheRef.current.keys()]);
         if (isStreaming) {
-            console.log('[retry] 放弃：正在流式中');
+            if (import.meta.env.DEV) console.log('[retry] 放弃：正在流式中');
             return;
         }
         pruneRetryCache();
@@ -420,21 +420,21 @@ export function useChatController(): UseChatControllerReturn {
         if (entry) {
             queryText = entry.query;
             clientRequestId = entry.clientRequestId;
-            console.log('[retry] 命中缓存，queryText=', queryText);
+            if (import.meta.env.DEV) console.log('[retry] 命中缓存，queryText=', queryText);
         } else {
-            console.log('[retry] 缓存未命中，尝试从消息历史查找');
+            if (import.meta.env.DEV) console.log('[retry] 缓存未命中，尝试从消息历史查找');
             const msgIndex = displayedMessages.findIndex((msg) => msg.id === messageId);
             if (msgIndex > 0) {
                 const prevMsg = displayedMessages[msgIndex - 1];
                 if (prevMsg && prevMsg.role === 'user') {
                     queryText = prevMsg.content;
-                    console.log('[retry] 从消息历史中找到前一条用户提问作为重试内容:', queryText);
+                    if (import.meta.env.DEV) console.log('[retry] 从消息历史中找到前一条用户提问作为重试内容:', queryText);
                 }
             }
         }
 
         if (!queryText) {
-            console.log('[retry] 放弃：缓存里找不到该 messageId，且在消息列表中找不到对应的用户提问');
+            if (import.meta.env.DEV) console.log('[retry] 放弃：缓存里找不到该 messageId，且在消息列表中找不到对应的用户提问');
             return;
         }
 
@@ -497,6 +497,10 @@ export function useChatController(): UseChatControllerReturn {
         if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
+        }
+        if (tabSwitchTimerRef.current) {
+            clearTimeout(tabSwitchTimerRef.current);
+            tabSwitchTimerRef.current = null;
         }
 
         setIsIngesting(true);

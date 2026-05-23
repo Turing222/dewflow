@@ -106,6 +106,14 @@ class KnowledgeRepository:
     async def get_file(self, file_id: uuid.UUID) -> File | None:
         return await self.session.get(File, file_id)
 
+    async def list_files_by_kb(
+        self,
+        kb_id: uuid.UUID,
+    ) -> Sequence[File]:
+        stmt = select(File).where(File.kb_id == kb_id).order_by(File.created_at.desc())
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     async def get_file_by_hash_and_status(
         self,
         *,
@@ -178,6 +186,10 @@ class KnowledgeRepository:
 
     async def delete_chunks_for_file(self, file_id: uuid.UUID) -> None:
         stmt = delete(DocumentChunk).where(DocumentChunk.file_id == file_id)
+        await self.session.execute(stmt)
+
+    async def delete_file_record(self, file_id: uuid.UUID) -> None:
+        stmt = delete(File).where(File.id == file_id)
         await self.session.execute(stmt)
 
     async def add_chunks(self, chunks_data: list[dict]) -> None:

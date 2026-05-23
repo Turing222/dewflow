@@ -45,6 +45,7 @@
     "mode_rag_desc": "关联您的默认个人知识库文档，回答更有针对性与专业性。",
     "mode_rag": "知识库问答 RAG",
     "mode_normal": "普通对话",
+    "section_path_label": "📖 Section:",
     "user_menu": {
       "login": "登录",
       "register": "注册",
@@ -134,7 +135,8 @@
       "semantic-chunk": "切片安全审计",
       "vector-index": "写入向量索引",
       "ingestion-complete": "成功导入知识库"
-    }
+    },
+    "section_path_label": "📖 章节："
   },
   "credits": {
     "title": "积分中心",

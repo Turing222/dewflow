@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -208,6 +208,52 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
 
     async def delete_chunks_for_file(self, *, file_id: uuid.UUID) -> None:
         await self.uow.knowledge_repo.delete_chunks_for_file(file_id=file_id)
+
+    async def list_files_by_kb_id(
+        self,
+        *,
+        kb_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> Sequence[File]:
+        await self._ensure_kb_access(
+            kb_id=kb_id,
+            user_id=user_id,
+            permission=Permission.FILE_READ,
+        )
+        return await self.uow.knowledge_repo.list_files_by_kb(kb_id)
+
+    async def remove_file(
+        self,
+        *,
+        file_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> None:
+        file_obj = await self.get_file(file_id)
+        if not file_obj:
+            raise app_not_found("文件不存在", code="KNOWLEDGE_FILE_NOT_FOUND")
+
+        await self._ensure_kb_access(
+            kb_id=file_obj.kb_id,
+            user_id=user_id,
+            permission=Permission.FILE_WRITE,
+        )
+
+        if file_obj.storage_key:
+            stored_obj = StoredObject(
+                backend=file_obj.storage_backend or "local",
+                bucket=file_obj.storage_bucket,
+                key=file_obj.storage_key,
+                uri=file_obj.file_path,
+                size=file_obj.file_size,
+                sha256=file_obj.content_sha256 or "",
+            )
+            try:
+                await self.storage.delete(stored_obj)
+            except Exception:
+                pass
+
+        await self.uow.knowledge_repo.delete_chunks_for_file(file_id)
+        await self.uow.knowledge_repo.delete_file_record(file_id)
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:

@@ -28,6 +28,10 @@
   --color-error-shadow: rgba(207, 19, 34, 0.15);
   --color-error-bg: #fff1f0;
 
+  --color-success: #52c41a;
+  --color-success-shadow: rgba(82, 196, 26, 0.15);
+  --color-success-bg: rgba(82, 196, 26, 0.04);
+
   --color-coin: #d97706;
 
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -54,6 +58,10 @@
   --color-error: #ff4d4f;
   --color-error-shadow: rgba(255, 77, 79, 0.15);
   --color-error-bg: #2a1215;
+
+  --color-success: #73d13d;
+  --color-success-shadow: rgba(115, 209, 61, 0.15);
+  --color-success-bg: rgba(82, 196, 26, 0.08);
 
   --color-coin: #fbbf24;
 }

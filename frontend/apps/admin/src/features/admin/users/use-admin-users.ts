@@ -4,15 +4,19 @@ import { useUserSearchQuery, useUpdateUserMutation, useRegisterUserMutation, use
 import type { User, UserRegistrationPayload, UserUpdatePayload } from '../../../types/user';
 
 export type UserFormValues = {
-    username?: string;
-    email?: string;
+    username?: string | null;
+    email?: string | null;
     password?: string;
-    max_tokens?: number | string;
-    is_active?: boolean;
+    max_tokens?: number | string | null;
+    is_active?: boolean | null;
 };
 
-export type CreateUserFormValues = Required<Pick<UserFormValues, 'username' | 'email' | 'password'>> &
-    Pick<UserFormValues, 'max_tokens'>;
+export type CreateUserFormValues = {
+    username: string;
+    email: string;
+    password: string;
+    max_tokens?: number | string | null;
+};
 
 type SearchParams = { username?: string; email?: string } | null;
 
@@ -81,8 +85,8 @@ export function useAdminUsers(): UseAdminUsersReturn {
         if (values.username) updateData.username = values.username;
         if (values.email) updateData.email = values.email;
         if (values.password) updateData.password = values.password;
-        if (values.max_tokens !== undefined) updateData.max_tokens = Number(values.max_tokens);
-        if (values.is_active !== undefined) updateData.is_active = values.is_active;
+        if (values.max_tokens !== undefined && values.max_tokens !== null) updateData.max_tokens = Number(values.max_tokens);
+        if (values.is_active !== undefined && values.is_active !== null) updateData.is_active = values.is_active;
 
         await updateUserMutation.mutateAsync({ id: editingUser.id, data: updateData });
         message.success('用户更新成功');

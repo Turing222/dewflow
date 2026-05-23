@@ -43,6 +43,7 @@ class AuditAction(StrEnum):
     WORKSPACE_MEMBER_UPDATE = "workspace.member_update"
     WORKSPACE_MEMBER_REMOVE = "workspace.member_remove"
     FILE_UPLOAD_SUBMIT = "file.upload_submit"
+    FILE_DELETE = "file.delete"
     CHAT_QUERY_SENT = "chat.query_sent"
     CHAT_QUERY_STREAM = "chat.query_stream"
 

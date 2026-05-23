@@ -3,7 +3,8 @@ import { parseWithSchema } from '../schemas/parse';
 import { 
     knowledgeBaseResponseSchema,
     knowledgeUploadResponseSchema,
-    kbTaskResponseSchema
+    kbTaskResponseSchema,
+    knowledgeFilesListSchema
 } from '../schemas/chat';
 import { API_URLS } from './urls';
 import { resolveIdempotencyKey, IDEMPOTENCY_KEY_HEADER } from '../lib/http/idempotency';
@@ -50,3 +51,21 @@ export const getKBTaskStatusAPI = (taskId: string) => {
             ),
         );
 };
+
+export const getDefaultKBFilesAPI = () => {
+    return request
+        .get<unknown, unknown>(API_URLS.KNOWLEDGE.DEFAULT_FILES)
+        .then((response) =>
+            parseWithSchema(
+                knowledgeFilesListSchema,
+                response,
+                '获取知识库文件列表响应格式无效',
+            ),
+        );
+};
+
+export const deleteKBFileAPI = (fileId: string) => {
+    // 204 No Content — no body to validate with parseWithSchema.
+    return request.delete<unknown, unknown>(API_URLS.KNOWLEDGE.DELETE_FILE(fileId));
+};
+

@@ -455,6 +455,7 @@ class ChatContextBuilder:
                 "score": chunk.get("score"),
                 "distance": chunk.get("distance"),
                 "meta_info": chunk.get("meta_info") or {},
+                "text": chunk.get("content", ""),
             }
             ChatContextBuilder._copy_optional_evidence_fields(chunk, chunk_ref)
             group["chunks"].append(chunk_ref)
@@ -467,6 +468,7 @@ class ChatContextBuilder:
                 "file_id": file_id,
                 "message_id": message_id,
                 "chunk_index": chunk_index,
+                "text": chunk.get("content", ""),
             }
             ChatContextBuilder._copy_optional_evidence_fields(chunk, flat_chunk)
             flat_chunks.append(flat_chunk)

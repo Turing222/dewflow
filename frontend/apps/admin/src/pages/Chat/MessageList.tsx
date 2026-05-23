@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Input, Button, Spin, Avatar, Upload } from 'antd';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Input, Button, Spin, Avatar, Upload, Popover } from 'antd';
 import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw, MessageSquare, Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatMessage } from '../../types/chat';
 import type { ChatMode } from '../../features/chat/use-chat-controller';
+import { parseCitations } from '../../types/agent-trace';
 import styles from './MessageList.module.css';
 
 const { TextArea } = Input;
@@ -36,6 +37,103 @@ const MessageList: React.FC<MessageListProps> = ({
     const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation();
+
+    const renderMessageContent = useCallback((content: string, searchContext?: Record<string, any>) => {
+        if (!content) return '';
+        const citations = searchContext ? parseCitations(searchContext as Record<string, unknown>) : [];
+        const citationRegex = /\[R(\d+)(?:\.(\d+))?\]/g;
+        
+        const parts = [];
+        let lastIndex = 0;
+        let match;
+        
+        while ((match = citationRegex.exec(content)) !== null) {
+            const matchIndex = match.index;
+            const matchText = match[0];
+            
+            if (matchIndex > lastIndex) {
+                parts.push(content.substring(lastIndex, matchIndex));
+            }
+            
+            const refIdStr = matchText.slice(1, -1);
+            
+            const citation = citations.find(c => {
+                const cleanId = c.chunkId.replace(/[\[\]]/g, '');
+                return cleanId === refIdStr || cleanId.startsWith(refIdStr + '.');
+            });
+            
+            if (citation) {
+                const scorePercent = citation.relevanceScore
+                    ? `${Math.round(citation.relevanceScore * 100)}%`
+                    : 'N/A';
+                    
+                const pageLabel = citation.metaInfo?.page_label || citation.metaInfo?.page;
+                const locationText = pageLabel
+                    ? `(第 ${pageLabel} 页)`
+                    : (typeof citation.chunkIndex === 'number' ? `(第 ${citation.chunkIndex + 1} 段)` : '');
+
+                const sectionPath = citation.metaInfo?.section_path as string | undefined;
+                
+                const popoverContent = (
+                    <div className={styles['citation-popover-content']}>
+                        <div className={styles['citation-popover-header']}>
+                            <Database size={14} className={styles['popover-icon']} />
+                            <span className={styles['popover-filename']} title={`${citation.documentName} ${locationText}`}>
+                                {citation.documentName} <span className={styles['popover-location']}>{locationText}</span>
+                            </span>
+                            {citation.relevanceScore > 0 && (
+                                <span className={styles['popover-score']}>
+                                    {scorePercent} {t('chat.similarity', '相关度')}
+                                </span>
+                            )}
+                        </div>
+                        {sectionPath && (
+                            <div className={styles['popover-section-path']} title={sectionPath}>
+                                <span className={styles['section-path-label']}>{t('chat.section_path_label', '📖 Section:')}</span>
+                                <span className={styles['section-path-value']}>{sectionPath}</span>
+                            </div>
+                        )}
+                        {citation.summarySnippet && (
+                            <div className={styles['popover-snippet']}>
+                                {citation.summarySnippet.length > 100
+                                    ? `${citation.summarySnippet.slice(0, 100)}...`
+                                    : citation.summarySnippet}
+                            </div>
+                        )}
+                    </div>
+                );
+                
+                parts.push(
+                    <Popover
+                        key={`citation-${matchIndex}`}
+                        content={popoverContent}
+                        title={null}
+                        trigger={['hover', 'click']}
+                        placement="top"
+                        overlayClassName={styles['citation-popover-overlay']}
+                    >
+                        <span className={styles['citation-badge']}>
+                            {matchText}
+                        </span>
+                    </Popover>
+                );
+            } else {
+                parts.push(
+                    <span key={`citation-fallback-${matchIndex}`} className={styles['citation-badge-fallback']}>
+                        {matchText}
+                    </span>
+                );
+            }
+            
+            lastIndex = citationRegex.lastIndex;
+        }
+        
+        if (lastIndex < content.length) {
+            parts.push(content.substring(lastIndex));
+        }
+        
+        return parts.length > 0 ? parts : content;
+    }, [t]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -97,7 +195,9 @@ const MessageList: React.FC<MessageListProps> = ({
                             )}
                         </>
                     ) : (
-                        <div className={`${styles['message-text']} message-text`}>{msg.content}</div>
+                        <div className={`${styles['message-text']} message-text`}>
+                            {renderMessageContent(msg.content, msg.search_context as Record<string, any>)}
+                        </div>
                     )}
                     {msg.latency_ms && (
                         <div className={styles['message-meta']}>{msg.latency_ms}ms</div>
@@ -163,7 +263,7 @@ const MessageList: React.FC<MessageListProps> = ({
                                 />
                                 <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
                                     <div className={`${styles['message-text']} message-text`}>
-                                        {streamingText}
+                                        {renderMessageContent(streamingText)}
                                         <span className={styles['cursor-blink']}>|</span>
                                     </div>
                                 </div>
