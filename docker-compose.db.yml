@@ -222,13 +222,14 @@ services:
       - BIFROST_API_KEY
       - BIFROST_ENCRYPTION_KEY
       - DEEPSEEK_API_KEY
+      - DASHSCOPE_API_KEY
     volumes:
       - bifrost_data:/app/data
       - ./configs/bifrost/config.json:/app/data/config.json:ro
     entrypoint:
       - sh
       - -c
-      - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
+      - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY=\"$$(cat /run/secrets/DASHSCOPE_API_KEY | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
     ports:
       - "${BIFROST_PORT:-18080}:8080"
     healthcheck:
