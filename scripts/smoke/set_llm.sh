@@ -38,21 +38,27 @@ update_env_smoke() {
     log_info "Updated ${key}=${value} in $smoke_env_path"
 }
 
-write_secret_for_provider() {
+secret_path_for_provider() {
     local provider="$1"
-    local key="$2"
-    local secret_file_var="SMOKE_${provider^^}_API_KEY_FILE"
-    local default_path="./secrets/smoke/${provider}_api_key.txt"
-    local secret_path
-    local secret_dir
+    local secret_file_var default_path
 
     if [[ "$provider" == "bifrost_encryption" ]]; then
         secret_file_var="SMOKE_BIFROST_ENCRYPTION_KEY_FILE"
         default_path="./secrets/smoke/bifrost_encryption_key.txt"
+    else
+        secret_file_var="SMOKE_${provider^^}_API_KEY_FILE"
+        default_path="./secrets/smoke/${provider}_api_key.txt"
     fi
 
-    secret_path="$(smoke_env_value "$secret_file_var" "$default_path")"
-    secret_path="$(resolve_project_path "$secret_path")"
+    resolve_project_path "$(smoke_env_value "$secret_file_var" "$default_path")"
+}
+
+write_secret_for_provider() {
+    local provider="$1"
+    local key="$2"
+    local secret_path secret_dir
+
+    secret_path="$(secret_path_for_provider "$provider")"
     secret_dir="$(dirname "$secret_path")"
 
     mkdir -p "$secret_dir"
@@ -74,7 +80,11 @@ if [[ "$PROVIDER" == "mock" ]]; then
     update_env_smoke "LLM_PROVIDER" "mock"
 else
     KEY=""
-    if [[ ! -t 0 ]]; then
+    existing_secret="$(secret_path_for_provider "$PROVIDER")"
+    if [[ -f "$existing_secret" && -s "$existing_secret" ]]; then
+        KEY="$(cat "$existing_secret")"
+        log_info "Using existing API key from $existing_secret"
+    elif [[ ! -t 0 ]]; then
         if ! read -r KEY; then
             log_error "Failed to read API key from stdin."
             exit 1
@@ -101,7 +111,11 @@ else
 
     if [[ "$PROVIDER" == "bifrost" ]]; then
         BIFROST_ENC_KEY=""
-        if [[ ! -t 0 ]]; then
+        existing_enc_secret="$(secret_path_for_provider "bifrost_encryption")"
+        if [[ -f "$existing_enc_secret" && -s "$existing_enc_secret" ]]; then
+            BIFROST_ENC_KEY="$(cat "$existing_enc_secret")"
+            log_info "Using existing Bifrost encryption key from $existing_enc_secret"
+        elif [[ ! -t 0 ]]; then
             read -r BIFROST_ENC_KEY || true
         else
             read -rsp "Enter Bifrost Encryption Key: " BIFROST_ENC_KEY || true
@@ -121,7 +135,11 @@ if [[ -n "$EMBED_PROVIDER" ]]; then
         update_env_smoke "RAG_EMBED_PROVIDER" "mock"
     else
         EMBED_KEY=""
-        if [[ ! -t 0 ]]; then
+        existing_embed_secret="$(secret_path_for_provider "$EMBED_PROVIDER")"
+        if [[ -f "$existing_embed_secret" && -s "$existing_embed_secret" ]]; then
+            EMBED_KEY="$(cat "$existing_embed_secret")"
+            log_info "Using existing embed API key from $existing_embed_secret"
+        elif [[ ! -t 0 ]]; then
             if ! read -r EMBED_KEY; then
                 log_error "Failed to read embed API key from stdin."
                 exit 1
