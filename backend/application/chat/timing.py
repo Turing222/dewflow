@@ -21,7 +21,9 @@ def merge_metrics(
 ) -> dict[str, Any]:
     merged = dict(payload or {})
     existing_metrics = merged.get("metrics")
-    metric_payload = dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
+    metric_payload = (
+        dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
+    )
     metric_payload.update(
         {key: value for key, value in metrics.items() if value is not None}
     )

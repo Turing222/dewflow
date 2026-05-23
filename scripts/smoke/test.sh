@@ -59,7 +59,6 @@ uv run pytest \
     -q \
     --tb=short \
     -p no:logging \
-    --override-ini="log_cli=0" \
     >"$SMOKE_LOG_FILE" 2>&1 || pytest_exit=$?
 
 # Extract just the one-line progress line (e.g. "FFFFFFF  [100%]")

@@ -4,7 +4,6 @@ import redis.asyncio as redis
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from backend.config.settings import settings
-from backend.infra.task_broker import broker
 
 # Separate queue so the test worker never competes with the Docker
 # task_worker (which listens on the default "taskiq" queue).

@@ -37,4 +37,3 @@ class KnowledgeBaseResponse(BaseModel):
 
     id: uuid.UUID
     name: str
-

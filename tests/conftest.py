@@ -9,7 +9,13 @@ from collections.abc import Iterator
 
 import pytest
 
-from tests.helpers.env import REQUIRED_ENV_BY_MARKER, REQUIRED_PKG_BY_MARKER, get_test_profile, optional_env, pkgs_available_for_marker
+from tests.helpers.env import (
+    REQUIRED_ENV_BY_MARKER,
+    REQUIRED_PKG_BY_MARKER,
+    get_test_profile,
+    optional_env,
+    pkgs_available_for_marker,
+)
 
 
 def pytest_configure() -> None:

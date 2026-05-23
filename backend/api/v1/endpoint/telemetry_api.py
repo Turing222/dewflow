@@ -31,14 +31,16 @@ def _is_allowed_origin(request: Request) -> bool:
     if not origin:
         return True
 
-    configured_origins = {str(item).rstrip("/") for item in settings.BACKEND_CORS_ORIGINS}
+    configured_origins = {
+        str(item).rstrip("/") for item in settings.BACKEND_CORS_ORIGINS
+    }
     if "*" in configured_origins or origin.rstrip("/") in configured_origins:
         return True
 
     host = request.headers.get("host")
     if host:
         forwarded_proto = request.headers.get("x-forwarded-proto", "")
-        scheme = (forwarded_proto.split(",", maxsplit=1)[0].strip() or request.url.scheme)
+        scheme = forwarded_proto.split(",", maxsplit=1)[0].strip() or request.url.scheme
         same_origin = f"{scheme}://{host}".rstrip("/")
         return origin.rstrip("/") == same_origin
 

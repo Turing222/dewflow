@@ -139,4 +139,3 @@ async def get_default_kb(
     async with service.write():
         kb = await service.get_or_create_default_kb(user_id=current_user.id)
     return KnowledgeBaseResponse.model_validate(kb)
-
