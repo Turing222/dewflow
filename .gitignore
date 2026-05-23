@@ -84,3 +84,4 @@ htmlcov/
 # 工具目录
 tools/
 test-debug-agent/
+.claude/plans/*
