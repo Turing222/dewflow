@@ -29,6 +29,7 @@ class DummyContainer:
         self.session_factory = object()
         self.llm_service = object()
         self.embedder = object()
+        self.rerank_service = object()
         self.rag_service = object()
         self.rag_planning_service = object()
         self.external_context_provider = object()
@@ -43,6 +44,9 @@ class DummyContainer:
 
     def get_embedder(self) -> object:
         return self.embedder
+
+    def get_rerank_service(self) -> object:
+        return self.rerank_service
 
     def get_rag_service(self, llm_service: object = None) -> object:  # type: ignore[override]
         return self.rag_service
@@ -70,6 +74,7 @@ async def test_worker_container_close_disposes_engine_and_clears_refs() -> None:
     container._session_factory = object()
     container._llm_service = llm_service
     container._embedder = embedder
+    container._rerank_service = AsyncMock()
     container._rag_service = object()
     container._rag_planning_service = object()
     container._external_context_provider = external_context_provider
@@ -80,11 +85,13 @@ async def test_worker_container_close_disposes_engine_and_clears_refs() -> None:
     engine.dispose.assert_awaited_once()
     llm_service.close.assert_awaited_once()
     embedder.close.assert_awaited_once()
+    container._rerank_service.close.assert_awaited_once()
     external_context_provider.close.assert_awaited_once()
     assert container._engine is None
     assert container._session_factory is None
     assert container._llm_service is None
     assert container._embedder is None
+    assert container._rerank_service is None
     assert container._rag_service is None
     assert container._rag_planning_service is None
     assert container._external_context_provider is None
@@ -130,3 +137,80 @@ async def test_get_external_context_provider_lazy_init(monkeypatch) -> None:
 
     result2 = container.get_external_context_provider()
     assert result2 is fake_provider
+
+
+@pytest.mark.asyncio
+async def test_get_rerank_service_lazy_init(monkeypatch) -> None:
+    from backend.worker.dependencies import WorkerContainer
+
+    fake_reranker = AsyncMock()
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_ENABLED", True
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.RerankProviderFactory.create",
+        lambda provider: fake_reranker,
+    )
+
+    container = WorkerContainer()
+    assert container._rerank_service is None
+
+    result1 = container.get_rerank_service()
+    assert result1 is fake_reranker
+    assert container._rerank_service is fake_reranker
+
+    result2 = container.get_rerank_service()
+    assert result2 is fake_reranker
+
+
+def test_get_rerank_service_returns_none_when_disabled(monkeypatch) -> None:
+    from backend.worker.dependencies import WorkerContainer
+
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_ENABLED", False
+    )
+
+    container = WorkerContainer()
+    assert container.get_rerank_service() is None
+
+
+@pytest.mark.asyncio
+async def test_get_rag_service_prefers_reranker_over_llm(monkeypatch) -> None:
+    from backend.worker.dependencies import WorkerContainer
+
+    fake_reranker = AsyncMock()
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_ENABLED", True
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.RerankProviderFactory.create",
+        lambda provider: fake_reranker,
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_TOP_K", 4
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_CANDIDATE_COUNT", 20
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_TOP_K", 4
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.ai_settings.RAG_EMBED_BATCH_SIZE", 10
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.SQLAlchemyUnitOfWork",
+        lambda sf: object(),
+    )
+    monkeypatch.setattr(
+        "backend.worker.dependencies.VectorIndexService",
+        lambda **kw: object(),
+    )
+
+    container = WorkerContainer()
+    container._session_factory = object()
+    container._embedder = AsyncMock()
+
+    rag_service = container.get_rag_service()
+    assert rag_service.reranker is fake_reranker
+    assert rag_service.llm_service is None

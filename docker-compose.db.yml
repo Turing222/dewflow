@@ -10,9 +10,13 @@ x-app-secrets: &app-secrets
   - REDIS_PASSWORD
   - OPENAI_API_KEY
   - DASHSCOPE_API_KEY
+  - DASHSCOPE_API_KEY_2
   - GEMINI_API_KEY
   - GOOGLE_API_KEY
   - DEEPSEEK_API_KEY
+  - DEEPSEEK_API_KEY_2
+  - COHERE_API_KEY
+  - COHERE_API_KEY_2
   - BIFROST_API_KEY
   - BIFROST_ENCRYPTION_KEY
   - LLM_API_KEY
@@ -28,9 +32,13 @@ x-secret-file-env: &secret-file-env
   REDIS_PASSWORD_FILE: /run/secrets/REDIS_PASSWORD
   OPENAI_API_KEY_FILE: /run/secrets/OPENAI_API_KEY
   DASHSCOPE_API_KEY_FILE: /run/secrets/DASHSCOPE_API_KEY
+  DASHSCOPE_API_KEY_2_FILE: /run/secrets/DASHSCOPE_API_KEY_2
   GEMINI_API_KEY_FILE: /run/secrets/GEMINI_API_KEY
   GOOGLE_API_KEY_FILE: /run/secrets/GOOGLE_API_KEY
   DEEPSEEK_API_KEY_FILE: /run/secrets/DEEPSEEK_API_KEY
+  DEEPSEEK_API_KEY_2_FILE: /run/secrets/DEEPSEEK_API_KEY_2
+  COHERE_API_KEY_FILE: /run/secrets/COHERE_API_KEY
+  COHERE_API_KEY_2_FILE: /run/secrets/COHERE_API_KEY_2
   BIFROST_API_KEY_FILE: /run/secrets/BIFROST_API_KEY
   BIFROST_ENCRYPTION_KEY_FILE: /run/secrets/BIFROST_ENCRYPTION_KEY
   LLM_API_KEY_FILE: /run/secrets/LLM_API_KEY
@@ -66,6 +74,9 @@ x-feature-env:
   # ── RAG Retrieval ──────────────────────────────────────────
   RAG_TOP_K: ${RAG_TOP_K:-4}
   RAG_RERANK_ENABLED: ${RAG_RERANK_ENABLED:-false}
+  RAG_RERANK_PROVIDER: ${RAG_RERANK_PROVIDER:-}
+  RAG_RERANK_MODEL: ${RAG_RERANK_MODEL:-cohere/rerank-v3.5}
+  RAG_RERANK_TIMEOUT_SECONDS: ${RAG_RERANK_TIMEOUT_SECONDS:-15}
   RAG_RERANK_CANDIDATE_COUNT: ${RAG_RERANK_CANDIDATE_COUNT:-20}
   RAG_RERANK_TOP_K: ${RAG_RERANK_TOP_K:-4}
   RAG_PLANNER_ENABLED: ${RAG_PLANNER_ENABLED:-false}
@@ -222,14 +233,18 @@ services:
       - BIFROST_API_KEY
       - BIFROST_ENCRYPTION_KEY
       - DEEPSEEK_API_KEY
+      - DEEPSEEK_API_KEY_2
       - DASHSCOPE_API_KEY
+      - DASHSCOPE_API_KEY_2
+      - COHERE_API_KEY
+      - COHERE_API_KEY_2
     volumes:
       - bifrost_data:/app/data
       - ./configs/bifrost/config.json:/app/data/config.json:ro
     entrypoint:
       - sh
       - -c
-      - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY=\"$$(cat /run/secrets/DASHSCOPE_API_KEY | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
+      - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY_2=\"$$(cat /run/secrets/DEEPSEEK_API_KEY_2 | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY=\"$$(cat /run/secrets/DASHSCOPE_API_KEY | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY_2=\"$$(cat /run/secrets/DASHSCOPE_API_KEY_2 | tr -d '\\015\\012')\" && export COHERE_API_KEY=\"$$(cat /run/secrets/COHERE_API_KEY | tr -d '\\015\\012')\" && export COHERE_API_KEY_2=\"$$(cat /run/secrets/COHERE_API_KEY_2 | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
     ports:
       - "${BIFROST_PORT:-18080}:8080"
     healthcheck:
@@ -538,12 +553,20 @@ secrets:
     file: ${SMOKE_OPENAI_API_KEY_FILE:-./secrets/smoke/openai_api_key.txt}
   DASHSCOPE_API_KEY:
     file: ${SMOKE_DASHSCOPE_API_KEY_FILE:-./secrets/smoke/dashscope_api_key.txt}
+  DASHSCOPE_API_KEY_2:
+    file: ${SMOKE_DASHSCOPE_API_KEY_2_FILE:-./secrets/smoke/dashscope_api_key_2.txt}
   GEMINI_API_KEY:
     file: ${SMOKE_GEMINI_API_KEY_FILE:-./secrets/smoke/gemini_api_key.txt}
   GOOGLE_API_KEY:
     file: ${SMOKE_GOOGLE_API_KEY_FILE:-./secrets/smoke/google_api_key.txt}
   DEEPSEEK_API_KEY:
     file: ${SMOKE_DEEPSEEK_API_KEY_FILE:-./secrets/smoke/deepseek_api_key.txt}
+  DEEPSEEK_API_KEY_2:
+    file: ${SMOKE_DEEPSEEK_API_KEY_2_FILE:-./secrets/smoke/deepseek_api_key_2.txt}
+  COHERE_API_KEY:
+    file: ${SMOKE_COHERE_API_KEY_FILE:-./secrets/smoke/cohere_api_key.txt}
+  COHERE_API_KEY_2:
+    file: ${SMOKE_COHERE_API_KEY_2_FILE:-./secrets/smoke/cohere_api_key_2.txt}
   BIFROST_API_KEY:
     file: ${SMOKE_BIFROST_API_KEY_FILE:-./secrets/smoke/bifrost_api_key.txt}
   BIFROST_ENCRYPTION_KEY:

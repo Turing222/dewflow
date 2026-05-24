@@ -46,6 +46,9 @@ def test_load_llm_model_config_resolves_aliases() -> None:
         "http://bifrost:8080/v1"
     )
     assert config.resolve_profile("bifrost").model == "deepseek/deepseek-chat"
+    assert config.resolve_profile("bifrost-reasoner").model == (
+        "deepseek/deepseek-reasoner"
+    )
     assert config.resolve_profile("gemini").model == "gemini-2.5-flash"
     assert [profile.model for profile in config.resolve_route("auto")] == [
         "deepseek-v4-flash",

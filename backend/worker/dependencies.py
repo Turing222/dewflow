@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.factory import LLMProviderFactory
+from backend.ai.providers.rerank.factory import RerankProviderFactory
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
@@ -16,6 +17,7 @@ from backend.contracts.interfaces import (
     AbstractLLMService,
     AbstractRAGEmbedder,
     AbstractRAGService,
+    AbstractRerankService,
 )
 from backend.infra.database import create_db_assets
 from backend.services.external_context_service import (
@@ -36,6 +38,7 @@ class WorkerContainer:
         self._session_factory: async_sessionmaker | None = None
         self._llm_service: AbstractLLMService | None = None
         self._embedder: AbstractRAGEmbedder | None = None
+        self._rerank_service: AbstractRerankService | None = None
         self._rag_service: AbstractRAGService | None = None
         self._rag_planning_service: RAGPlanningService | None = None
         self._external_context_provider: AbstractExternalContextProvider | None = None
@@ -68,13 +71,26 @@ class WorkerContainer:
             )
         return self._embedder
 
+    def get_rerank_service(self) -> AbstractRerankService | None:
+        """Return the cached worker-side rerank service when configured."""
+        if not ai_settings.RAG_RERANK_ENABLED:
+            return None
+        if self._rerank_service is None:
+            self._rerank_service = RerankProviderFactory.create(
+                ai_settings.RAG_RERANK_PROVIDER
+            )
+        return self._rerank_service
+
     def get_rag_service(
         self,
         llm_service: AbstractLLMService | None = None,
     ) -> AbstractRAGService:
         """Return the cached worker-side RAG service for generation context retrieval."""
         if self._rag_service is None:
-            resolved_llm = llm_service or self.get_llm_service()
+            reranker = self.get_rerank_service()
+            resolved_llm = (
+                None if reranker is not None else llm_service or self.get_llm_service()
+            )
             session_factory = self.get_session_factory()
             uow = SQLAlchemyUnitOfWork(session_factory)
             embedder = self.get_embedder()
@@ -89,6 +105,7 @@ class WorkerContainer:
                 vector_index_service=vector_index_service,
                 top_k=ai_settings.RAG_TOP_K,
                 llm_service=resolved_llm,
+                reranker=reranker,
                 rerank_candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
                 rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
             )
@@ -122,6 +139,8 @@ class WorkerContainer:
             await self._embedder.close()
         if self._external_context_provider is not None:
             await self._external_context_provider.close()
+        if self._rerank_service is not None:
+            await self._rerank_service.close()
         if self._engine is not None:
             await self._engine.dispose()
         self._engine = None
@@ -129,6 +148,7 @@ class WorkerContainer:
         self._rag_service = None
         self._llm_service = None
         self._embedder = None
+        self._rerank_service = None
         self._rag_planning_service = None
         self._external_context_provider = None
         self._object_storage = None

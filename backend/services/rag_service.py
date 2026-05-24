@@ -15,6 +15,7 @@ from backend.contracts.interfaces import (
     AbstractLLMService,
     AbstractRAGEmbedder,
     AbstractRAGService,
+    AbstractRerankService,
 )
 from backend.core.exceptions import AppException
 from backend.models.orm.chunk import DocumentChunk
@@ -34,6 +35,7 @@ class RAGService(AbstractRAGService):
         vector_index_service: VectorIndexService,
         top_k: int = 4,
         llm_service: AbstractLLMService | None = None,
+        reranker: AbstractRerankService | None = None,
         rerank_candidate_count: int = 20,
         rerank_top_k: int = 4,
     ) -> None:
@@ -41,6 +43,7 @@ class RAGService(AbstractRAGService):
         self.vector_index_service = vector_index_service
         self.top_k = top_k
         self.llm_service = llm_service
+        self.reranker = reranker
         self.rerank_candidate_count = rerank_candidate_count
         self.rerank_top_k = rerank_top_k
 
@@ -89,6 +92,25 @@ class RAGService(AbstractRAGService):
         limit = top_k or self.rerank_top_k
         if not candidates or limit <= 0:
             return list(candidates)[:limit] if limit > 0 else []
+
+        if self.reranker is not None:
+            try:
+                rankings = await self.reranker.rerank(
+                    query_text=query_text,
+                    documents=[
+                        str(candidate.get("content") or "") for candidate in candidates
+                    ],
+                    top_k=limit,
+                )
+                return self.apply_rankings(
+                    candidates=candidates,
+                    rankings=rankings,
+                    limit=limit,
+                    score_kind="bifrost_rerank",
+                    index_base=0,
+                )
+            except Exception as exc:
+                logger.warning("Native rerank 失败，降级为候选原始排序: %s", exc)
 
         if self.llm_service is None:
             return list(candidates)[:limit]
@@ -153,7 +175,7 @@ class RAGService(AbstractRAGService):
 
         if not candidates:
             return []
-        if self.llm_service is None:
+        if self.reranker is None and self.llm_service is None:
             return candidates[:limit]
 
         try:
@@ -399,6 +421,8 @@ class RAGService(AbstractRAGService):
         candidates: list[dict],
         rankings: list[tuple[int, float]],
         limit: int,
+        score_kind: str = "llm_rerank",
+        index_base: int = 1,
     ) -> list[dict]:
         selected: list[dict] = []
         selected_indexes: set[int] = set()
@@ -410,14 +434,14 @@ class RAGService(AbstractRAGService):
             indexed_scores,
             key=lambda item: (-item[1], item[2]),
         ):
-            candidate_index = index - 1
+            candidate_index = index - index_base
             if candidate_index in selected_indexes:
                 continue
             if not 0 <= candidate_index < len(candidates):
                 continue
             chunk = dict(candidates[candidate_index])
             chunk["rerank_score"] = score
-            chunk["score_kind"] = "llm_rerank"
+            chunk["score_kind"] = score_kind
             selected.append(chunk)
             selected_indexes.add(candidate_index)
             if len(selected) >= limit:

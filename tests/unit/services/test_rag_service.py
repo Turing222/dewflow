@@ -14,12 +14,13 @@ from backend.services.rag_service import RAGService
 pytestmark = pytest.mark.asyncio
 
 
-def _build_service(llm_service: object = None) -> RAGService:
+def _build_service(llm_service: object = None, reranker: object = None) -> RAGService:
     return RAGService(
         embedder=MagicMock(),
         vector_index_service=MagicMock(),
         top_k=4,
         llm_service=llm_service,
+        reranker=reranker,
         rerank_candidate_count=3,
         rerank_top_k=2,
     )
@@ -152,6 +153,29 @@ async def test_retrieve_with_rerank_orders_results_by_llm_scores() -> None:
     llm_service.generate_response.assert_awaited_once()
 
 
+async def test_retrieve_with_rerank_prefers_native_reranker() -> None:
+    reranker = SimpleNamespace(rerank=AsyncMock(return_value=[(2, 0.97), (0, 0.42)]))
+    service = _build_service(llm_service=None, reranker=reranker)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["gamma", "alpha"]
+    assert result[0]["rerank_score"] == 0.97
+    assert result[0]["score_kind"] == "bifrost_rerank"
+    reranker.rerank.assert_awaited_once_with(
+        query_text="query",
+        documents=["alpha", "beta", "gamma"],
+        top_k=2,
+    )
+
+
 async def test_retrieve_with_rerank_falls_back_to_candidate_order_on_bad_json() -> None:
     llm_service = SimpleNamespace(
         generate_response=AsyncMock(
@@ -189,3 +213,69 @@ async def test_retrieve_with_rerank_without_llm_returns_candidate_order() -> Non
     )
 
     assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+
+
+async def test_retrieve_with_rerank_degrades_to_candidate_order_when_reranker_throws() -> None:
+    reranker = SimpleNamespace(rerank=AsyncMock(side_effect=RuntimeError("reranker down")))
+    service = _build_service(llm_service=None, reranker=reranker)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+
+
+async def test_retrieve_with_rerank_returns_candidates_when_no_reranker_and_no_llm() -> None:
+    service = _build_service(llm_service=None, reranker=None)
+    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
+        return_value=[(chunk, 0.1) for chunk in candidates]
+    )
+
+    result = await service.retrieve_with_rerank(
+        query_text="query",
+        kb_id=uuid.uuid4(),
+    )
+
+    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+
+
+def test_apply_rankings_with_bifrost_rerank_score_kind() -> None:
+    candidates = [{"content": "a"}, {"content": "b"}, {"content": "c"}]
+
+    result = RAGService.apply_rankings(
+        candidates=candidates,
+        rankings=[(3, 0.9), (2, 0.5)],
+        limit=2,
+        score_kind="bifrost_rerank",
+        index_base=1,
+    )
+
+    assert result[0]["content"] == "c"
+    assert result[0]["rerank_score"] == 0.9
+    assert result[0]["score_kind"] == "bifrost_rerank"
+    assert result[1]["content"] == "b"
+    assert result[1]["score_kind"] == "bifrost_rerank"
+
+
+def test_apply_rankings_with_zero_based_index() -> None:
+    candidates = [{"content": "a"}, {"content": "b"}, {"content": "c"}]
+
+    result = RAGService.apply_rankings(
+        candidates=candidates,
+        rankings=[(2, 0.9), (0, 0.5)],
+        limit=2,
+        score_kind="bifrost_rerank",
+        index_base=0,
+    )
+
+    assert result[0]["content"] == "c"
+    assert result[0]["rerank_score"] == 0.9
+    assert result[1]["content"] == "a"
+    assert result[1]["rerank_score"] == 0.5

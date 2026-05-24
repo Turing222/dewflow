@@ -2,6 +2,7 @@ from fastapi import Depends
 
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.factory import LLMProviderFactory
+from backend.ai.providers.rerank.factory import RerankProviderFactory
 from backend.api.deps.services import get_knowledge_service
 from backend.api.deps.uow import get_uow
 from backend.application.knowledge.ingestion_workflow import KnowledgeRAGWorkflow
@@ -11,6 +12,7 @@ from backend.contracts.interfaces import (
     AbstractLLMService,
     AbstractRAGEmbedder,
     AbstractRAGService,
+    AbstractRerankService,
     AbstractUnitOfWork,
 )
 from backend.services.chunking_service import ChunkingService
@@ -21,6 +23,12 @@ from backend.services.vector_index_service import VectorIndexService
 
 def get_llm_service() -> AbstractLLMService:
     return LLMProviderFactory.create()
+
+
+def get_rerank_service() -> AbstractRerankService | None:
+    if not settings.RAG_RERANK_ENABLED:
+        return None
+    return RerankProviderFactory.create(settings.RAG_RERANK_PROVIDER)
 
 
 def get_rag_embedder() -> AbstractRAGEmbedder:
@@ -51,13 +59,17 @@ def get_rag_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
     embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
     vector_index_service: VectorIndexService = Depends(get_vector_index_service),
+    reranker: AbstractRerankService | None = Depends(get_rerank_service),
 ) -> AbstractRAGService:
-    llm_service = get_llm_service() if settings.RAG_RERANK_ENABLED else None
+    llm_service = (
+        get_llm_service() if settings.RAG_RERANK_ENABLED and reranker is None else None
+    )
     return RAGService(
         embedder=embedder,
         vector_index_service=vector_index_service,
         top_k=settings.RAG_TOP_K,
         llm_service=llm_service,
+        reranker=reranker,
         rerank_candidate_count=settings.RAG_RERANK_CANDIDATE_COUNT,
         rerank_top_k=settings.RAG_RERANK_TOP_K,
     )

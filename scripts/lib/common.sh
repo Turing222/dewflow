@@ -143,9 +143,13 @@ ensure_smoke_required_secrets() {
     # Auto-touch empty API key files
     ensure_smoke_secret_file "SMOKE_OPENAI_API_KEY_FILE" "./secrets/smoke/openai_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_DASHSCOPE_API_KEY_FILE" "./secrets/smoke/dashscope_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_DASHSCOPE_API_KEY_2_FILE" "./secrets/smoke/dashscope_api_key_2.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GEMINI_API_KEY_FILE" "./secrets/smoke/gemini_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GOOGLE_API_KEY_FILE" "./secrets/smoke/google_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_FILE" "./secrets/smoke/deepseek_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_2_FILE" "./secrets/smoke/deepseek_api_key_2.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_COHERE_API_KEY_FILE" "./secrets/smoke/cohere_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_COHERE_API_KEY_2_FILE" "./secrets/smoke/cohere_api_key_2.txt" "empty"
     ensure_smoke_secret_file "SMOKE_BIFROST_API_KEY_FILE" "./secrets/smoke/bifrost_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_BIFROST_ENCRYPTION_KEY_FILE" "./secrets/smoke/bifrost_encryption_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_LLM_API_KEY_FILE" "./secrets/smoke/llm_api_key.txt" "empty"

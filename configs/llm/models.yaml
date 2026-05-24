@@ -33,6 +33,16 @@ profiles:
       - llm-gateway
       - ai-gateway
 
+  bifrost_reasoner:
+    provider: openai-compatible
+    model: deepseek/deepseek-reasoner
+    base_url: http://bifrost:8080/v1  # Docker network only
+    api_key_envs:
+      - BIFROST_API_KEY
+    aliases:
+      - bifrost-reasoner
+      - gateway-reasoner
+
   deepseek_v4_flash:
     provider: deepseek
     model: deepseek-v4-flash

@@ -15,6 +15,11 @@ Set these environment variables in your compose env file or shell:
 BIFROST_API_KEY=sk-bf-change-me
 BIFROST_ENCRYPTION_KEY=change-me-to-a-long-random-passphrase
 DEEPSEEK_API_KEY=sk-your-official-deepseek-key
+DEEPSEEK_API_KEY_2=sk-your-second-official-deepseek-key
+DASHSCOPE_API_KEY=sk-your-official-dashscope-key
+DASHSCOPE_API_KEY_2=sk-your-second-official-dashscope-key
+COHERE_API_KEY=sk-your-official-cohere-key
+COHERE_API_KEY_2=sk-your-second-official-cohere-key
 ```
 
 Or use the automated command:
@@ -43,15 +48,18 @@ governance routes. The SQLite database is stored at `./config.db` relative to
 Bifrost's app directory, which maps to the `bifrost_data` Docker volume.
 
 Provider credentials are referenced with `env.*`; do not commit raw provider
-keys. The first gateway profile uses DeepSeek through Bifrost's
-OpenAI-compatible custom provider support.
+keys. The gateway config uses DeepSeek for chat, DashScope for embeddings, and
+Cohere for native `/v1/rerank`. Each provider has two key slots with equal
+weight. If only one production key is available, point the second secret file to
+the same value until a real backup key exists.
 
 ## Key Ownership
 
 Dewflow receives `BIFROST_API_KEY` as its OpenAI-compatible client key when
 calling the gateway. Bifrost requires a virtual key on inference requests,
 validates `BIFROST_API_KEY` as the `dewflow-platform` virtual key, and only
-allows that key to use the `deepseek-chat` model through the DeepSeek provider.
+allows that key to use the configured chat, embedding, and rerank models through
+their provider allowlists.
 Additional Bifrost authentication is disabled for inference traffic.
 The key must start with `sk-bf-`; Bifrost v1.4.11 generates a replacement key
 when a configured virtual key value does not use that prefix.

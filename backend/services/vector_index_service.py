@@ -12,13 +12,13 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Literal, NotRequired, TypedDict
 
-from backend.utils.token_estimation import count_tokens
 from backend.contracts.interfaces import AbstractRAGEmbedder, AbstractUnitOfWork
 from backend.models.orm.chunk import ChunkSourceType, DocumentChunk
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.base import BaseService
 from backend.services.chunking_service import ChunkPayload
 from backend.utils.search_text import build_search_texts, normalize_query
+from backend.utils.token_estimation import count_tokens
 
 CHUNKING_VERSION = 2
 

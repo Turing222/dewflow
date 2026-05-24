@@ -82,6 +82,24 @@ class AbstractLLMService(ABC):
         """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
 
 
+class AbstractRerankService(ABC):
+    """Rerank 服务抽象接口。"""
+
+    @abstractmethod
+    async def rerank(
+        self,
+        *,
+        query_text: str,
+        documents: list[str],
+        top_k: int,
+    ) -> list[tuple[int, float]]:
+        """返回 0-based 文档索引与相关性分数，按相关性降序排列。"""
+        ...
+
+    async def close(self) -> None:  # noqa: B027 — optional hook with default no-op
+        """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
+
+
 class AbstractRAGService(ABC):
     """RAG 检索服务抽象接口"""
 

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
@@ -30,6 +31,8 @@ from backend.services.object_storage import (
     UploadSizeLimitExceeded,
 )
 from backend.services.permission_service import Permission, PermissionService
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_KNOWLEDGE_BASE_NAME = "默认知识库"
 DEFAULT_KNOWLEDGE_BASE_DESCRIPTION = "系统自动创建的默认知识库"

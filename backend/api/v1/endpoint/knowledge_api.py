@@ -178,7 +178,6 @@ async def delete_kb_file(
         actor_user_id=current_user.id,
         resource_type="file",
         resource_id=file_id,
-    ):
-        async with service.write():
-            await service.remove_file(file_id=file_id, user_id=current_user.id)
+    ), service.write():
+        await service.remove_file(file_id=file_id, user_id=current_user.id)
 
