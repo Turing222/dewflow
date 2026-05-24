@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
@@ -26,6 +27,7 @@ def user_service_ctx() -> SimpleNamespace:
         get_by_email=AsyncMock(),
         get_by_username=AsyncMock(),
         get_by_phone=AsyncMock(),
+        get_by_google_sub=AsyncMock(),
         create=AsyncMock(),
         get=AsyncMock(),
         update=AsyncMock(),
@@ -36,11 +38,19 @@ def user_service_ctx() -> SimpleNamespace:
         create_workspace=AsyncMock(),
         add_workspace_role=AsyncMock(),
     )
+
+    @asynccontextmanager
+    async def _noop_savepoint():
+        yield uow
+
     uow = cast(
-        AbstractUnitOfWork, SimpleNamespace(user_repo=repo, access_repo=access_repo)
+        AbstractUnitOfWork,
+        SimpleNamespace(
+            user_repo=repo, access_repo=access_repo, savepoint=_noop_savepoint
+        ),
     )
     service = UserService(uow=uow)
-    return SimpleNamespace(service=service, repo=repo, access_repo=access_repo)
+    return SimpleNamespace(service=service, repo=repo, access_repo=access_repo, uow=uow)
 
 
 def _build_user_create() -> UserCreate:
@@ -325,3 +335,78 @@ async def test_authenticate_returns_user_on_valid_credentials(
     )
 
     assert result == user
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_by_phone_recovers_from_integrity_error(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    """Concurrent phone registration: IntegrityError → savepoint recovery → re-query."""
+    existing_user = SimpleNamespace(id=uuid.uuid4(), phone="13800000000")
+    user_service_ctx.repo.get_by_phone.return_value = None
+    user_service_ctx.repo.get_by_username.return_value = None
+    user_service_ctx.repo.create.side_effect = IntegrityError(
+        "insert users", {"phone": "13800000000"}, Exception("duplicate key")
+    )
+    # Second get_by_phone call returns the user created by the concurrent request
+    user_service_ctx.repo.get_by_phone.side_effect = [None, existing_user]
+
+    result = await user_service_ctx.service.find_or_create_by_phone("13800000000")
+
+    assert result is existing_user
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_by_google_recovers_from_integrity_error(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    """Concurrent Google registration: IntegrityError → savepoint recovery → re-query."""
+    google_sub = "google_123"
+    existing_user = SimpleNamespace(id=uuid.uuid4(), google_sub=google_sub)
+    user_service_ctx.repo.get_by_google_sub.return_value = None
+    user_service_ctx.repo.get_by_email.return_value = None
+    user_service_ctx.repo.get_by_username.return_value = None
+    user_service_ctx.repo.create.side_effect = IntegrityError(
+        "insert users", {"google_sub": google_sub}, Exception("duplicate key")
+    )
+    user_service_ctx.repo.get_by_google_sub.side_effect = [None, existing_user]
+
+    result = await user_service_ctx.service.find_or_create_by_google(
+        google_sub=google_sub, email=None, name=None
+    )
+
+    assert result is existing_user
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_by_google_links_email_user_after_integrity_error(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    """Concurrent Google registration can recover via email and still bind sub."""
+    google_sub = "google_456"
+    email = "linked@example.com"
+    existing_user_id = uuid.uuid4()
+    existing_user = SimpleNamespace(
+        id=existing_user_id,
+        email=email,
+        auth_provider=None,
+    )
+    user_service_ctx.repo.get_by_google_sub.return_value = None
+    user_service_ctx.repo.get_by_email.side_effect = [None, existing_user]
+    user_service_ctx.repo.get_by_username.return_value = None
+    user_service_ctx.repo.create.side_effect = IntegrityError(
+        "insert users", {"email": email}, Exception("duplicate key")
+    )
+    user_service_ctx.repo.get.return_value = existing_user
+
+    result = await user_service_ctx.service.find_or_create_by_google(
+        google_sub=google_sub,
+        email=email,
+        name=None,
+    )
+
+    assert result is existing_user
+    user_service_ctx.repo.update.assert_awaited_once_with(
+        db_obj=existing_user,
+        obj_in={"google_sub": google_sub, "auth_provider": "google"},
+    )

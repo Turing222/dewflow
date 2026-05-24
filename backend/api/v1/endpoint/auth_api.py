@@ -2,12 +2,10 @@ from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.exc import IntegrityError
 
 from backend.api.dependencies import get_audit_service, get_login_data, get_user_service
 from backend.api.deps.services import get_google_oauth_service, get_sms_service
 from backend.config.settings import settings
-from backend.config.web_settings import get_web_settings
 from backend.core.exceptions import app_bad_request
 from backend.core.security import create_access_token
 from backend.middleware.rate_limit import RateLimiter
@@ -111,12 +109,9 @@ async def login(
 
 @router.post("/sms/send", dependencies=[Depends(sms_limiter)])
 async def sms_send(body: SMSSendRequest, sms_service: SMSServiceDep) -> SMSSendResponse:
-    """发送短信验证码（mock 模式下返回验证码明文）。"""
-    code = await sms_service.send_code(body.phone)
-    result = SMSSendResponse(message="验证码已发送")
-    if get_web_settings().SMS_MOCK_MODE:
-        result.code = code
-    return result
+    """发送短信验证码。"""
+    await sms_service.send_code(body.phone)
+    return SMSSendResponse(message="验证码已发送")
 
 
 @router.post("/sms/login")
@@ -130,13 +125,8 @@ async def sms_login(
     if not await sms_service.verify_code(body.phone, body.code):
         raise app_bad_request("验证码错误或已过期", code="INVALID_SMS_CODE")
 
-    try:
-        async with user_service.write():
-            user = await user_service.find_or_create_by_phone(body.phone)
-    except IntegrityError:
-        # 并发注册竞态，重新查询即可。
-        async with user_service.write():
-            user = await user_service.find_or_create_by_phone(body.phone)
+    async with user_service.write():
+        user = await user_service.find_or_create_by_phone(body.phone)
 
     if not user.is_active:
         raise app_bad_request("账号已停用", code="INACTIVE_USER")
@@ -180,21 +170,12 @@ async def google_callback(
     """用 Google 授权码换取 JWT（首次自动注册）。"""
     claims = await google_service.exchange_code(body.code, body.redirect_uri)
 
-    try:
-        async with user_service.write():
-            user = await user_service.find_or_create_by_google(
-                google_sub=claims["sub"],
-                email=claims.get("email"),
-                name=claims.get("name"),
-            )
-    except IntegrityError:
-        # 并发注册竞态，重新查询即可。
-        async with user_service.write():
-            user = await user_service.find_or_create_by_google(
-                google_sub=claims["sub"],
-                email=claims.get("email"),
-                name=claims.get("name"),
-            )
+    async with user_service.write():
+        user = await user_service.find_or_create_by_google(
+            google_sub=claims["sub"],
+            email=claims.get("email"),
+            name=claims.get("name"),
+        )
 
     if not user.is_active:
         raise app_bad_request("账号已停用", code="INACTIVE_USER")

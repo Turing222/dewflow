@@ -5,11 +5,11 @@
 """
 
 import logging
-import random
+import secrets
 import string
 
 from backend.core.exceptions import app_bad_request
-from backend.infra.redis import redis_client
+from backend.infra.redis import RedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -18,23 +18,25 @@ _SMS_RATE_PREFIX = "sms_rate:"
 
 
 class SMSService:
-    """短信验证码服务（mock 模式下验证码记录到日志并返回给调用方）。"""
+    """短信验证码服务（mock 模式下验证码仅记录到日志）。"""
 
     def __init__(
         self,
+        redis_client: RedisClient,
         sms_code_expire_seconds: int,
         sms_code_rate_limit_seconds: int,
         sms_mock_mode: bool,
     ) -> None:
+        self._redis_client = redis_client
         self._sms_code_expire_seconds = sms_code_expire_seconds
         self._sms_code_rate_limit_seconds = sms_code_rate_limit_seconds
         self._sms_mock_mode = sms_mock_mode
 
     async def _get_redis(self):
-        return await redis_client.init()
+        return await self._redis_client.init()
 
     async def send_code(self, phone: str) -> str:
-        """生成验证码并存入 Redis，mock 模式下返回验证码明文。
+        """生成验证码并存入 Redis，mock 模式下仅写日志。
 
         Returns:
             生成的 6 位验证码。
@@ -47,7 +49,7 @@ class SMSService:
             raise app_bad_request("发送过于频繁，请稍后再试", code="SMS_RATE_LIMITED")
 
         # 生成 6 位验证码
-        code = "".join(random.choices(string.digits, k=6))
+        code = "".join(secrets.choice(string.digits) for _ in range(6))
 
         # 存入 Redis（TTL 由配置决定）
         code_key = f"{_SMS_CODE_PREFIX}{phone}"

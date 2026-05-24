@@ -20,7 +20,7 @@ export async function mockLoginRoute(
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ message: 'Code sent', code: '123456' }),
+      body: JSON.stringify({ message: 'Code sent' }),
     });
   });
   await page.route('**/api/v1/auth/sms/login', async (route) => {

@@ -80,7 +80,6 @@ class SMSSendResponse(BaseModel):
     """发送短信验证码响应。"""
 
     message: str
-    code: str | None = None
 
 
 class GoogleAuthUrlResponse(BaseModel):

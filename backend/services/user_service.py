@@ -6,7 +6,7 @@
 """
 
 import logging
-import random
+import secrets
 import string
 import uuid
 from collections.abc import Sequence
@@ -184,7 +184,7 @@ class UserService(BaseService[AbstractUnitOfWork]):
         """生成不与现有用户冲突的 user_ 前缀用户名。"""
         for _ in range(10):
             suffix = "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=8)
+                secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8)
             )
             username = f"user_{suffix}"
             if not await self.uow.user_repo.get_by_username(username):
@@ -207,10 +207,14 @@ class UserService(BaseService[AbstractUnitOfWork]):
             phone=phone,
             auth_provider="phone",
         )
-        # 并发竞态由 endpoint 层捕获 IntegrityError 并重试。
-        user = await self.uow.user_repo.create(obj_in=obj_in_data)
-
-        await self._create_personal_workspace_for_user(user)
+        try:
+            async with self.uow.savepoint():
+                user = await self.uow.user_repo.create(obj_in=obj_in_data)
+                await self._create_personal_workspace_for_user(user)
+        except IntegrityError:
+            user = await self.uow.user_repo.get_by_phone(phone)
+            if user is None:
+                raise
         return user
 
     async def find_or_create_by_google(
@@ -239,10 +243,18 @@ class UserService(BaseService[AbstractUnitOfWork]):
             auth_provider="google",
             google_sub=google_sub,
         )
-        # 并发竞态由 endpoint 层捕获 IntegrityError 并重试。
-        user = await self.uow.user_repo.create(obj_in=obj_in_data)
-
-        await self._create_personal_workspace_for_user(user)
+        try:
+            async with self.uow.savepoint():
+                user = await self.uow.user_repo.create(obj_in=obj_in_data)
+                await self._create_personal_workspace_for_user(user)
+        except IntegrityError:
+            user = await self.uow.user_repo.get_by_google_sub(google_sub)
+            if user is None and email:
+                user = await self.uow.user_repo.get_by_email(email)
+                if user is not None:
+                    user = await self.link_google_account(user.id, google_sub)
+            if user is None:
+                raise
         return user
 
     async def link_google_account(self, user_id: uuid.UUID, google_sub: str) -> User:

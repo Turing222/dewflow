@@ -4,16 +4,18 @@
 边界：本模块不处理用户查找或 JWT 签发，仅负责与 Google OAuth2 交互。
 """
 
+import asyncio
 import logging
 from urllib.parse import urlencode
 
 import httpx
+from google.auth.transport.requests import Request
+from google.oauth2 import id_token as google_id_token
 
 logger = logging.getLogger(__name__)
 
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105
-_GOOGLE_TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
 _SCOPES = "openid email profile"
 
 
@@ -62,27 +64,18 @@ class GoogleOAuthService:
             msg = "Google OAuth 响应中缺少 id_token"
             raise ValueError(msg)
 
-        # 2. 验证 ID Token（MVP: 使用 Google tokeninfo 端点）
+        # 2. 本地验证 ID Token 签名、audience、issuer 与过期时间
         claims = await self._verify_id_token(id_token)
         return claims
 
     async def _verify_id_token(self, id_token: str) -> dict:
-        """通过 Google tokeninfo 端点验证 ID Token。
-
-        生产环境应改为本地 JWKS 验证以减少外部依赖。
-        """
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                _GOOGLE_TOKENINFO_URL,
-                params={"id_token": id_token},
-            )
-            resp.raise_for_status()
-            claims = resp.json()
-
-        # 校验 audience 是否匹配本应用
-        if claims.get("aud") != self._google_client_id:
-            msg = "Google ID Token audience 不匹配"
-            raise ValueError(msg)
+        """本地验证 Google ID Token 并返回核心 claims。"""
+        claims = await asyncio.to_thread(
+            google_id_token.verify_oauth2_token,
+            id_token,
+            Request(),
+            self._google_client_id,
+        )
 
         return {
             "sub": claims["sub"],

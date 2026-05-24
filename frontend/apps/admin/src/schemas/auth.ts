@@ -26,7 +26,6 @@ export const smsLoginRequestSchema = z.object({
 
 export const smsSendResponseSchema = z.object({
     message: z.string(),
-    code: z.string().optional(),
 });
 
 export const googleCallbackRequestSchema = z.object({

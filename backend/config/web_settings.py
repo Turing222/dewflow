@@ -68,9 +68,7 @@ class WebSettings(BaseSettings):
     SMS_SEND_RATE_LIMIT_SECONDS: int = Field(
         60, description="短信发送接口限流窗口（秒）"
     )
-    SMS_MOCK_MODE: bool = Field(
-        True, description="Mock 模式下验证码写入日志并返回给调用方"
-    )
+    SMS_MOCK_MODE: bool = Field(False, description="Mock 模式下验证码仅写入日志")
 
     # ── Rate Limiting ─────────────────────────────────────────────
     RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = ""
