@@ -745,5 +745,30 @@ describe('useChatController', () => {
                 expect.any(Object),
             );
         });
+
+        it('should enable external context during enhanced RAG chat initiation', async () => {
+            mockGetDefaultKBAPI.mockResolvedValue({ id: 'resolved-kb-id', name: 'My KB' });
+            mockStreamChatQuery.mockReturnValue(new AbortController());
+
+            const { result } = renderHook(() => useChatController(), {
+                wrapper: createWrapper(),
+            });
+
+            act(() => {
+                result.current.setChatMode('web_rag');
+            });
+
+            await act(async () => {
+                await result.current.sendQuery('latest public info');
+            });
+
+            expect(mockStreamChatQuery).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    query: 'latest public info',
+                    enableExternalContext: true,
+                }),
+                expect.any(Object),
+            );
+        });
     });
 });

@@ -308,9 +308,10 @@
     gap: 16px;
     margin-top: 24px;
     width: 100%;
-    max-width: 600px;
+    max-width: 840px;
     box-sizing: border-box;
     justify-content: center;
+    flex-wrap: wrap;
 }
 
 @media (max-width: 640px) {
@@ -321,7 +322,7 @@
 }
 
 .mode-card {
-    flex: 1;
+    flex: 1 1 240px;
     display: flex;
     align-items: flex-start;
     gap: 16px;
@@ -667,5 +668,4 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-
 

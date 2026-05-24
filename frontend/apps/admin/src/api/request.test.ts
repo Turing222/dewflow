@@ -49,7 +49,7 @@ describe('request configuration', () => {
         useAuthStore.getState().setToken('test-token');
         vi.stubGlobal('fetch', fetchMock);
 
-        await sendQueryStreamAPI('hello', 'session-1', undefined, 'cid-1');
+        await sendQueryStreamAPI({ query: 'hello', sessionId: 'session-1', clientRequestId: 'cid-1' });
 
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(fetchMock).toHaveBeenCalledWith(
@@ -72,6 +72,7 @@ describe('request configuration', () => {
             session_id: 'session-1',
             kb_id: null,
             client_request_id: 'cid-1',
+            enable_external_context: false,
         });
     });
 

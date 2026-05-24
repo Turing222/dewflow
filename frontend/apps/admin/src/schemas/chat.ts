@@ -31,6 +31,7 @@ export const chatQueryRequestSchema = z.object({
     session_id: z.string().nullable().optional(),
     kb_id: z.string().nullable().optional(),
     client_request_id: requiredString.optional(),
+    enable_external_context: z.boolean().optional(),
 });
 
 export const chatQueryResponseSchema = z.object({
@@ -70,6 +71,10 @@ export const ragMetricsSchema = z.object({
     retrieval_mode: z.string().optional(),
     planner_used: z.boolean().optional(),
     rerank_used: z.boolean().optional(),
+    external_context_ms: z.number().optional(),
+    external_context_hit_count: z.number().optional(),
+    external_context_used: z.boolean().optional(),
+    external_context_provider: z.string().optional(),
 }).partial();
 
 export const chatMessageMetricsSchema = z.object({
@@ -106,7 +111,12 @@ export const chatStreamErrorEventSchema = z.object({
     message: z.string().optional(),
 });
 
+export const chatStreamStartedEventSchema = z.object({
+    type: z.literal('started'),
+});
+
 export const chatStreamEventSchema = z.discriminatedUnion('type', [
+    chatStreamStartedEventSchema,
     chatStreamMetaEventSchema,
     chatStreamChunkEventSchema,
     chatStreamErrorEventSchema,
@@ -167,4 +177,3 @@ export const knowledgeFileSchema = z.object({
 export const knowledgeFilesListSchema = z.array(knowledgeFileSchema);
 
 export type KnowledgeFile = z.infer<typeof knowledgeFileSchema>;
-

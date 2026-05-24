@@ -92,7 +92,7 @@ describe('Headers contract', () => {
             }),
         );
 
-        const res = await sendQueryStreamAPI('hello');
+        const res = await sendQueryStreamAPI({ query: 'hello' });
         expect(res.ok).toBe(true);
 
         expect(capturedHeaders.authorization).toBe('Bearer test-access-token');

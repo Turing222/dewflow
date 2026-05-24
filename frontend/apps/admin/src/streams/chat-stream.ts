@@ -2,10 +2,12 @@ import { sendQueryStreamAPI } from '../api/chat';
 import { chatStreamEventSchema } from '../schemas/chat';
 import type { ChatStreamEvent } from '../schemas/chat';
 
+type StartedEvent = Extract<ChatStreamEvent, { type: 'started' }>;
 type MetaEvent = Extract<ChatStreamEvent, { type: 'meta' }>;
 type ChunkEvent = Extract<ChatStreamEvent, { type: 'chunk' }>;
 
 export type StreamCallbacks = {
+    onStarted?: (event: StartedEvent) => void;
     onMeta: (event: MetaEvent) => void;
     onChunk: (event: ChunkEvent) => void;
     onDone: () => void;
@@ -18,6 +20,7 @@ export type StreamOptions = {
     sessionId?: string;
     kbId?: string;
     clientRequestId?: string;
+    enableExternalContext?: boolean;
     signal?: AbortSignal;
 };
 
@@ -36,13 +39,14 @@ export function streamChatQuery(
 
     (async () => {
         try {
-            const response = await sendQueryStreamAPI(
-                options.query,
-                options.sessionId,
-                options.kbId,
-                options.clientRequestId,
-                abortController.signal,
-            );
+            const response = await sendQueryStreamAPI({
+                query: options.query,
+                sessionId: options.sessionId,
+                kbId: options.kbId,
+                clientRequestId: options.clientRequestId,
+                enableExternalContext: options.enableExternalContext,
+                signal: abortController.signal,
+            });
 
             const reader = response.body?.getReader();
             if (!reader) {
@@ -81,7 +85,9 @@ export function streamChatQuery(
                     try {
                         const parsed = chatStreamEventSchema.parse(JSON.parse(data));
 
-                        if (parsed.type === 'meta') {
+                        if (parsed.type === 'started') {
+                            callbacks.onStarted?.(parsed);
+                        } else if (parsed.type === 'meta') {
                             callbacks.onMeta(parsed);
                         } else if (parsed.type === 'chunk') {
                             callbacks.onChunk(parsed);

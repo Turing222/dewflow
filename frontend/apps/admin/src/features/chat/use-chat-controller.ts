@@ -37,7 +37,7 @@ type SendMessageOptions = {
     retryMessageId?: string;
 };
 
-export type ChatMode = 'normal' | 'rag';
+export type ChatMode = 'normal' | 'rag' | 'web_rag';
 
 export type UseChatControllerReturn = {
     activeSessionId: string | null;
@@ -125,12 +125,19 @@ export function useChatController(): UseChatControllerReturn {
         // Historical session selection hydrates local chat state from query data.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setMessages(sessionDetailData.messages || []);
-        if (sessionDetailData.session) {
-            setChatMode(sessionDetailData.session.kb_id ? 'rag' : 'normal');
-        }
         const lastAssistantMsg = [...(sessionDetailData.messages || [])]
             .reverse()
             .find((m) => m.role === 'assistant');
+        const lastMetrics = parseRagMetrics(lastAssistantMsg?.search_context);
+        if (sessionDetailData.session) {
+            if (lastMetrics?.external_context_used) {
+                setChatMode('web_rag');
+            } else if (sessionDetailData.session.kb_id) {
+                setChatMode('rag');
+            } else {
+                setChatMode('normal');
+            }
+        }
         if (lastAssistantMsg?.search_context) {
             setCitations(parseCitations(lastAssistantMsg.search_context));
         } else {
@@ -225,12 +232,13 @@ export function useChatController(): UseChatControllerReturn {
         setTraceSteps(createInitialTraceSteps());
         setCitations([]);
 
+        const enableExternalContext = chatMode === 'web_rag';
         let targetKbId: string | undefined = undefined;
-        if (!activeSessionId && chatMode === 'rag') {
+        if (!activeSessionId && (chatMode === 'rag' || chatMode === 'web_rag')) {
             const kbId = await fetchDefaultKbId();
             if (kbId) {
                 targetKbId = kbId;
-            } else {
+            } else if (chatMode === 'rag') {
                 setIsStreaming(false);
                 const failedMessageId = `temp-err-${Date.now()}`;
                 const errorMsg: ChatMessage = {
@@ -264,6 +272,7 @@ export function useChatController(): UseChatControllerReturn {
                 sessionId: activeSessionId || undefined,
                 kbId: targetKbId,
                 clientRequestId,
+                enableExternalContext,
                 signal: newController.signal,
             },
             {
@@ -341,6 +350,10 @@ export function useChatController(): UseChatControllerReturn {
                                     ]
                                         .reverse()
                                         .find((m) => m.role === 'assistant');
+                                    const lastMetrics = parseRagMetrics(lastAssistantMsg?.search_context);
+                                    if (lastMetrics?.external_context_used && detail.session?.kb_id) {
+                                        setChatMode('web_rag');
+                                    }
                                     if (lastAssistantMsg?.search_context) {
                                         setCitations(
                                             parseCitations(

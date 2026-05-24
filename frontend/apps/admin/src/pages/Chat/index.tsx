@@ -187,8 +187,12 @@ const ChatPage: React.FC = () => {
                                 {controller.activeSession?.title || t('chat.default_title')}
                             </div>
                             {controller.activeSession && (
-                                <div className={`${styles['chat-header-badge']} ${controller.activeSession.kb_id ? styles['rag'] : styles['normal']}`}>
-                                    {controller.activeSession.kb_id ? t('chat.mode_rag', '知识库问答 RAG') : t('chat.mode_normal', '普通对话')}
+                                <div className={`${styles['chat-header-badge']} ${controller.chatMode !== 'normal' ? styles['rag'] : styles['normal']}`}>
+                                    {controller.chatMode === 'web_rag'
+                                        ? t('chat.mode_web_rag', '增强 RAG')
+                                        : controller.activeSession.kb_id
+                                            ? t('chat.mode_rag', '知识库问答 RAG')
+                                            : t('chat.mode_normal', '普通对话')}
                                 </div>
                             )}
                             {controller.activeSession && controller.activeSession.total_tokens !== undefined && (

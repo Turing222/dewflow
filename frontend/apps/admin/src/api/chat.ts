@@ -12,18 +12,23 @@ import {
 import { parseWithSchema } from '../schemas/parse';
 import { API_URLS } from './urls';
 
-export const sendQueryAPI = (
-    query: string,
-    sessionId?: string,
-    kbId?: string,
-    clientRequestId?: string,
-) => {
-    const resolvedClientRequestId = resolveIdempotencyKey(clientRequestId);
+export interface ChatQueryOptions {
+    query: string;
+    sessionId?: string;
+    kbId?: string;
+    clientRequestId?: string;
+    enableExternalContext?: boolean;
+    signal?: AbortSignal;
+}
+
+export const sendQueryAPI = (options: ChatQueryOptions) => {
+    const resolvedClientRequestId = resolveIdempotencyKey(options.clientRequestId);
     const payload = chatQueryRequestSchema.parse({
-        query,
-        session_id: sessionId || null,
-        kb_id: kbId || null,
+        query: options.query,
+        session_id: options.sessionId || null,
+        kb_id: options.kbId || null,
         client_request_id: resolvedClientRequestId,
+        enable_external_context: options.enableExternalContext ?? false,
     });
     return request
         .post<unknown, unknown>(API_URLS.CHAT.QUERY, payload, {
@@ -36,19 +41,14 @@ export const sendQueryAPI = (
  * SSE 流式查询 — 使用原生 fetch 读取 text/event-stream
  * 返回 Response 对象，调用方通过 body.getReader() 逐 chunk 读取
  */
-export const sendQueryStreamAPI = async (
-    query: string,
-    sessionId?: string,
-    kbId?: string,
-    clientRequestId?: string,
-    signal?: AbortSignal,
-): Promise<Response> => {
-    const resolvedClientRequestId = resolveIdempotencyKey(clientRequestId);
+export const sendQueryStreamAPI = async (options: ChatQueryOptions): Promise<Response> => {
+    const resolvedClientRequestId = resolveIdempotencyKey(options.clientRequestId);
     const payload = chatQueryRequestSchema.parse({
-        query,
-        session_id: sessionId || null,
-        kb_id: kbId || null,
+        query: options.query,
+        session_id: options.sessionId || null,
+        kb_id: options.kbId || null,
         client_request_id: resolvedClientRequestId,
+        enable_external_context: options.enableExternalContext ?? false,
     });
     const res = await fetch(API_URLS.CHAT.QUERY_STREAM, {
         method: 'POST',
@@ -56,7 +56,7 @@ export const sendQueryStreamAPI = async (
             'Content-Type': 'application/json',
         }, { idempotencyKey: resolvedClientRequestId }),
         body: JSON.stringify(payload),
-        signal,
+        signal: options.signal,
     });
 
     if (!res.ok) {

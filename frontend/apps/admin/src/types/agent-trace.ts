@@ -24,6 +24,8 @@ export interface CitationItem {
     summarySnippet: string;
     chunkIndex?: number;
     metaInfo?: Record<string, any>;
+    url?: string;
+    provider?: string;
 }
 
 export interface AgentTraceState {
@@ -136,6 +138,12 @@ export function applyTraceMetricsToSteps(
             if (ragMetrics?.rerank_used !== undefined) {
                 metricDetails.rerank_used = ragMetrics.rerank_used;
             }
+            if (ragMetrics?.external_context_hit_count !== undefined) {
+                metricDetails.external_context_hit_count = ragMetrics.external_context_hit_count;
+            }
+            if (ragMetrics?.external_context_provider !== undefined) {
+                metricDetails.external_context_provider = ragMetrics.external_context_provider;
+            }
             return {
                 ...step,
                 durationMs: ragMetrics?.retrieve_ms,
@@ -188,7 +196,13 @@ export function parseCitations(
         const items: CitationItem[] = [];
         for (const ref of searchContext.refs) {
             if (ref && typeof ref === 'object') {
-                const filename = (ref.filename as string) || (ref.file_id as string) || 'Unknown File';
+                const filename = (
+                    (ref.title as string) ||
+                    (ref.filename as string) ||
+                    (ref.url as string) ||
+                    (ref.file_id as string) ||
+                    'Unknown File'
+                );
                 if (ref.chunks && Array.isArray(ref.chunks)) {
                     for (const ch of ref.chunks) {
                         if (ch && typeof ch === 'object') {
@@ -199,6 +213,8 @@ export function parseCitations(
                                 summarySnippet: (ch.text as string) || (ch.content as string) || '',
                                 chunkIndex: typeof ch.chunk_index === 'number' ? ch.chunk_index : undefined,
                                 metaInfo: (ch.meta_info && typeof ch.meta_info === 'object') ? ch.meta_info as Record<string, any> : undefined,
+                                url: (ch.url as string) || (ref.url as string) || undefined,
+                                provider: (ch.provider as string) || (ref.provider as string) || undefined,
                             });
                         }
                     }
@@ -223,4 +239,3 @@ export function parseCitations(
 
     return [];
 }
-

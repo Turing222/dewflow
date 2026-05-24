@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Input, Button, Spin, Avatar, Upload, Popover } from 'antd';
-import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw, MessageSquare, Database } from 'lucide-react';
+import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw, MessageSquare, Database, Globe2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatMessage } from '../../types/chat';
 import type { ChatMode } from '../../features/chat/use-chat-controller';
@@ -41,7 +41,7 @@ const MessageList: React.FC<MessageListProps> = ({
     const renderMessageContent = useCallback((content: string, searchContext?: Record<string, any>) => {
         if (!content) return '';
         const citations = searchContext ? parseCitations(searchContext as Record<string, unknown>) : [];
-        const citationRegex = /\[R(\d+)(?:\.(\d+))?\]/g;
+        const citationRegex = /\[[RW]\d+(?:\.\d+)?\]/g;
         
         const parts = [];
         let lastIndex = 0;
@@ -67,17 +67,24 @@ const MessageList: React.FC<MessageListProps> = ({
                     ? `${Math.round(citation.relevanceScore * 100)}%`
                     : 'N/A';
                     
+                const isWeb = Boolean(citation.url) || citation.chunkId.startsWith('W');
                 const pageLabel = citation.metaInfo?.page_label || citation.metaInfo?.page;
-                const locationText = pageLabel
-                    ? `(第 ${pageLabel} 页)`
-                    : (typeof citation.chunkIndex === 'number' ? `(第 ${citation.chunkIndex + 1} 段)` : '');
+                const locationText = isWeb
+                    ? ''
+                    : pageLabel
+                    ? `(${t('chat.page_label', '第')} ${pageLabel} ${t('chat.page_unit', '页')})`
+                    : (typeof citation.chunkIndex === 'number' ? `(${t('chat.chunk_label', '第')} ${citation.chunkIndex + 1} ${t('chat.chunk_unit', '段')})` : '');
 
                 const sectionPath = citation.metaInfo?.section_path as string | undefined;
                 
                 const popoverContent = (
                     <div className={styles['citation-popover-content']}>
                         <div className={styles['citation-popover-header']}>
-                            <Database size={14} className={styles['popover-icon']} />
+                            {isWeb ? (
+                                <Globe2 size={14} className={styles['popover-icon']} />
+                            ) : (
+                                <Database size={14} className={styles['popover-icon']} />
+                            )}
                             <span className={styles['popover-filename']} title={`${citation.documentName} ${locationText}`}>
                                 {citation.documentName} <span className={styles['popover-location']}>{locationText}</span>
                             </span>
@@ -247,6 +254,19 @@ const MessageList: React.FC<MessageListProps> = ({
                                 <div className={styles['mode-card-content']}>
                                     <h4>{t('chat.mode_rag_title', '知识库问答 RAG')}</h4>
                                     <p>{t('chat.mode_rag_desc', '关联您的默认个人知识库文档，回答更有针对性与专业性。')}</p>
+                                </div>
+                            </div>
+
+                            <div
+                                className={`${styles['mode-card']} ${chatMode === 'web_rag' ? styles.active : ''}`}
+                                onClick={() => setChatMode('web_rag')}
+                            >
+                                <div className={styles['mode-card-icon-container']}>
+                                    <Globe2 size={20} className={styles['mode-icon']} />
+                                </div>
+                                <div className={styles['mode-card-content']}>
+                                    <h4>{t('chat.mode_web_rag_title', '增强 RAG')}</h4>
+                                    <p>{t('chat.mode_web_rag_desc', '结合知识库与按需联网检索，适合需要最新公开信息的问题。')}</p>
                                 </div>
                             </div>
                         </div>

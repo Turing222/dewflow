@@ -258,7 +258,9 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                             </div>
                                         ) : (
                                              citations.map((cit) => {
-                                                const isWebUrl = cit.documentName.startsWith('http://') || cit.documentName.startsWith('https://');
+                                                const webUrl = cit.url
+                                                    || (cit.documentName.startsWith('http') ? cit.documentName : undefined);
+                                                const isWebUrl = Boolean(webUrl);
                                                 const pageLabel = cit.metaInfo?.page_label || cit.metaInfo?.page;
                                                 const locationText = pageLabel
                                                     ? `${t('trace.page_label', '第')} ${pageLabel} ${t('trace.page_unit', '页')}`
@@ -285,7 +287,7 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                                             <div className={styles['citation-card-name-container']}>
                                                                 {isWebUrl ? (
                                                                     <a 
-                                                                        href={cit.documentName} 
+                                                                        href={webUrl}
                                                                         target="_blank" 
                                                                         rel="noopener noreferrer"
                                                                         className={styles['citation-web-link']}
