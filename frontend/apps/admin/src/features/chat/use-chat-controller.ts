@@ -345,6 +345,7 @@ export function useChatController(): UseChatControllerReturn {
                             .then((detail) => {
                                 if (!newController.signal.aborted) {
                                     setActiveSession(detail.session);
+                                    setMessages(detail.messages || []);
                                     const lastAssistantMsg = [
                                         ...detail.messages,
                                     ]

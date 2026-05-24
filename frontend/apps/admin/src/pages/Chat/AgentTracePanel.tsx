@@ -165,13 +165,28 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                                 {step.description}
                                             </div>
                                         )}
-                                        {step.metricDetails && Object.keys(step.metricDetails).length > 0 && (
-                                            <div className={styles['trace-step-details']}>
-                                                {Object.entries(step.metricDetails).map(([key, value]) => (
-                                                    <span key={key}>
-                                                        {key}: {formatMetricValue(key, value)}
-                                                    </span>
-                                                ))}
+                                        {step.metricDetails && (() => {
+                                            const displayMetrics = Object.fromEntries(
+                                                Object.entries(step.metricDetails).filter(([k]) => k !== 'route_reason'),
+                                            );
+                                            return Object.keys(displayMetrics).length > 0 ? (
+                                                <div className={styles['trace-step-details']}>
+                                                    {Object.entries(displayMetrics).map(([key, value]) => (
+                                                        <span key={key}>
+                                                            {key}: {formatMetricValue(key, value)}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            ) : null;
+                                        })()}
+                                        {step.metricDetails?.route_reason && (
+                                            <div className={styles['trace-step-reason-box']}>
+                                                <div className={styles['trace-step-reason-header']}>
+                                                    💡 {t('trace.route_reason_title', 'RAG 决策路由分析')}
+                                                </div>
+                                                <div className={styles['trace-step-reason-content']}>
+                                                    {String(step.metricDetails.route_reason)}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -322,9 +337,9 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                                                     {locationText}
                                                                 </span>
                                                             )}
-                                                            {cit.relevanceScore > 0 && (
+                                                            {((cit.scoreKind === 'bifrost_rerank' && cit.rerankScore !== undefined ? cit.rerankScore : cit.relevanceScore) > 0) && (
                                                                 <span className={styles['citation-meta-score']}>
-                                                                    {(cit.relevanceScore * 100).toFixed(0)}% {t('trace.score', '相关度')}
+                                                                    {((cit.scoreKind === 'bifrost_rerank' && cit.rerankScore !== undefined ? cit.rerankScore : cit.relevanceScore) * 100).toFixed(0)}% {cit.scoreKind === 'bifrost_rerank' ? t('trace.rerank_score', '重排相关度') : t('trace.score', '相关度')}
                                                                 </span>
                                                             )}
                                                         </div>

@@ -26,6 +26,8 @@ export interface CitationItem {
     metaInfo?: Record<string, any>;
     url?: string;
     provider?: string;
+    scoreKind?: string;
+    rerankScore?: number;
 }
 
 export interface AgentTraceState {
@@ -121,8 +123,28 @@ export function applyTraceMetricsToSteps(
         }));
 
     return baseSteps.map((step) => {
-        if (step.id === 'router-judge' && ragMetrics?.planner_ms !== undefined) {
-            return { ...step, durationMs: ragMetrics.planner_ms };
+        if (step.id === 'router-judge') {
+            const metricDetails: Record<string, number | string | boolean> = {};
+            if (ragMetrics?.planner_used !== undefined) {
+                metricDetails.planner_used = ragMetrics.planner_used;
+            }
+            if (ragMetrics?.context_mode !== undefined) {
+                metricDetails.context_mode = ragMetrics.context_mode;
+            }
+            if (ragMetrics?.selected_sources !== undefined) {
+                metricDetails.selected_sources = ragMetrics.selected_sources;
+            }
+            if (ragMetrics?.route_reason !== undefined) {
+                metricDetails.route_reason = ragMetrics.route_reason;
+            }
+            if (ragMetrics?.external_context_planned !== undefined) {
+                metricDetails.external_context_planned = ragMetrics.external_context_planned;
+            }
+            return {
+                ...step,
+                durationMs: ragMetrics?.planner_ms,
+                metricDetails: Object.keys(metricDetails).length > 0 ? metricDetails : step.metricDetails,
+            };
         }
         if (step.id === 'retrieve-docs') {
             const metricDetails: Record<string, number | string | boolean> = {};
@@ -138,11 +160,17 @@ export function applyTraceMetricsToSteps(
             if (ragMetrics?.rerank_used !== undefined) {
                 metricDetails.rerank_used = ragMetrics.rerank_used;
             }
+            if (ragMetrics?.rerank_ms !== undefined) {
+                metricDetails.rerank_ms = ragMetrics.rerank_ms;
+            }
             if (ragMetrics?.external_context_hit_count !== undefined) {
                 metricDetails.external_context_hit_count = ragMetrics.external_context_hit_count;
             }
             if (ragMetrics?.external_context_provider !== undefined) {
                 metricDetails.external_context_provider = ragMetrics.external_context_provider;
+            }
+            if (ragMetrics?.external_context_ms !== undefined) {
+                metricDetails.external_context_ms = ragMetrics.external_context_ms;
             }
             return {
                 ...step,
@@ -215,6 +243,8 @@ export function parseCitations(
                                 metaInfo: (ch.meta_info && typeof ch.meta_info === 'object') ? ch.meta_info as Record<string, any> : undefined,
                                 url: (ch.url as string) || (ref.url as string) || undefined,
                                 provider: (ch.provider as string) || (ref.provider as string) || undefined,
+                                scoreKind: (ch.score_kind as string) || undefined,
+                                rerankScore: typeof ch.rerank_score === 'number' ? ch.rerank_score : undefined,
                             });
                         }
                     }

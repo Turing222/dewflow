@@ -48,8 +48,14 @@ class SMSService:
         if await redis.get(rate_key):
             raise app_bad_request("发送过于频繁，请稍后再试", code="SMS_RATE_LIMITED")
 
-        # 生成 6 位验证码
-        code = "".join(secrets.choice(string.digits) for _ in range(6))
+        # 生成 6 位验证码（Mock 模式下基于手机号哈希，输出确定性但随机分布的 6 位数字，方便前端自动计算填充）
+        if self._sms_mock_mode:
+            h = 0
+            for char in phone:
+                h = (31 * h + ord(char)) & 0xFFFFFFFF
+            code = str(h % 900000 + 100000)
+        else:
+            code = "".join(secrets.choice(string.digits) for _ in range(6))
 
         # 存入 Redis（TTL 由配置决定）
         code_key = f"{_SMS_CODE_PREFIX}{phone}"

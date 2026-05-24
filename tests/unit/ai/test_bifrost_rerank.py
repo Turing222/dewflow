@@ -19,7 +19,7 @@ def _real_service() -> BifrostRerankService:
     return BifrostRerankService(
         base_url="http://bifrost:8080/v1",
         api_key="sk-bf-test",
-        model_name="cohere/rerank-v3.5",
+        model_name="qwen3-rerank",
     )
 
 
@@ -42,7 +42,7 @@ class FakeBifrostRerankService(BifrostRerankService):
         super().__init__(
             base_url="http://bifrost:8080/v1",
             api_key="sk-bf-test",
-            model_name="cohere/rerank-v3.5",
+            model_name="qwen3-rerank",
         )
         self.payload: dict | None = None
         self.response = response
@@ -71,7 +71,7 @@ async def test_bifrost_rerank_constructs_request_and_parses_results() -> None:
 
     assert result == [(1, 0.91), (0, 0.32)]
     assert service.payload == {
-        "model": "cohere/rerank-v3.5",
+        "model": "qwen3-rerank",
         "query": "gateway observability",
         "top_n": 2,
         "documents": [

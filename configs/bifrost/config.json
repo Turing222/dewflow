@@ -17,7 +17,8 @@
           "name": "dashscope-primary",
           "value": "env.DASHSCOPE_API_KEY",
           "models": [
-            "text-embedding-v4"
+            "text-embedding-v4",
+            "qwen3-rerank"
           ],
           "weight": 1.0
         },
@@ -25,7 +26,8 @@
           "name": "dashscope-secondary",
           "value": "env.DASHSCOPE_API_KEY_2",
           "models": [
-            "text-embedding-v4"
+            "text-embedding-v4",
+            "qwen3-rerank"
           ],
           "weight": 1.0
         }
@@ -36,10 +38,7 @@
         "max_retries": 1
       },
       "custom_provider_config": {
-        "base_provider_type": "openai",
-        "allowed_requests": {
-          "embedding": true
-        }
+        "base_provider_type": "openai"
       }
     },
     "deepseek": {
@@ -129,7 +128,8 @@
           {
             "provider": "dashscope",
             "allowed_models": [
-              "text-embedding-v4"
+              "text-embedding-v4",
+              "qwen3-rerank"
             ],
             "key_ids": [
               "*"

@@ -610,3 +610,31 @@
     background: rgba(22, 119, 255, 0.08) !important;
     color: var(--color-primary-active) !important;
 }
+
+/* --- Gap: Route Reason (RAG Planner Thoughts) --- */
+.trace-step-reason-box {
+    margin-top: 6px;
+    background: var(--color-bg-subtle);
+    border: 1px dashed var(--color-primary-border, var(--color-border));
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+    animation: traceStepFadeIn 0.3s ease-out both;
+}
+
+.trace-step-reason-header {
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.trace-step-reason-content {
+    color: var(--color-text-main);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    opacity: 0.9;
+}

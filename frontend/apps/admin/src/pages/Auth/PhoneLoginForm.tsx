@@ -47,6 +47,15 @@ const PhoneLoginForm: React.FC = () => {
             setCodeSent(true);
             startCountdown();
             message.success(t('auth.code_sent'));
+            // Mock 模式下，本地开发自动填充与手机号绑定的确定性 6 位验证码
+            if (import.meta.env.DEV) {
+                let h = 0;
+                for (let i = 0; i < phone.length; i++) {
+                    h = (31 * h + phone.charCodeAt(i)) & 0xFFFFFFFF;
+                }
+                const mockCode = (h % 900000 + 100000).toString();
+                form.setFieldValue('code', mockCode);
+            }
         } catch {
             // error handled by interceptor
         }

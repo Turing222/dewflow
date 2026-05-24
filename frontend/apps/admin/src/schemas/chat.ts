@@ -75,6 +75,10 @@ export const ragMetricsSchema = z.object({
     external_context_hit_count: z.number().optional(),
     external_context_used: z.boolean().optional(),
     external_context_provider: z.string().optional(),
+    context_mode: z.string().optional(),
+    selected_sources: z.string().optional(),
+    route_reason: z.string().optional(),
+    external_context_planned: z.boolean().optional(),
 }).partial();
 
 export const chatMessageMetricsSchema = z.object({

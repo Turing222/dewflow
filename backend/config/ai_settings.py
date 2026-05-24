@@ -116,7 +116,7 @@ class AISettings(BaseSettings):
     RAG_TOP_K: int = 4
     RAG_RERANK_ENABLED: bool = False
     RAG_RERANK_PROVIDER: str | None = None
-    RAG_RERANK_MODEL: str = "cohere/rerank-v3.5"
+    RAG_RERANK_MODEL: str = "qwen3-rerank"
     RAG_RERANK_TIMEOUT_SECONDS: int = Field(default=15, ge=1, le=60)
     RAG_RERANK_CANDIDATE_COUNT: int = Field(default=20, ge=8, le=50)
     RAG_RERANK_TOP_K: int = Field(default=4, ge=1, le=10)

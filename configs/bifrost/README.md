@@ -49,7 +49,7 @@ Bifrost's app directory, which maps to the `bifrost_data` Docker volume.
 
 Provider credentials are referenced with `env.*`; do not commit raw provider
 keys. The gateway config uses DeepSeek for chat, DashScope for embeddings, and
-Cohere for native `/v1/rerank`. Each provider has two key slots with equal
+DashScope Qwen for `/v1/rerank`. Each provider has two key slots with equal
 weight. If only one production key is available, point the second secret file to
 the same value until a real backup key exists.
 

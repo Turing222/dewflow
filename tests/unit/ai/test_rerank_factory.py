@@ -50,7 +50,7 @@ def test_create_constructs_bifrost_service_for_bifrost_provider(
     )
     monkeypatch.setattr(
         "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_MODEL",
-        "cohere/rerank-v3.5",
+        "qwen3-rerank",
     )
     monkeypatch.setattr(
         "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_TIMEOUT_SECONDS",
@@ -62,7 +62,7 @@ def test_create_constructs_bifrost_service_for_bifrost_provider(
     assert isinstance(result, BifrostRerankService)
     assert result.base_url == "http://bifrost:8080/v1"
     assert result.api_key == "sk-test"
-    assert result.model_name == "cohere/rerank-v3.5"
+    assert result.model_name == "qwen3-rerank"
 
 
 def test_create_accepts_llm_gateway_alias(
@@ -74,7 +74,7 @@ def test_create_accepts_llm_gateway_alias(
     )
     monkeypatch.setattr(
         "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_MODEL",
-        "cohere/rerank-v3.5",
+        "qwen3-rerank",
     )
     monkeypatch.setattr(
         "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_TIMEOUT_SECONDS",
@@ -94,7 +94,7 @@ def test_create_accepts_ai_gateway_alias(
     )
     monkeypatch.setattr(
         "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_MODEL",
-        "cohere/rerank-v3.5",
+        "qwen3-rerank",
     )
     monkeypatch.setattr(
         "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_TIMEOUT_SECONDS",
