@@ -11,11 +11,18 @@ import logging
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
+from backend.models.schemas.chat.context_routing import (
+    ContextMode,
+    ContextSource,
+    is_external_context_allowed,
+    resolve_context_mode,
+    source_selected,
+)
 from backend.models.schemas.chat.dto import ConversationMessage
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
@@ -29,6 +36,8 @@ RAG_PLANNER_FALLBACK_REASON = "RAG planner 降级为默认计划"
 class RAGExecutionPlan(BaseModel):
     """RAG 检索执行计划。"""
 
+    context_mode: ContextMode = "auto"
+    selected_sources: list[ContextSource] = Field(default_factory=list)
     should_use_rag: bool
     retrieval_mode: RAGRetrievalMode = "vector"
     top_k: int = Field(default=4, ge=1)
@@ -40,6 +49,27 @@ class RAGExecutionPlan(BaseModel):
     external_top_k: int = Field(default=4, ge=1)
     reason: str = ""
 
+    @model_validator(mode="after")
+    def sync_context_sources(self) -> "RAGExecutionPlan":
+        sources = list(dict.fromkeys(self.selected_sources))
+        if self.should_use_rag and "kb" not in sources:
+            sources.append("kb")
+        if (
+            self.should_use_external_context or self.external_sources
+        ) and "web" not in sources:
+            sources.append("web")
+        if self.context_mode == "off":
+            sources = []
+        elif self.context_mode == "kb_only":
+            sources = [source for source in sources if source == "kb"]
+        elif self.context_mode == "web_only":
+            sources = [source for source in sources if source == "web"]
+        self.selected_sources = sources
+        self.should_use_rag = "kb" in sources
+        self.should_use_external_context = "web" in sources
+        self.external_sources = ["web"] if "web" in sources else []
+        return self
+
     @classmethod
     def from_settings(
         cls,
@@ -47,22 +77,37 @@ class RAGExecutionPlan(BaseModel):
         has_kb: bool,
         query_text: str,
         external_context_allowed: bool = False,
+        context_mode: ContextMode | None = None,
         reason: str = "使用默认 RAG 配置",
     ) -> "RAGExecutionPlan":
-        should_use_rag = has_kb and bool(query_text.strip())
+        resolved_mode = resolve_context_mode(
+            context_mode=context_mode,
+            enable_external_context=external_context_allowed,
+        )
+        has_query = bool(query_text.strip())
+        should_use_rag = has_kb and has_query and resolved_mode in {"auto", "kb_only"}
+        should_use_external_context = (
+            has_query
+            and resolved_mode in {"auto", "web_only"}
+            and external_context_allowed
+            and ai_settings.EXTERNAL_CONTEXT_ENABLED
+        )
+        selected_sources: list[ContextSource] = []
+        if should_use_rag:
+            selected_sources.append("kb")
+        if should_use_external_context:
+            selected_sources.append("web")
         return cls(
+            context_mode=resolved_mode,
+            selected_sources=selected_sources,
             should_use_rag=should_use_rag,
             retrieval_mode="hybrid" if ai_settings.RAG_RERANK_ENABLED else "vector",
             top_k=max(1, ai_settings.RAG_TOP_K),
             use_rerank=ai_settings.RAG_RERANK_ENABLED and should_use_rag,
             candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
             rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
-            should_use_external_context=(
-                external_context_allowed and ai_settings.EXTERNAL_CONTEXT_ENABLED
-            ),
-            external_sources=["web"]
-            if external_context_allowed and ai_settings.EXTERNAL_CONTEXT_ENABLED
-            else [],
+            should_use_external_context=should_use_external_context,
+            external_sources=["web"] if should_use_external_context else [],
             external_top_k=ai_settings.EXTERNAL_CONTEXT_TOP_K,
             reason=reason,
         ).clamped()
@@ -84,18 +129,23 @@ class RAGExecutionPlan(BaseModel):
             1,
             ai_settings.EXTERNAL_CONTEXT_TOP_K,
         )
-        external_sources = [
-            source for source in self.external_sources if source in ("web",)
+        selected_sources = [
+            source
+            for source in dict.fromkeys(self.selected_sources)
+            if source in ("kb", "web", "skill", "mcp")
         ]
+        should_use_rag = source_selected(selected_sources, "kb")
+        should_use_external_context = source_selected(selected_sources, "web")
+        external_sources = ["web"] if should_use_external_context else []
         return self.model_copy(
             update={
                 "top_k": top_k,
                 "candidate_count": candidate_count,
                 "rerank_top_k": rerank_top_k,
-                "use_rerank": self.use_rerank and self.should_use_rag,
-                "should_use_external_context": (
-                    self.should_use_external_context and bool(external_sources)
-                ),
+                "use_rerank": self.use_rerank and should_use_rag,
+                "selected_sources": selected_sources,
+                "should_use_rag": should_use_rag,
+                "should_use_external_context": should_use_external_context,
                 "external_sources": external_sources,
                 "external_top_k": external_top_k,
             }
@@ -116,18 +166,27 @@ class RAGPlanningService:
         conversation_history: list[ConversationMessage],
         kb_id: uuid.UUID | None,
         enable_external_context: bool = False,
+        context_mode: ContextMode | None = None,
     ) -> RAGExecutionPlan:
-        external_context_allowed = (
-            enable_external_context and ai_settings.EXTERNAL_CONTEXT_ENABLED
+        resolved_mode = resolve_context_mode(
+            context_mode=context_mode,
+            enable_external_context=enable_external_context,
+        )
+        external_context_allowed = is_external_context_allowed(
+            context_mode=context_mode,
+            enable_external_context=enable_external_context,
+            external_context_enabled=ai_settings.EXTERNAL_CONTEXT_ENABLED,
         )
         default_plan = RAGExecutionPlan.from_settings(
             has_kb=kb_id is not None,
             query_text=query_text,
             external_context_allowed=external_context_allowed,
+            context_mode=resolved_mode,
         )
         if (
             not query_text.strip()
             or not ai_settings.RAG_PLANNER_ENABLED
+            or resolved_mode == "off"
             or (kb_id is None and not external_context_allowed)
         ):
             return default_plan
@@ -147,6 +206,7 @@ class RAGPlanningService:
                         conversation_history=conversation_history,
                         has_kb=kb_id is not None,
                         enable_external_context=external_context_allowed,
+                        context_mode=resolved_mode,
                     ),
                     timeout=ai_settings.RAG_PLANNER_TIMEOUT_SECONDS,
                 )
@@ -159,6 +219,7 @@ class RAGPlanningService:
                 has_kb=kb_id is not None,
                 query_text=query_text,
                 external_context_allowed=external_context_allowed,
+                context_mode=resolved_mode,
                 reason=RAG_PLANNER_FALLBACK_REASON,
             )
 
@@ -185,6 +246,7 @@ class RAGPlanningService:
         conversation_history: list[ConversationMessage],
         has_kb: bool,
         enable_external_context: bool,
+        context_mode: ContextMode,
     ) -> RAGExecutionPlan:
         agent = self._ensure_agent()
         result = await agent.run(
@@ -193,6 +255,7 @@ class RAGPlanningService:
                 conversation_history=conversation_history,
                 has_kb=has_kb,
                 enable_external_context=enable_external_context,
+                context_mode=context_mode,
             )
         )
         output = result.output
@@ -226,6 +289,8 @@ def _trace_attrs(
         "rag.planner.should_use_rag": plan.should_use_rag,
         "rag.planner.retrieval_mode": plan.retrieval_mode,
         "rag.planner.use_rerank": plan.use_rerank,
+        "context.mode": plan.context_mode,
+        "context.selected_sources": ",".join(plan.selected_sources),
         "external_context.should_use": plan.should_use_external_context,
         "external_context.sources": ",".join(plan.external_sources),
         "rag.planner.fallback": fallback,
@@ -238,6 +303,7 @@ def _build_planner_prompt(
     conversation_history: list[ConversationMessage],
     has_kb: bool,
     enable_external_context: bool,
+    context_mode: ContextMode,
 ) -> str:
     recent_history = [
         _serialize_history_message(message) for message in conversation_history[-6:]
@@ -246,6 +312,7 @@ def _build_planner_prompt(
         [
             "请判断当前用户问题是否需要检索知识库，并给出 RAG 执行计划。",
             "只根据问题与最近对话判断，不要回答用户问题。",
+            f"上下文路由模式: {context_mode}",
             f"当前会话是否有关联知识库: {has_kb}",
             f"用户是否允许外部上下文检索: {enable_external_context}",
             "",
@@ -265,6 +332,8 @@ def _serialize_history_message(message: ConversationMessage) -> dict[str, str]:
 
 _PLANNER_INSTRUCTIONS = """你是 RAG 检索规划器。
 返回结构化计划：
+- context_mode: 原样使用输入中的上下文路由模式。
+- selected_sources: 选择需要执行的上下文来源；v1 只可实际选择 kb/web，skill/mcp 仅预留。
 - should_use_rag: 用户问题需要知识库事实、文档内容、项目资料时为 true；闲聊、写作泛化、无需外部资料时为 false。
 - retrieval_mode: 精确关键词或文件名查询用 fulltext；语义查询用 vector；不确定或需要兼顾时用 hybrid。
 - top_k: 普通检索数量。
@@ -275,4 +344,9 @@ _PLANNER_INSTRUCTIONS = """你是 RAG 检索规划器。
 - external_sources: 目前只允许 ["web"]；不需要外部上下文时返回 []。
 - external_top_k: 外部上下文检索数量。
 - reason: 简短中文原因。
+约束：
+- context_mode=off 时 selected_sources 必须为 []。
+- context_mode=kb_only 时 selected_sources 最多包含 kb。
+- context_mode=web_only 时 selected_sources 最多包含 web。
+- context_mode=auto 时按问题需要选择 kb、web 或两者。
 """

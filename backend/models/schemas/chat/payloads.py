@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from backend.models.schemas.chat.context_routing import ContextMode
 from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import ConversationMessage
 
@@ -23,6 +24,7 @@ class GenerationPayload(BaseModel):
     rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
     context_state: ContextState = Field(default_factory=ContextState)
     enable_external_context: bool = False
+    context_mode: ContextMode | None = None
     billing_model_name: str = "default"
     extra_body: dict[str, object] | None = None
 

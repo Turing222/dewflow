@@ -118,6 +118,66 @@ def test_from_settings_disables_external_context_when_not_allowed(
     assert plan.external_sources == []
 
 
+def test_from_settings_off_selects_no_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+
+    plan = RAGExecutionPlan.from_settings(
+        has_kb=True,
+        query_text="test query",
+        external_context_allowed=True,
+        context_mode="off",
+    )
+
+    assert plan.selected_sources == []
+    assert plan.should_use_rag is False
+    assert plan.should_use_external_context is False
+
+
+def test_from_settings_kb_only_does_not_select_web(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+
+    plan = RAGExecutionPlan.from_settings(
+        has_kb=True,
+        query_text="latest public info",
+        external_context_allowed=True,
+        context_mode="kb_only",
+    )
+
+    assert plan.selected_sources == ["kb"]
+    assert plan.should_use_rag is True
+    assert plan.should_use_external_context is False
+
+
+def test_from_settings_web_only_selects_web_without_kb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+
+    plan = RAGExecutionPlan.from_settings(
+        has_kb=False,
+        query_text="latest public info",
+        external_context_allowed=True,
+        context_mode="web_only",
+    )
+
+    assert plan.selected_sources == ["web"]
+    assert plan.should_use_rag is False
+    assert plan.should_use_external_context is True
+
+
 def test_rag_planning_service_builds_plan_via_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -206,3 +266,38 @@ async def test_rag_planning_service_runs_without_kb_when_external_allowed(
     assert plan.external_sources == ["web"]
     assert planner.calls[0]["has_kb"] is False
     assert planner.calls[0]["enable_external_context"] is True
+    assert planner.calls[0]["context_mode"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_rag_planning_service_web_only_runs_without_legacy_external_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+    planner = RecordingPlanner(
+        RAGExecutionPlan(
+            context_mode="web_only",
+            selected_sources=["web"],
+            should_use_rag=False,
+            should_use_external_context=True,
+            external_sources=["web"],
+        )
+    )
+
+    plan = await planner.plan(
+        query_text="今天的公开信息",
+        conversation_history=[],
+        kb_id=None,
+        enable_external_context=False,
+        context_mode="web_only",
+    )
+
+    assert plan.selected_sources == ["web"]
+    assert planner.calls[0]["context_mode"] == "web_only"

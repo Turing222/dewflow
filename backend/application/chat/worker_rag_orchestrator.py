@@ -16,6 +16,11 @@ from backend.contracts.interfaces import (
     AbstractRAGService,
 )
 from backend.core.concurrency import llm_concurrency_slot
+from backend.models.schemas.chat.context_routing import (
+    is_external_context_allowed,
+    resolve_context_mode,
+    source_selected,
+)
 from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.rag_evidence_policy import RAGEvidenceDecision, RAGEvidencePolicy
@@ -73,6 +78,9 @@ class WorkerRAGOrchestrator:
             metrics["planner_used"] = planner_used
             metrics["retrieval_mode"] = rag_plan.retrieval_mode
             metrics["rerank_used"] = rag_plan.use_rerank
+            metrics["context_mode"] = rag_plan.context_mode
+            metrics["selected_sources"] = ",".join(rag_plan.selected_sources)
+            metrics["route_reason"] = rag_plan.reason
             metrics["external_context_planned"] = rag_plan.should_use_external_context
 
             retrieve_started = perf_start()
@@ -129,6 +137,8 @@ class WorkerRAGOrchestrator:
                         "rag.planner.used": planner_used,
                         "rag.planner.should_use_rag": rag_plan.should_use_rag,
                         "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
+                        "context.mode": rag_plan.context_mode,
+                        "context.selected_sources": ",".join(rag_plan.selected_sources),
                         "external_context.hit_count": len(external_candidates),
                     },
                 )
@@ -163,6 +173,8 @@ class WorkerRAGOrchestrator:
                     "rag.planner.should_use_rag": rag_plan.should_use_rag,
                     "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
                     "rag.planner.use_rerank": rag_plan.use_rerank,
+                    "context.mode": rag_plan.context_mode,
+                    "context.selected_sources": ",".join(rag_plan.selected_sources),
                     "external_context.planned": rag_plan.should_use_external_context,
                     "external_context.hit_count": len(external_candidates),
                     "rag.planner.fallback": (
@@ -187,13 +199,21 @@ class WorkerRAGOrchestrator:
         default_plan = RAGExecutionPlan.from_settings(
             has_kb=payload.kb_id is not None,
             query_text=payload.query_text,
-            external_context_allowed=payload.enable_external_context,
+            external_context_allowed=is_external_context_allowed(
+                context_mode=payload.context_mode,
+                enable_external_context=payload.enable_external_context,
+                external_context_enabled=ai_settings.EXTERNAL_CONTEXT_ENABLED,
+            ),
+            context_mode=resolve_context_mode(
+                context_mode=payload.context_mode,
+                enable_external_context=payload.enable_external_context,
+            ),
         )
         if payload.rag_candidates:
             return default_plan, False
         if not payload.query_text.strip():
             return default_plan, False
-        if payload.kb_id is None and not payload.enable_external_context:
+        if not default_plan.selected_sources:
             return default_plan, False
         if not ai_settings.RAG_PLANNER_ENABLED:
             return default_plan, False
@@ -206,6 +226,7 @@ class WorkerRAGOrchestrator:
                 conversation_history=payload.conversation_history,
                 kb_id=payload.kb_id,
                 enable_external_context=payload.enable_external_context,
+                context_mode=payload.context_mode,
             )
             return plan.clamped(), True
         except Exception as exc:
@@ -220,9 +241,8 @@ class WorkerRAGOrchestrator:
         if (
             payload.rag_candidates
             or self.external_context_provider is None
-            or not payload.enable_external_context
             or not ai_settings.EXTERNAL_CONTEXT_ENABLED
-            or not rag_plan.should_use_external_context
+            or not source_selected(rag_plan.selected_sources, "web")
         ):
             return []
 
@@ -249,7 +269,7 @@ class WorkerRAGOrchestrator:
         if (
             self.rag_service is None
             or payload.kb_id is None
-            or not rag_plan.should_use_rag
+            or not source_selected(rag_plan.selected_sources, "kb")
         ):
             return []
 

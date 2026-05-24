@@ -227,6 +227,7 @@ class ChatSessionOrchestrator:
                     "chat.history.message_count": len(conversation_history),
                     "rag.deferred_to_worker": effective_kb_id is not None,
                     "external_context.enabled": command.enable_external_context,
+                    "context.mode": command.context_mode,
                 },
             )
 
@@ -237,6 +238,7 @@ class ChatSessionOrchestrator:
             kb_id=effective_kb_id,
             context_state=context_state,
             enable_external_context=command.enable_external_context,
+            context_mode=command.context_mode,
             billing_model_name=billing_model_name,
             extra_body=command.extra_body,
         )
@@ -279,12 +281,12 @@ def _estimate_credit_cost(
     model_for_counting = "gpt-4"
     input_tokens = count_tokens(query_text, model_for_counting)
     if conversation_history:
-        input_tokens += count_messages_tokens(
-            conversation_history, model_for_counting
-        )
+        input_tokens += count_messages_tokens(conversation_history, model_for_counting)
 
     output_tokens = credit_settings.CREDIT_ESTIMATED_OUTPUT_TOKENS
-    rates = credit_settings.CREDIT_MODEL_RATES.get(model_name) or credit_settings.CREDIT_MODEL_RATES.get("default", {})
+    rates = credit_settings.CREDIT_MODEL_RATES.get(
+        model_name
+    ) or credit_settings.CREDIT_MODEL_RATES.get("default", {})
     input_rate = rates.get("input", 1.0)
     output_rate = rates.get("output", 1.0)
 

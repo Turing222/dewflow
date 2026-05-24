@@ -28,6 +28,10 @@ async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(
         False,
     )
     monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
         False,
     )
@@ -368,6 +372,10 @@ async def test_build_rag_plan_kbid_none_external_enabled_proceeds_to_planner(
         "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
         False,
     )
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
 
     planned = RAGExecutionPlan(
         should_use_rag=False,
@@ -396,6 +404,7 @@ async def test_build_rag_plan_kbid_none_external_enabled_proceeds_to_planner(
         conversation_history=[],
         kb_id=None,
         enable_external_context=True,
+        context_mode=None,
     )
 
 
@@ -490,6 +499,7 @@ async def test_build_rag_plan_planner_receives_enable_external_context(
 
     planner.plan.assert_awaited_once()
     assert planner.plan.await_args.kwargs["enable_external_context"] is True
+    assert planner.plan.await_args.kwargs["context_mode"] is None
 
 
 async def test_build_rag_plan_default_plan_includes_external_context_allowed(
@@ -520,6 +530,50 @@ async def test_build_rag_plan_default_plan_includes_external_context_allowed(
 
     assert planner_used is False
     assert plan.should_use_external_context is True
+    assert plan.selected_sources == ["web"]
+
+
+async def test_build_rag_plan_web_only_context_mode_allows_external_without_legacy_flag(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+
+    planned = RAGExecutionPlan(
+        context_mode="web_only",
+        selected_sources=["web"],
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+        external_top_k=2,
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=planned)
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="latest news",
+        kb_id=None,
+        context_mode="web_only",
+        enable_external_context=False,
+        conversation_history=[],
+    )
+
+    orchestrator = WorkerRAGOrchestrator(rag_planning_service=planner)
+    plan, planner_used = await orchestrator.build_rag_plan(payload)
+
+    assert planner_used is True
+    assert plan.selected_sources == ["web"]
+    planner.plan.assert_awaited_once()
+    assert planner.plan.await_args.kwargs["context_mode"] == "web_only"
 
 
 async def test_retrieve_external_context_returns_empty_when_provider_none(
@@ -577,6 +631,85 @@ async def test_retrieve_external_context_returns_empty_when_disabled(
         should_use_external_context=True,
         external_sources=["web"],
         external_top_k=2,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(external_context_provider=provider)
+    result = await orchestrator.retrieve_external_context_candidates(payload, plan)
+
+    assert result == []
+    provider.search.assert_not_awaited()
+
+
+async def test_retrieve_external_context_uses_selected_sources_not_legacy_flag(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+    from backend.services.external_context_service import ExternalContextChunk
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+    provider = MagicMock()
+    provider.provider_name = "tavily"
+    provider.search = AsyncMock(
+        return_value=[
+            ExternalContextChunk(
+                id="web:1",
+                content="fresh context",
+                provider="tavily",
+                score=0.8,
+            )
+        ]
+    )
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="latest",
+        context_mode="web_only",
+        enable_external_context=False,
+        conversation_history=[],
+    )
+    plan = RAGExecutionPlan(
+        context_mode="web_only",
+        selected_sources=["web"],
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+        external_top_k=1,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(external_context_provider=provider)
+    result = await orchestrator.retrieve_external_context_candidates(payload, plan)
+
+    assert len(result) == 1
+    provider.search.assert_awaited_once_with(query_text="latest", top_k=1)
+
+
+async def test_retrieve_external_context_skips_when_web_not_selected(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+    provider = MagicMock()
+    provider.search = AsyncMock(return_value=[])
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="latest",
+        context_mode="kb_only",
+        enable_external_context=True,
+        conversation_history=[],
+    )
+    plan = RAGExecutionPlan(
+        context_mode="kb_only",
+        selected_sources=["kb"],
+        should_use_rag=True,
+        should_use_external_context=False,
     )
 
     orchestrator = WorkerRAGOrchestrator(external_context_provider=provider)

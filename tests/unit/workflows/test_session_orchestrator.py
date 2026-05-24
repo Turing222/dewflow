@@ -583,7 +583,9 @@ class TestCreditPrecheckLockOrder:
 class TestEnableExternalContextPassthrough:
     """enable_external_context must pass from ChatQueryCommand to GenerationPayload."""
 
-    async def test_prepare_request_passes_enable_external_context_to_payload(self) -> None:
+    async def test_prepare_request_passes_enable_external_context_to_payload(
+        self,
+    ) -> None:
         orchestrator, uow = _build_orchestrator()
         user_id = uuid.uuid4()
 
@@ -626,6 +628,7 @@ class TestEnableExternalContextPassthrough:
                     session_id=None,
                     kb_id=None,
                     enable_external_context=True,
+                    context_mode="auto",
                 ),
                 idempotency=_make_idempotency(),
                 trace_attrs={},
@@ -633,6 +636,7 @@ class TestEnableExternalContextPassthrough:
             )
 
         assert prepared.generation_payload.enable_external_context is True
+        assert prepared.generation_payload.context_mode == "auto"
 
     async def test_prepare_request_passes_billing_model_name_to_payload(self) -> None:
         orchestrator, uow = _build_orchestrator()
@@ -735,3 +739,4 @@ class TestEnableExternalContextPassthrough:
             )
 
         assert prepared.generation_payload.enable_external_context is False
+        assert prepared.generation_payload.context_mode is None

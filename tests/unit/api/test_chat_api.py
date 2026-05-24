@@ -75,6 +75,7 @@ async def test_query_stream_serializes_typed_events_and_audits_meta_resource() -
         kb_id=None,
         client_request_id="client-1",
         enable_external_context=False,
+        context_mode=None,
         extra_body=None,
     )
 
