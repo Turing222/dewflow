@@ -7,6 +7,7 @@ from backend.api.deps.uow import get_uow
 from backend.config.settings import settings
 from backend.config.web_settings import get_web_settings
 from backend.contracts.interfaces import AbstractUnitOfWork
+from backend.infra.redis import redis_client
 from backend.services.credit_service import CreditService
 from backend.services.google_oauth_service import GoogleOAuthService
 from backend.services.knowledge_service import KnowledgeService
@@ -76,6 +77,7 @@ def get_workspace_service(
 def get_sms_service() -> SMSService:
     ws = get_web_settings()
     return SMSService(
+        redis_client=redis_client,
         sms_code_expire_seconds=ws.SMS_CODE_EXPIRE_SECONDS,
         sms_code_rate_limit_seconds=ws.SMS_CODE_RATE_LIMIT_SECONDS,
         sms_mock_mode=ws.SMS_MOCK_MODE,

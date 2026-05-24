@@ -307,3 +307,314 @@ async def test_prepare_context_hybrid_rerank_uses_rerank_score_for_policy(
         ]
         == 5.0
     )
+
+
+async def test_external_context_candidates_are_added_when_planned(monkeypatch) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+    from backend.services.external_context_service import ExternalContextChunk
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="latest docs",
+        conversation_history=[],
+        enable_external_context=True,
+    )
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+        external_top_k=2,
+    )
+    provider = MagicMock()
+    provider.provider_name = "tavily"
+    provider.search = AsyncMock(
+        return_value=[
+            ExternalContextChunk(
+                id="web:1",
+                content="fresh public context",
+                provider="tavily",
+                title="Fresh result",
+                url="https://example.com/fresh",
+                score=0.8,
+            )
+        ]
+    )
+
+    orchestrator = WorkerRAGOrchestrator(external_context_provider=provider)
+    result = await orchestrator.retrieve_external_context_candidates(payload, plan)
+
+    assert result[0]["source_type"] == "web"
+    assert result[0]["provider"] == "tavily"
+    assert result[0]["url"] == "https://example.com/fresh"
+    provider.search.assert_awaited_once_with(query_text="latest docs", top_k=2)
+
+
+async def test_build_rag_plan_kbid_none_external_enabled_proceeds_to_planner(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
+        False,
+    )
+
+    planned = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+        external_top_k=3,
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=planned)
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="latest news",
+        kb_id=None,
+        enable_external_context=True,
+        conversation_history=[],
+    )
+
+    orchestrator = WorkerRAGOrchestrator(rag_planning_service=planner)
+    plan, planner_used = await orchestrator.build_rag_plan(payload)
+
+    assert planner_used is True
+    assert plan.should_use_external_context is True
+    planner.plan.assert_awaited_once_with(
+        query_text="latest news",
+        conversation_history=[],
+        kb_id=None,
+        enable_external_context=True,
+    )
+
+
+async def test_build_rag_plan_kbid_none_external_disabled_returns_default(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test query",
+        kb_id=None,
+        enable_external_context=False,
+        conversation_history=[],
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_planning_service=MagicMock(),
+    )
+    plan, planner_used = await orchestrator.build_rag_plan(payload)
+
+    assert planner_used is False
+    assert plan.should_use_rag is False
+
+
+async def test_build_rag_plan_blank_query_returns_default(monkeypatch) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="   ",
+        kb_id=uuid.uuid4(),
+        conversation_history=[],
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_planning_service=MagicMock(),
+    )
+    plan, planner_used = await orchestrator.build_rag_plan(payload)
+
+    assert planner_used is False
+
+
+async def test_build_rag_plan_planner_receives_enable_external_context(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
+        False,
+    )
+
+    planned = RAGExecutionPlan(
+        should_use_rag=True,
+        should_use_external_context=True,
+        retrieval_mode="vector",
+        top_k=4,
+        external_sources=["web"],
+        external_top_k=2,
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=planned)
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test query",
+        kb_id=uuid.uuid4(),
+        enable_external_context=True,
+        conversation_history=[],
+    )
+
+    orchestrator = WorkerRAGOrchestrator(rag_planning_service=planner)
+    await orchestrator.build_rag_plan(payload)
+
+    planner.plan.assert_awaited_once()
+    assert planner.plan.await_args.kwargs["enable_external_context"] is True
+
+
+async def test_build_rag_plan_default_plan_includes_external_context_allowed(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        False,
+    )
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test query",
+        kb_id=None,
+        enable_external_context=True,
+        conversation_history=[],
+    )
+
+    orchestrator = WorkerRAGOrchestrator()
+    plan, planner_used = await orchestrator.build_rag_plan(payload)
+
+    assert planner_used is False
+    assert plan.should_use_external_context is True
+
+
+async def test_retrieve_external_context_returns_empty_when_provider_none(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        enable_external_context=True,
+        conversation_history=[],
+    )
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+        external_top_k=2,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(external_context_provider=None)
+    result = await orchestrator.retrieve_external_context_candidates(payload, plan)
+
+    assert result == []
+
+
+async def test_retrieve_external_context_returns_empty_when_disabled(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        False,
+    )
+
+    provider = MagicMock()
+    provider.search = AsyncMock(return_value=[])
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        enable_external_context=True,
+        conversation_history=[],
+    )
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+        external_top_k=2,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(external_context_provider=provider)
+    result = await orchestrator.retrieve_external_context_candidates(payload, plan)
+
+    assert result == []
+    provider.search.assert_not_awaited()
+
+
+async def test_retrieve_external_context_provider_error_returns_empty(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
+        True,
+    )
+
+    provider = MagicMock()
+    provider.provider_name = "tavily"
+    provider.search = AsyncMock(side_effect=ConnectionError("API down"))
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        enable_external_context=True,
+        conversation_history=[],
+    )
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+        external_top_k=2,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(external_context_provider=provider)
+    result = await orchestrator.retrieve_external_context_candidates(payload, plan)
+
+    assert result == []

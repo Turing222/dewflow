@@ -85,6 +85,7 @@ async def query_sent(
             "session_id": str(request.session_id) if request.session_id else None,
             "kb_id": str(request.kb_id) if request.kb_id else None,
             "client_request_id": request.client_request_id,
+            "enable_external_context": request.enable_external_context,
         },
     ) as audit:
         extra_body = (
@@ -96,6 +97,7 @@ async def query_sent(
             session_id=request.session_id,
             kb_id=request.kb_id,
             client_request_id=request.client_request_id,
+            enable_external_context=request.enable_external_context,
             extra_body=extra_body,
         )
         result = await workflow.handle_query(command)
@@ -137,6 +139,7 @@ async def query_stream(
             metadata={
                 "kb_id": str(request.kb_id) if request.kb_id else None,
                 "client_request_id": request.client_request_id,
+                "enable_external_context": request.enable_external_context,
             },
         ) as audit:
             extra_body = (
@@ -149,6 +152,7 @@ async def query_stream(
                 session_id=request.session_id,
                 kb_id=request.kb_id,
                 client_request_id=request.client_request_id,
+                enable_external_context=request.enable_external_context,
                 extra_body=extra_body,
             )
             async for event in workflow.handle_query_stream(command):

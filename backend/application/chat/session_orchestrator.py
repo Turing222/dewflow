@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 import redis.asyncio as redis
 
 from backend.application.chat.history_projection import history_to_conversation_messages
-from backend.utils.token_estimation import count_messages_tokens, count_tokens
 from backend.config.credit_settings import credit_settings
 from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
@@ -29,6 +28,7 @@ from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import SessionManager
 from backend.services.credit_service import CreditService
 from backend.services.permission_service import PermissionService
+from backend.utils.token_estimation import count_messages_tokens, count_tokens
 
 if TYPE_CHECKING:
     from backend.models.orm.chat import ChatMessage, ChatSession
@@ -139,6 +139,26 @@ class ChatSessionOrchestrator:
     ) -> ChatPreparedRequest:
         async with db_concurrency_slot(trace_attrs):  # noqa: SIM117
             async with self.uow:
+                # Credit pre-check BEFORE session/message creation to avoid
+                # lock-order inversion with the worker path (User→CreditAccount→chat).
+                with trace_span(f"{span_prefix}.credit_precheck", trace_attrs) as span:
+                    billing_model_name = _resolve_billing_model_name()
+                    estimated_cost = _estimate_credit_cost(
+                        query_text=command.query_text,
+                        conversation_history=[],
+                        model_name=billing_model_name,
+                    )
+                    set_span_attributes(
+                        span,
+                        {
+                            "credit.estimated_cost": estimated_cost,
+                            "credit.model_name": billing_model_name,
+                        },
+                    )
+                    await CreditService(self.uow).ensure_sufficient_balance(
+                        command.user_id, estimated_cost=estimated_cost
+                    )
+
                 with trace_span(
                     f"{span_prefix}.create_session_and_messages",
                     trace_attrs,
@@ -198,26 +218,7 @@ class ChatSessionOrchestrator:
                         span, {"chat.history.message_count": len(history_messages)}
                     )
 
-                with trace_span(f"{span_prefix}.credit_precheck", trace_attrs) as span:
-                    conversation_history = history_to_conversation_messages(
-                        history_messages
-                    )
-                    model_name = _resolve_billing_model_name()
-                    estimated_cost = _estimate_credit_cost(
-                        query_text=command.query_text,
-                        conversation_history=conversation_history,
-                        model_name=model_name,
-                    )
-                    set_span_attributes(
-                        span,
-                        {
-                            "credit.estimated_cost": estimated_cost,
-                            "credit.model_name": model_name,
-                        },
-                    )
-                    await CreditService(self.uow).ensure_sufficient_balance(
-                        command.user_id, estimated_cost=estimated_cost
-                    )
+        conversation_history = history_to_conversation_messages(history_messages)
 
         with trace_span(f"{span_prefix}.prepare_worker_payload", trace_attrs) as span:
             set_span_attributes(
@@ -225,6 +226,7 @@ class ChatSessionOrchestrator:
                 {
                     "chat.history.message_count": len(conversation_history),
                     "rag.deferred_to_worker": effective_kb_id is not None,
+                    "external_context.enabled": command.enable_external_context,
                 },
             )
 
@@ -234,6 +236,8 @@ class ChatSessionOrchestrator:
             conversation_history=conversation_history,
             kb_id=effective_kb_id,
             context_state=context_state,
+            enable_external_context=command.enable_external_context,
+            billing_model_name=billing_model_name,
             extra_body=command.extra_body,
         )
         return ChatPreparedRequest(

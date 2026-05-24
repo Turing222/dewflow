@@ -273,3 +273,65 @@ def test_refusal_disabled_allows_even_with_low_evidence(
 
     assert decision.should_refuse is False
     assert decision.reason == "RAG 拒答策略未启用"
+
+
+def test_external_context_evidence_allows_without_kb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RELEVANCE_SCORE",
+        0.2,
+    )
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+    )
+
+    decision = RAGEvidencePolicy().evaluate(
+        kb_id=None,
+        rag_plan=plan,
+        chunks=[{"source_type": "web", "retrieval_mode": "external", "score": 0.7}],
+    )
+
+    assert decision.should_refuse is False
+    assert decision.reason == "外部上下文证据充足"
+
+
+def test_external_context_insufficient_without_kb_allows_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_RELEVANCE_SCORE",
+        0.9,
+    )
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        should_use_external_context=True,
+        external_sources=["web"],
+    )
+
+    decision = RAGEvidencePolicy().evaluate(
+        kb_id=None,
+        rag_plan=plan,
+        chunks=[{"source_type": "web", "retrieval_mode": "external", "score": 0.3}],
+    )
+
+    assert decision.should_refuse is False
+    assert "外部上下文证据不充分" in decision.reason

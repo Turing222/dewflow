@@ -40,6 +40,7 @@ def make_uow() -> SimpleNamespace:
     credit_repo.get_spent_sum.return_value = 0
     credit_repo.get_already_expired_sum.return_value = 0
     credit_repo.get_expired_grants_sum.return_value = 0
+    credit_repo.get_protected_positive_sum.return_value = 0
 
     user_repo = AsyncMock()
     user_repo.get_with_lock.return_value = make_user()
@@ -246,12 +247,39 @@ async def test_expire_credits_charges_only_unspent_expired_grants() -> None:
     expired_count = await service.expire_credits()
 
     assert expired_count == 1
-    assert account.balance == 40
+    # ORM object is NOT mutated; new_balance is computed locally.
+    assert account.balance == 100
     uow.credit_repo.update_account_balance.assert_awaited_once_with(account.id, 40)
     uow.credit_repo.add_transaction.assert_awaited_once()
     assert uow.credit_repo.add_transaction.await_args.kwargs["amount"] == -60
     assert (
         uow.credit_repo.add_transaction.await_args.kwargs["metadata"]["spent_sum"] == 40
+    )
+
+
+async def test_expire_credits_protects_non_expiring_positive_balance() -> None:
+    account_id = uuid.uuid4()
+    account = make_account(balance=300)
+    uow = make_uow()
+    uow.credit_repo.list_accounts_needing_expiration.return_value = [account_id]
+    uow.credit_repo.get_account_by_id_with_lock.return_value = account
+    uow.credit_repo.get_expired_grants_sum.return_value = 300
+    uow.credit_repo.get_spent_sum.return_value = 0
+    uow.credit_repo.get_protected_positive_sum.return_value = 200
+    uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
+
+    service = CreditService(uow)
+
+    expired_count = await service.expire_credits()
+
+    assert expired_count == 1
+    uow.credit_repo.update_account_balance.assert_awaited_once_with(account.id, 200)
+    assert uow.credit_repo.add_transaction.await_args.kwargs["amount"] == -100
+    assert (
+        uow.credit_repo.add_transaction.await_args.kwargs["metadata"][
+            "protected_positive_sum"
+        ]
+        == 200
     )
 
 
@@ -295,7 +323,9 @@ async def test_spend_partial_credits() -> None:
 
     # Cost calculation: 10000 input + 0 output = 10 credits.
     # User only has 4 credits, so credits_to_deduct = 4.
-    # Unpaid credits = 6, which translates to 600 tokens.
+    # total_token_value = ceil(10000/1000 * 100) = 1000
+    # token_value_covered_by_credits = 4 * 100 = 400
+    # tokens_to_deduct = 1000 - 400 = 600
     ur, tx = await service.spend_for_model_usage(
         user_id=user_id,
         tokens_input=10000,
@@ -306,6 +336,40 @@ async def test_spend_partial_credits() -> None:
     uow.credit_repo.try_decrement_balance.assert_awaited_once_with(account.id, 4)
     uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
         user_id, 600
+    )
+
+
+async def test_spend_partial_credits_no_over_deduction_for_fractional_cost() -> None:
+    """Small token counts should not over-deduct via double ceiling.
+
+    Before the fix: raw_cost = ceil(0.002) = 1, then unpaid=1,
+    tokens_to_deduct = ceil(1 * 100) = 100 → way over actual value of ~0.2 tokens.
+    After the fix: total_token_value = ceil(0.2) = 1, credits cover 0,
+    tokens_to_deduct = 1 - 0 = 1.
+    """
+    user_id = uuid.uuid4()
+    account = make_account(balance=0)
+    user = make_user(max_tokens=100000, used_tokens=0)
+    uow = make_uow()
+    uow.credit_repo.get_account_with_lock.return_value = account
+    uow.user_repo.get_with_lock.return_value = user
+    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(id=uuid.uuid4(), credit_cost=0)
+    uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
+
+    service = CreditService(uow)
+
+    ur, tx = await service.spend_for_model_usage(
+        user_id=user_id,
+        tokens_input=1,
+        tokens_output=1,
+        model_name="default",
+    )
+
+    # total_token_value = ceil((1*1 + 1*1) * 100 / 1000) = ceil(0.2) = 1
+    # credits_to_deduct = 0, tokens_to_deduct = 1
+    uow.credit_repo.try_decrement_balance.assert_not_awaited()
+    uow.user_repo.try_increment_used_tokens_with_limit.assert_awaited_once_with(
+        user_id, 1
     )
 
 
@@ -323,7 +387,8 @@ async def test_spend_zero_credits() -> None:
 
     # Cost calculation: 10000 input + 0 output = 10 credits.
     # User has 0 credits, so credits_to_deduct = 0.
-    # Unpaid credits = 10, which translates to 1000 tokens.
+    # total_token_value = ceil(10000/1000 * 100) = 1000
+    # tokens_to_deduct = 1000 - 0 = 1000
     ur, tx = await service.spend_for_model_usage(
         user_id=user_id,
         tokens_input=10000,

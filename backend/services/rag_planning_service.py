@@ -22,6 +22,7 @@ from backend.observability.trace_utils import set_span_attributes, trace_span
 logger = logging.getLogger(__name__)
 
 RAGRetrievalMode = Literal["vector", "fulltext", "hybrid"]
+ExternalContextSource = Literal["web"]
 RAG_PLANNER_FALLBACK_REASON = "RAG planner 降级为默认计划"
 
 
@@ -34,6 +35,9 @@ class RAGExecutionPlan(BaseModel):
     use_rerank: bool = False
     candidate_count: int = Field(default=20, ge=1)
     rerank_top_k: int = Field(default=4, ge=1)
+    should_use_external_context: bool = False
+    external_sources: list[ExternalContextSource] = Field(default_factory=list)
+    external_top_k: int = Field(default=4, ge=1)
     reason: str = ""
 
     @classmethod
@@ -42,6 +46,7 @@ class RAGExecutionPlan(BaseModel):
         *,
         has_kb: bool,
         query_text: str,
+        external_context_allowed: bool = False,
         reason: str = "使用默认 RAG 配置",
     ) -> "RAGExecutionPlan":
         should_use_rag = has_kb and bool(query_text.strip())
@@ -52,6 +57,13 @@ class RAGExecutionPlan(BaseModel):
             use_rerank=ai_settings.RAG_RERANK_ENABLED and should_use_rag,
             candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
             rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
+            should_use_external_context=(
+                external_context_allowed and ai_settings.EXTERNAL_CONTEXT_ENABLED
+            ),
+            external_sources=["web"]
+            if external_context_allowed and ai_settings.EXTERNAL_CONTEXT_ENABLED
+            else [],
+            external_top_k=ai_settings.EXTERNAL_CONTEXT_TOP_K,
             reason=reason,
         ).clamped()
 
@@ -67,12 +79,25 @@ class RAGExecutionPlan(BaseModel):
             1,
             ai_settings.RAG_RERANK_TOP_K,
         )
+        external_top_k = _clamp(
+            self.external_top_k,
+            1,
+            ai_settings.EXTERNAL_CONTEXT_TOP_K,
+        )
+        external_sources = [
+            source for source in self.external_sources if source in ("web",)
+        ]
         return self.model_copy(
             update={
                 "top_k": top_k,
                 "candidate_count": candidate_count,
                 "rerank_top_k": rerank_top_k,
                 "use_rerank": self.use_rerank and self.should_use_rag,
+                "should_use_external_context": (
+                    self.should_use_external_context and bool(external_sources)
+                ),
+                "external_sources": external_sources,
+                "external_top_k": external_top_k,
             }
         )
 
@@ -90,15 +115,20 @@ class RAGPlanningService:
         query_text: str,
         conversation_history: list[ConversationMessage],
         kb_id: uuid.UUID | None,
+        enable_external_context: bool = False,
     ) -> RAGExecutionPlan:
+        external_context_allowed = (
+            enable_external_context and ai_settings.EXTERNAL_CONTEXT_ENABLED
+        )
         default_plan = RAGExecutionPlan.from_settings(
             has_kb=kb_id is not None,
             query_text=query_text,
+            external_context_allowed=external_context_allowed,
         )
         if (
-            kb_id is None
-            or not query_text.strip()
+            not query_text.strip()
             or not ai_settings.RAG_PLANNER_ENABLED
+            or (kb_id is None and not external_context_allowed)
         ):
             return default_plan
 
@@ -115,6 +145,8 @@ class RAGPlanningService:
                     self._run_agent(
                         query_text=query_text,
                         conversation_history=conversation_history,
+                        has_kb=kb_id is not None,
+                        enable_external_context=external_context_allowed,
                     ),
                     timeout=ai_settings.RAG_PLANNER_TIMEOUT_SECONDS,
                 )
@@ -126,6 +158,7 @@ class RAGPlanningService:
             return RAGExecutionPlan.from_settings(
                 has_kb=kb_id is not None,
                 query_text=query_text,
+                external_context_allowed=external_context_allowed,
                 reason=RAG_PLANNER_FALLBACK_REASON,
             )
 
@@ -150,12 +183,16 @@ class RAGPlanningService:
         *,
         query_text: str,
         conversation_history: list[ConversationMessage],
+        has_kb: bool,
+        enable_external_context: bool,
     ) -> RAGExecutionPlan:
         agent = self._ensure_agent()
         result = await agent.run(
             _build_planner_prompt(
                 query_text=query_text,
                 conversation_history=conversation_history,
+                has_kb=has_kb,
+                enable_external_context=enable_external_context,
             )
         )
         output = result.output
@@ -189,6 +226,8 @@ def _trace_attrs(
         "rag.planner.should_use_rag": plan.should_use_rag,
         "rag.planner.retrieval_mode": plan.retrieval_mode,
         "rag.planner.use_rerank": plan.use_rerank,
+        "external_context.should_use": plan.should_use_external_context,
+        "external_context.sources": ",".join(plan.external_sources),
         "rag.planner.fallback": fallback,
     }
 
@@ -197,6 +236,8 @@ def _build_planner_prompt(
     *,
     query_text: str,
     conversation_history: list[ConversationMessage],
+    has_kb: bool,
+    enable_external_context: bool,
 ) -> str:
     recent_history = [
         _serialize_history_message(message) for message in conversation_history[-6:]
@@ -205,6 +246,8 @@ def _build_planner_prompt(
         [
             "请判断当前用户问题是否需要检索知识库，并给出 RAG 执行计划。",
             "只根据问题与最近对话判断，不要回答用户问题。",
+            f"当前会话是否有关联知识库: {has_kb}",
+            f"用户是否允许外部上下文检索: {enable_external_context}",
             "",
             f"当前问题: {query_text}",
             "最近对话:",
@@ -228,5 +271,8 @@ _PLANNER_INSTRUCTIONS = """你是 RAG 检索规划器。
 - use_rerank: 需要从较多候选中精选相关片段时为 true。
 - candidate_count: rerank 候选数量。
 - rerank_top_k: rerank 后保留数量。
+- should_use_external_context: 仅当用户允许外部上下文且问题需要最新信息、公开网页事实、知识库缺口补充时为 true。
+- external_sources: 目前只允许 ["web"]；不需要外部上下文时返回 []。
+- external_top_k: 外部上下文检索数量。
 - reason: 简短中文原因。
 """

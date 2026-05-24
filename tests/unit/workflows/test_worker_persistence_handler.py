@@ -115,6 +115,35 @@ async def test_persist_success_assistant_message_id_none_skips(
     fake_persistence_uow.chat_repo.update_message_status.assert_not_awaited()
 
 
+async def test_persist_success_passes_billing_model_name(
+    fake_persistence_uow, fake_persistence_redis
+) -> None:
+    from backend.application.chat.worker_persistence_handler import (
+        WorkerPersistenceHandler,
+    )
+
+    handler = WorkerPersistenceHandler(
+        uow=fake_persistence_uow, redis_client=fake_persistence_redis
+    )
+
+    with patch(
+        "backend.application.chat.worker_persistence_handler.CreditService.spend_for_model_usage",
+        new_callable=AsyncMock,
+    ) as spend_for_model_usage:
+        await handler.persist_success(
+            assistant_message_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            content="content",
+            tokens_input=100,
+            tokens_output=50,
+            search_context=None,
+            start_time=0.0,
+            model_name="billing-model",
+        )
+
+    assert spend_for_model_usage.await_args.kwargs["model_name"] == "billing-model"
+
+
 async def test_persist_failure_redis_lock_cleanup_fails_still_writes_message(
     fake_persistence_uow, fake_persistence_redis
 ) -> None:

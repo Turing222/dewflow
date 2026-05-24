@@ -32,6 +32,10 @@ class QuerySentRequest(BaseModel):
         max_length=64,
         description="客户端生成的唯一请求 ID，用于幂等控制",
     )
+    enable_external_context: bool = Field(
+        False,
+        description="允许 Planner 按需检索外部上下文",
+    )
     extra_body: LLMExtraBody | None = Field(
         None, description="透传到 LLM API 的受控额外参数，如 thinking 模式控制"
     )

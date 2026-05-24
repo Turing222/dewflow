@@ -17,4 +17,5 @@ class ChatQueryCommand(BaseModel):
     session_id: uuid.UUID | None = None
     kb_id: uuid.UUID | None = None
     client_request_id: str | None = None
+    enable_external_context: bool = False
     extra_body: dict[str, object] | None = None

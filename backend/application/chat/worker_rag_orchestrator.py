@@ -11,7 +11,10 @@ from typing import Any
 from backend.ai.core.chat_context_builder import ChatContextBuilder
 from backend.application.chat.timing import elapsed_ms, merge_metrics, perf_start
 from backend.config.ai_settings import ai_settings
-from backend.contracts.interfaces import AbstractRAGService
+from backend.contracts.interfaces import (
+    AbstractExternalContextProvider,
+    AbstractRAGService,
+)
 from backend.core.concurrency import llm_concurrency_slot
 from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import set_span_attributes, trace_span
@@ -42,11 +45,13 @@ class WorkerRAGOrchestrator:
         *,
         rag_service: AbstractRAGService | None = None,
         rag_planning_service: RAGPlanningService | None = None,
+        external_context_provider: AbstractExternalContextProvider | None = None,
         chat_context_builder: ChatContextBuilder | None = None,
         rag_evidence_policy: RAGEvidencePolicy | None = None,
     ) -> None:
         self.rag_service = rag_service
         self.rag_planning_service = rag_planning_service
+        self.external_context_provider = external_context_provider
         self.chat_context_builder = chat_context_builder or ChatContextBuilder()
         self.rag_evidence_policy = rag_evidence_policy or RAGEvidencePolicy()
 
@@ -68,10 +73,28 @@ class WorkerRAGOrchestrator:
             metrics["planner_used"] = planner_used
             metrics["retrieval_mode"] = rag_plan.retrieval_mode
             metrics["rerank_used"] = rag_plan.use_rerank
+            metrics["external_context_planned"] = rag_plan.should_use_external_context
 
             retrieve_started = perf_start()
-            candidates = await self.retrieve_rag_candidates(payload, rag_plan)
+            rag_candidates = await self.retrieve_rag_candidates(payload, rag_plan)
             metrics["retrieve_ms"] = elapsed_ms(retrieve_started)
+            metrics["rag_candidate_count"] = len(rag_candidates)
+
+            external_started = perf_start()
+            external_candidates = await self.retrieve_external_context_candidates(
+                payload,
+                rag_plan,
+            )
+            metrics["external_context_ms"] = elapsed_ms(external_started)
+            metrics["external_context_hit_count"] = len(external_candidates)
+            metrics["external_context_used"] = bool(external_candidates)
+            metrics["external_context_provider"] = (
+                self.external_context_provider.provider_name
+                if external_candidates
+                else None
+            )
+
+            candidates = [*rag_candidates, *external_candidates]
             metrics["candidate_count"] = len(candidates)
 
             rerank_started = perf_start()
@@ -106,6 +129,7 @@ class WorkerRAGOrchestrator:
                         "rag.planner.used": planner_used,
                         "rag.planner.should_use_rag": rag_plan.should_use_rag,
                         "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
+                        "external_context.hit_count": len(external_candidates),
                     },
                 )
                 return PreparedGenerationContext(
@@ -139,6 +163,8 @@ class WorkerRAGOrchestrator:
                     "rag.planner.should_use_rag": rag_plan.should_use_rag,
                     "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
                     "rag.planner.use_rerank": rag_plan.use_rerank,
+                    "external_context.planned": rag_plan.should_use_external_context,
+                    "external_context.hit_count": len(external_candidates),
                     "rag.planner.fallback": (
                         rag_plan.reason == RAG_PLANNER_FALLBACK_REASON
                     ),
@@ -161,10 +187,13 @@ class WorkerRAGOrchestrator:
         default_plan = RAGExecutionPlan.from_settings(
             has_kb=payload.kb_id is not None,
             query_text=payload.query_text,
+            external_context_allowed=payload.enable_external_context,
         )
         if payload.rag_candidates:
             return default_plan, False
-        if payload.kb_id is None or not payload.query_text.strip():
+        if not payload.query_text.strip():
+            return default_plan, False
+        if payload.kb_id is None and not payload.enable_external_context:
             return default_plan, False
         if not ai_settings.RAG_PLANNER_ENABLED:
             return default_plan, False
@@ -176,11 +205,39 @@ class WorkerRAGOrchestrator:
                 query_text=payload.query_text,
                 conversation_history=payload.conversation_history,
                 kb_id=payload.kb_id,
+                enable_external_context=payload.enable_external_context,
             )
             return plan.clamped(), True
         except Exception as exc:
             logger.warning("Worker RAG Planner 规划失败，降级为默认计划: %s", exc)
             return default_plan, False
+
+    async def retrieve_external_context_candidates(
+        self,
+        payload: GenerationPayload,
+        rag_plan: RAGExecutionPlan,
+    ) -> list[dict[str, Any]]:
+        if (
+            payload.rag_candidates
+            or self.external_context_provider is None
+            or not payload.enable_external_context
+            or not ai_settings.EXTERNAL_CONTEXT_ENABLED
+            or not rag_plan.should_use_external_context
+        ):
+            return []
+
+        try:
+            chunks = await self.external_context_provider.search(
+                query_text=payload.query_text,
+                top_k=rag_plan.external_top_k,
+            )
+            return [
+                chunk.to_rag_chunk(chunk_index=index)
+                for index, chunk in enumerate(chunks)
+            ]
+        except Exception as exc:
+            logger.warning("外部上下文检索失败，降级为仅使用 RAG: %s", exc)
+            return []
 
     async def retrieve_rag_candidates(
         self,

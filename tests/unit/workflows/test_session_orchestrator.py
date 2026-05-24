@@ -516,3 +516,222 @@ class TestIdempotencyLockReleaseOnPrepareFailure:
             assert exc_info.value.code == "KB_ID_MISMATCH"
             # release_idempotency 仍然被调用，但内部会因为 lock_key=None 提前返回
             mock_release.assert_awaited_once_with(no_lock_idempotency)
+
+
+class TestCreditPrecheckLockOrder:
+    """Credit pre-check must run BEFORE session/message creation to avoid deadlock."""
+
+    async def test_credit_precheck_runs_before_session_creation(self) -> None:
+        """get_with_lock (credit pre-check) must be called before ensure_session."""
+        orchestrator, uow = _build_orchestrator()
+        user_id = uuid.uuid4()
+
+        call_order: list[str] = []
+
+        async def tracked_get_with_lock(uid: object) -> object:
+            call_order.append("get_with_lock")
+            return MagicMock(max_tokens=100000, used_tokens=0)
+
+        uow.user_repo.get_with_lock = tracked_get_with_lock
+
+        session_obj = MagicMock(id=uuid.uuid4(), kb_id=None, workspace_id=None)
+
+        async def tracked_ensure_session(*args: object, **kwargs: object) -> object:
+            call_order.append("ensure_session")
+            return session_obj
+
+        with (
+            patch(
+                "backend.services.chat_service.SessionManager.ensure_session",
+                new=tracked_ensure_session,
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.create_user_message",
+                new=AsyncMock(),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.create_assistant_message",
+                new=AsyncMock(return_value=MagicMock(id=uuid.uuid4())),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.get_session_messages",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch(
+                "backend.application.chat.session_orchestrator.history_to_conversation_messages",
+                return_value=[],
+            ),
+        ):
+            uow.chat_repo.get_context_state.return_value = ContextState()
+
+            await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=None,
+                    kb_id=None,
+                ),
+                idempotency=_make_idempotency(),
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        assert call_order[0] == "get_with_lock"
+        assert call_order[1] == "ensure_session"
+
+
+class TestEnableExternalContextPassthrough:
+    """enable_external_context must pass from ChatQueryCommand to GenerationPayload."""
+
+    async def test_prepare_request_passes_enable_external_context_to_payload(self) -> None:
+        orchestrator, uow = _build_orchestrator()
+        user_id = uuid.uuid4()
+
+        uow.user_repo.get_with_lock.return_value = MagicMock(
+            used_tokens=0, max_tokens=1000
+        )
+
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
+        )
+
+        new_session = MagicMock(id=uuid.uuid4(), kb_id=None, workspace_id=None)
+        uow.chat_repo.create_session.return_value = new_session
+
+        assistant_msg = MagicMock(id=uuid.uuid4())
+        uow.chat_repo.get_context_state.return_value = ContextState()
+
+        with (
+            patch(
+                "backend.services.chat_service.SessionManager.create_user_message",
+                AsyncMock(),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.create_assistant_message",
+                AsyncMock(return_value=assistant_msg),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.get_session_messages",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
+                "backend.application.chat.session_orchestrator.history_to_conversation_messages",
+                return_value=[],
+            ),
+        ):
+            prepared = await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=None,
+                    kb_id=None,
+                    enable_external_context=True,
+                ),
+                idempotency=_make_idempotency(),
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        assert prepared.generation_payload.enable_external_context is True
+
+    async def test_prepare_request_passes_billing_model_name_to_payload(self) -> None:
+        orchestrator, uow = _build_orchestrator()
+        user_id = uuid.uuid4()
+
+        uow.user_repo.get_with_lock.return_value = MagicMock(
+            used_tokens=0, max_tokens=1000
+        )
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
+        )
+
+        new_session = MagicMock(id=uuid.uuid4(), kb_id=None, workspace_id=None)
+        uow.chat_repo.create_session.return_value = new_session
+        assistant_msg = MagicMock(id=uuid.uuid4())
+        uow.chat_repo.get_context_state.return_value = ContextState()
+
+        with (
+            patch(
+                "backend.services.chat_service.SessionManager.create_user_message",
+                AsyncMock(),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.create_assistant_message",
+                AsyncMock(return_value=assistant_msg),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.get_session_messages",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
+                "backend.application.chat.session_orchestrator.history_to_conversation_messages",
+                return_value=[],
+            ),
+            patch(
+                "backend.application.chat.session_orchestrator._resolve_billing_model_name",
+                return_value="billing-model",
+            ),
+        ):
+            prepared = await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=None,
+                    kb_id=None,
+                ),
+                idempotency=_make_idempotency(),
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        assert prepared.generation_payload.billing_model_name == "billing-model"
+
+    async def test_prepare_request_enable_external_context_default_false(self) -> None:
+        orchestrator, uow = _build_orchestrator()
+        user_id = uuid.uuid4()
+
+        uow.user_repo.get_with_lock.return_value = MagicMock(
+            used_tokens=0, max_tokens=1000
+        )
+
+        orchestrator._session_manager.permission_service.has_permission_for_user_id = (
+            AsyncMock(return_value=True)
+        )
+
+        new_session = MagicMock(id=uuid.uuid4(), kb_id=None, workspace_id=None)
+        uow.chat_repo.create_session.return_value = new_session
+
+        assistant_msg = MagicMock(id=uuid.uuid4())
+        uow.chat_repo.get_context_state.return_value = ContextState()
+
+        with (
+            patch(
+                "backend.services.chat_service.SessionManager.create_user_message",
+                AsyncMock(),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.create_assistant_message",
+                AsyncMock(return_value=assistant_msg),
+            ),
+            patch(
+                "backend.services.chat_service.SessionManager.get_session_messages",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
+                "backend.application.chat.session_orchestrator.history_to_conversation_messages",
+                return_value=[],
+            ),
+        ):
+            prepared = await orchestrator.prepare_request(
+                command=ChatQueryCommand(
+                    user_id=user_id,
+                    query_text="test",
+                    session_id=None,
+                    kb_id=None,
+                ),
+                idempotency=_make_idempotency(),
+                trace_attrs={},
+                span_prefix="test",
+            )
+
+        assert prepared.generation_payload.enable_external_context is False

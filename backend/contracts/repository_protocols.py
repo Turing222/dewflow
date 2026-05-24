@@ -403,6 +403,10 @@ class CreditRepositoryProtocol(Protocol):
 
     async def get_spent_sum(self, account_id: uuid.UUID) -> int: ...
 
+    async def get_protected_positive_sum(
+        self, account_id: uuid.UUID, now: datetime.datetime
+    ) -> int: ...
+
     async def list_accounts_needing_expiration(
         self, now: datetime.datetime
     ) -> Sequence[uuid.UUID]: ...

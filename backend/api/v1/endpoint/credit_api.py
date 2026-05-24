@@ -66,7 +66,7 @@ async def daily_checkin(
             success=True,
             balance=account.balance,
             amount_earned=tx.amount,
-            expires_at=tx.expires_at or datetime.now(UTC),
+            expires_at=tx.expires_at if tx.expires_at is not None else datetime.now(UTC),
         )
         await uow.commit()
     return result

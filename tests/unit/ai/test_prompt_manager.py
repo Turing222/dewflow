@@ -80,7 +80,7 @@ class TestTemplateRendering:
             context_chunks=[],
         )
         assert "只能根据参考资料回答" in result
-        assert "无法基于知识库资料回答" in result
+        assert "无法基于已提供资料回答" in result
         assert "基于你的通用知识回答" not in result
 
 

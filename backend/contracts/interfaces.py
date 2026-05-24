@@ -172,6 +172,24 @@ class AbstractRAGEmbedder(ABC):
         """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
 
 
+class AbstractExternalContextProvider(ABC):
+    """外部上下文检索抽象接口"""
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        """Provider identifier for metrics and tracing."""
+        ...
+
+    @abstractmethod
+    async def search(self, *, query_text: str, top_k: int) -> list[Any]:
+        """Return provider-neutral chunks for the query."""
+        ...
+
+    async def close(self) -> None:  # noqa: B027 — optional hook with default no-op
+        """可选：释放底层 HTTP client / 连接池资源。默认无操作。"""
+
+
 class AbstractTaskDispatcher(ABC):
     """Web → Worker 任务投递抽象。
 

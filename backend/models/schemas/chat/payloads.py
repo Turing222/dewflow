@@ -22,6 +22,8 @@ class GenerationPayload(BaseModel):
     kb_id: uuid.UUID | None = None
     rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
     context_state: ContextState = Field(default_factory=ContextState)
+    enable_external_context: bool = False
+    billing_model_name: str = "default"
     extra_body: dict[str, object] | None = None
 
 

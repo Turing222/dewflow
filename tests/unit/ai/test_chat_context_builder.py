@@ -108,6 +108,7 @@ async def test_build_uses_rag_prompt_and_search_context_when_chunks_found() -> N
         "score": 0.8,
         "distance": 0.2,
         "meta_info": {"page_label": "1", "section_path": "Guide / Setup"},
+        "text": "索引里的事实: Codex smoke RAG 正常。",
     }
     assert result.search_context["refs"][0]["chunks"][1]["ref_id"] == "R1.2"
     assert result.search_context["refs"][0]["chunks"][1]["chunk_id"] == str(chunk_id_2)

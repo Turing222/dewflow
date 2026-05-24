@@ -249,7 +249,12 @@ class CreditService(BaseService[AbstractUnitOfWork]):
             raise app_validation_error("用户不存在", code="USER_NOT_FOUND")
         account = await self._get_or_create_account_with_lock(user_id)
 
-        # 3. 混合抵扣算法
+        # 3. 混合抵扣算法：从原始未取整金额计算总 token 等价值，避免双重取整超扣
+        total_token_value = math.ceil(
+            (tokens_input * input_rate + tokens_output * output_rate)
+            * credit_settings.CREDIT_TO_TOKEN_RATIO / 1000.0
+        )
+
         if account.balance >= cost:
             # 情况 A: 积分充足，全额由积分抵扣
             credits_to_deduct = cost
@@ -257,8 +262,12 @@ class CreditService(BaseService[AbstractUnitOfWork]):
         else:
             # 情况 B: 积分不足，积分扣空，剩余部分扣除 Token
             credits_to_deduct = account.balance
-            unpaid_credits = cost - credits_to_deduct
-            tokens_to_deduct = math.ceil(unpaid_credits * credit_settings.CREDIT_TO_TOKEN_RATIO)
+            token_value_covered_by_credits = int(
+                credits_to_deduct * credit_settings.CREDIT_TO_TOKEN_RATIO
+            )
+            tokens_to_deduct = total_token_value - token_value_covered_by_credits
+            if tokens_to_deduct < 0:
+                tokens_to_deduct = 0
 
         # 4. 原子扣减积分
         if credits_to_deduct > 0:
@@ -348,17 +357,21 @@ class CreditService(BaseService[AbstractUnitOfWork]):
                 account_id
             )
             spent_sum = await self.uow.credit_repo.get_spent_sum(account_id)
+            protected_positive_sum = (
+                await self.uow.credit_repo.get_protected_positive_sum(account_id, now)
+            )
 
             pending_expire = expired_grants_sum - spent_sum - already_expired_sum
             if pending_expire <= 0:
                 continue
 
-            # 3. 实际可以扣减的额度不能超过当前主账户余额
-            to_expire = min(account.balance, pending_expire)
+            # 3. 保护非过期 / 非 checkin 正向额度，避免过期任务误扣长期余额。
+            expirable_balance = max(0, account.balance - protected_positive_sum)
+            to_expire = min(expirable_balance, pending_expire)
             if to_expire > 0:
-                account.balance -= to_expire
+                new_balance = account.balance - to_expire
                 await self.uow.credit_repo.update_account_balance(
-                    account.id, account.balance
+                    account.id, new_balance
                 )
 
                 await self.uow.credit_repo.add_transaction(
@@ -369,6 +382,7 @@ class CreditService(BaseService[AbstractUnitOfWork]):
                         "expired_grants_sum": expired_grants_sum,
                         "spent_sum": spent_sum,
                         "already_expired_sum": already_expired_sum,
+                        "protected_positive_sum": protected_positive_sum,
                         "calculation_time": now.isoformat(),
                     },
                 )
@@ -380,7 +394,7 @@ class CreditService(BaseService[AbstractUnitOfWork]):
                     expired_grants_sum,
                     spent_sum,
                     already_expired_sum,
-                    account.balance,
+                    new_balance,
                 )
 
         return expired_count

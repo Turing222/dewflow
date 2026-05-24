@@ -420,6 +420,7 @@ class ChatContextBuilder:
 
         groups: list[dict[str, Any]] = []
         group_indexes: dict[tuple[str | None, str | None, str | None], int] = {}
+        ref_counters = {"R": 0, "W": 0}
         context_chunks: list[str] = []
         flat_chunks: list[dict[str, Any]] = []
         scores = [float(chunk.get("score", 0.0) or 0.0) for chunk in rag_chunks]
@@ -433,13 +434,18 @@ class ChatContextBuilder:
             if group_index is None:
                 group_index = len(groups)
                 group_indexes[key] = group_index
+                ref_prefix = "W" if source_type == "web" else "R"
+                ref_counters[ref_prefix] += 1
                 groups.append(
                     {
-                        "ref_id": f"R{group_index + 1}",
+                        "ref_id": f"{ref_prefix}{ref_counters[ref_prefix]}",
                         "source_type": source_type,
                         "file_id": file_id,
                         "message_id": message_id,
                         "filename": chunk.get("filename"),
+                        "title": chunk.get("title"),
+                        "url": chunk.get("url"),
+                        "provider": chunk.get("provider"),
                         "chunks": [],
                     }
                 )
@@ -467,6 +473,9 @@ class ChatContextBuilder:
                 "source_type": source_type,
                 "file_id": file_id,
                 "message_id": message_id,
+                "title": chunk.get("title"),
+                "url": chunk.get("url"),
+                "provider": chunk.get("provider"),
                 "chunk_index": chunk_index,
                 "text": chunk.get("content", ""),
             }
@@ -505,6 +514,9 @@ class ChatContextBuilder:
             "evidence_score",
             "matched_by",
             "rerank_score",
+            "provider",
+            "title",
+            "url",
         ):
             value = source.get(key)
             if value is not None:
@@ -513,14 +525,18 @@ class ChatContextBuilder:
     @staticmethod
     def _format_context_chunk(ref_id: str, chunk: dict) -> str:
         source_label = (
-            chunk.get("filename")
+            chunk.get("title")
+            or chunk.get("url")
+            or chunk.get("filename")
             or chunk.get("file_id")
             or chunk.get("message_id")
             or "unknown"
         )
         details = [f"来源：{source_label}"]
+        if chunk.get("source_type") == "web":
+            details.append("类型：联网")
         chunk_index = chunk.get("chunk_index")
-        if chunk_index is not None:
+        if chunk_index is not None and chunk.get("source_type") != "web":
             details.append(f"chunk {chunk_index}")
         meta_info = chunk.get("meta_info") or {}
         page_label = meta_info.get("page_label") or meta_info.get("page")

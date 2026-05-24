@@ -276,6 +276,37 @@ async def test_worker_generation_fetches_current_redis_connection(monkeypatch) -
     assert redis_client.init_calls >= 2
 
 
+async def test_worker_nonstream_uses_payload_billing_model_name(monkeypatch) -> None:
+    install_llm_slot_recorder(monkeypatch)
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=FakeChatUow(),
+        redis_client=FakeRedisClient(FakeRedis()),
+        llm_service=NonStreamingLLM(LLMResultDTO(content="hello", success=True)),
+    )
+    persist_success = AsyncMock()
+    monkeypatch.setattr(
+        workflow,
+        "_persist_success_and_idempotency",
+        persist_success,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="hi",
+        conversation_history=[],
+        billing_model_name="billing-model",
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=payload,
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+    )
+
+    assert result.success is True
+    assert persist_success.await_args.kwargs["model_name"] == "billing-model"
+
+
 async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)

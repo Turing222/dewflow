@@ -126,6 +126,14 @@ class AISettings(BaseSettings):
     RAG_MIN_RERANK_SCORE: float = Field(default=4.0, ge=0.0, le=10.0)
     RAG_REFUSAL_MESSAGE: str = "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
 
+    # ── External Context Retrieval ────────────────────────────────
+    EXTERNAL_CONTEXT_ENABLED: bool = False
+    EXTERNAL_CONTEXT_PROVIDER: str = "tavily"
+    EXTERNAL_CONTEXT_TOP_K: int = Field(default=4, ge=1, le=10)
+    EXTERNAL_CONTEXT_TIMEOUT_SECONDS: int = Field(default=6, ge=1, le=30)
+    TAVILY_API_KEY: str | None = None
+    TAVILY_BASE_URL: str = "https://api.tavily.com"
+
     # ── RAG Embedding ─────────────────────────────────────────────
     RAG_EMBED_PROVIDER: str = "dashscope"
     RAG_EMBED_BASE_URL: str | None = None

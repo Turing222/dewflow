@@ -11,7 +11,6 @@ import uuid
 from dataclasses import dataclass
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
-from backend.utils.token_estimation import count_tokens
 from backend.application.chat.timing import (
     elapsed_ms,
     merge_metrics,
@@ -24,6 +23,7 @@ from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrat
 from backend.application.chat.worker_stream_publisher import WorkerStreamPublisher
 from backend.config.llm import get_llm_model_config
 from backend.contracts.interfaces import (
+    AbstractExternalContextProvider,
     AbstractLLMService,
     AbstractRAGService,
     AbstractUnitOfWork,
@@ -53,6 +53,7 @@ from backend.services.citation_validator import (
 )
 from backend.services.rag_evidence_policy import RAGEvidencePolicy
 from backend.services.rag_planning_service import RAGPlanningService
+from backend.utils.token_estimation import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ class LLMGenerationWorkerWorkflow:
         llm_service: AbstractLLMService,
         rag_service: AbstractRAGService | None = None,
         rag_planning_service: RAGPlanningService | None = None,
+        external_context_provider: AbstractExternalContextProvider | None = None,
         chat_context_builder: ChatContextBuilder | None = None,
         rag_evidence_policy: RAGEvidencePolicy | None = None,
         rag_orchestrator: WorkerRAGOrchestrator | None = None,
@@ -88,6 +90,7 @@ class LLMGenerationWorkerWorkflow:
         self.rag_orchestrator = rag_orchestrator or WorkerRAGOrchestrator(
             rag_service=rag_service,
             rag_planning_service=rag_planning_service,
+            external_context_provider=external_context_provider,
             chat_context_builder=chat_context_builder,
             rag_evidence_policy=rag_evidence_policy,
         )
@@ -410,7 +413,7 @@ class LLMGenerationWorkerWorkflow:
                         },
                     ),
                     idempotency_lock_key=idempotency_lock_key,
-                    model_name=getattr(self.llm_service, "model_name", "default"),
+                    model_name=payload.billing_model_name,
                 )
 
                 citation_attrs: dict[str, object] = {}
@@ -587,7 +590,7 @@ class LLMGenerationWorkerWorkflow:
                     },
                 ),
                 idempotency_lock_key=idempotency_lock_key,
-                model_name=getattr(self.llm_service, "model_name", "default"),
+                model_name=payload.billing_model_name,
             )
 
             if citation_result is not None:

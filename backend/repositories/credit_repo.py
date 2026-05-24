@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.orm.credits import CreditAccount, CreditTransaction, UsageRecord
@@ -209,6 +209,23 @@ class CreditRepository:
         result = await self.session.execute(stmt)
         val = result.scalar()
         return abs(int(val)) if val is not None else 0
+
+    async def get_protected_positive_sum(
+        self, account_id: uuid.UUID, now: datetime.datetime
+    ) -> int:
+        """获取不应由过期任务扣减的正向额度之和。"""
+        stmt = select(func.sum(CreditTransaction.amount)).where(
+            CreditTransaction.account_id == account_id,
+            CreditTransaction.amount > 0,
+            or_(
+                CreditTransaction.source != "checkin",
+                CreditTransaction.expires_at.is_(None),
+                CreditTransaction.expires_at > now,
+            ),
+        )
+        result = await self.session.execute(stmt)
+        val = result.scalar()
+        return int(val) if val is not None else 0
 
     async def list_accounts_needing_expiration(
         self, now: datetime.datetime

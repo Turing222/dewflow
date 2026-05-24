@@ -12,11 +12,15 @@ from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.config.settings import settings
 from backend.contracts.interfaces import (
+    AbstractExternalContextProvider,
     AbstractLLMService,
     AbstractRAGEmbedder,
     AbstractRAGService,
 )
 from backend.infra.database import create_db_assets
+from backend.services.external_context_service import (
+    create_external_context_provider,
+)
 from backend.services.object_storage import ObjectStorage, create_object_storage
 from backend.services.rag_planning_service import RAGPlanningService
 from backend.services.rag_service import RAGService
@@ -34,6 +38,7 @@ class WorkerContainer:
         self._embedder: AbstractRAGEmbedder | None = None
         self._rag_service: AbstractRAGService | None = None
         self._rag_planning_service: RAGPlanningService | None = None
+        self._external_context_provider: AbstractExternalContextProvider | None = None
         self._object_storage: ObjectStorage | None = None
 
     def get_session_factory(self) -> async_sessionmaker:
@@ -97,6 +102,12 @@ class WorkerContainer:
             )
         return self._rag_planning_service
 
+    def get_external_context_provider(self) -> AbstractExternalContextProvider | None:
+        """Return the cached worker-side external context provider."""
+        if self._external_context_provider is None:
+            self._external_context_provider = create_external_context_provider()
+        return self._external_context_provider
+
     def get_object_storage(self) -> ObjectStorage:
         """Return the cached worker object storage adapter."""
         if self._object_storage is None:
@@ -109,6 +120,8 @@ class WorkerContainer:
             await self._llm_service.close()
         if self._embedder is not None:
             await self._embedder.close()
+        if self._external_context_provider is not None:
+            await self._external_context_provider.close()
         if self._engine is not None:
             await self._engine.dispose()
         self._engine = None
@@ -117,6 +130,7 @@ class WorkerContainer:
         self._llm_service = None
         self._embedder = None
         self._rag_planning_service = None
+        self._external_context_provider = None
         self._object_storage = None
 
 
@@ -170,6 +184,11 @@ def get_worker_rag_service(
 def get_worker_rag_planning_service() -> RAGPlanningService:
     """Return the cached worker-side RAG planning service."""
     return get_worker_container().get_rag_planning_service()
+
+
+def get_worker_external_context_provider() -> AbstractExternalContextProvider | None:
+    """Return the cached worker-side external context provider."""
+    return get_worker_container().get_external_context_provider()
 
 
 def get_worker_object_storage() -> ObjectStorage:

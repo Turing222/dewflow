@@ -27,6 +27,7 @@ from backend.observability.trace_utils import (
 )
 from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.worker.dependencies import (
+    get_worker_external_context_provider,
     get_worker_llm_service,
     get_worker_rag_planning_service,
     get_worker_rag_service,
@@ -167,6 +168,7 @@ async def _generate_llm_stream_task(
             llm_service=llm_service,
             rag_service=get_worker_rag_service(llm_service=llm_service),
             rag_planning_service=get_worker_rag_planning_service(),
+            external_context_provider=get_worker_external_context_provider(),
         )
         assistant_uuid = (
             uuid.UUID(assistant_message_id) if assistant_message_id else None
@@ -261,6 +263,7 @@ async def _generate_llm_nonstream_task(
             llm_service=llm_service,
             rag_service=get_worker_rag_service(llm_service=llm_service),
             rag_planning_service=get_worker_rag_planning_service(),
+            external_context_provider=get_worker_external_context_provider(),
         )
         assistant_uuid = (
             uuid.UUID(assistant_message_id) if assistant_message_id else None
