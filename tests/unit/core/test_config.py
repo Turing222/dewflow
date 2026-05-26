@@ -11,6 +11,7 @@ import pytest
 
 from backend.config.settings import Settings
 from backend.config.web_settings import DEFAULT_SECRET_KEY, get_web_settings
+from backend.core.secret_env import load_secret_env
 from scripts.qa.config_check import run_checks
 
 
@@ -24,6 +25,38 @@ def test_settings_can_load_without_explicit_secret_key(
     settings = Settings(_env_file=None)
 
     assert settings.SECRET_KEY == DEFAULT_SECRET_KEY
+
+
+def test_growthbook_sdk_key_loads_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret_file = tmp_path / "growthbook_sdk_key.txt"
+    secret_file.write_text("sdk-secret-from-file\n", encoding="utf-8")
+    monkeypatch.delenv("GROWTHBOOK_SDK_KEY", raising=False)
+    monkeypatch.setenv("GROWTHBOOK_SDK_KEY_FILE", str(secret_file))
+
+    load_secret_env()
+
+    settings = Settings(_env_file=None)
+
+    assert settings.GROWTHBOOK_SDK_KEY == "sdk-secret-from-file"
+
+
+def test_tavily_api_key_loads_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret_file = tmp_path / "tavily_api_key.txt"
+    secret_file.write_text("tvly-secret-from-file\n", encoding="utf-8")
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.setenv("TAVILY_API_KEY_FILE", str(secret_file))
+
+    load_secret_env()
+
+    settings = Settings(_env_file=None)
+
+    assert settings.TAVILY_API_KEY == "tvly-secret-from-file"
 
 
 def test_non_local_web_config_rejects_default_secret_key(

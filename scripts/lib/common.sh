@@ -165,6 +165,7 @@ ensure_smoke_required_secrets() {
     ensure_smoke_secret_file "SMOKE_DASHSCOPE_API_KEY_2_FILE" "./secrets/smoke/dashscope_api_key_2.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GEMINI_API_KEY_FILE" "./secrets/smoke/gemini_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GOOGLE_API_KEY_FILE" "./secrets/smoke/google_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_GROWTHBOOK_SDK_KEY_FILE" "./secrets/smoke/growthbook_sdk_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_FILE" "./secrets/smoke/deepseek_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_2_FILE" "./secrets/smoke/deepseek_api_key_2.txt" "empty"
     ensure_smoke_secret_file "SMOKE_COHERE_API_KEY_FILE" "./secrets/smoke/cohere_api_key.txt" "empty"
@@ -177,6 +178,7 @@ ensure_smoke_required_secrets() {
     ensure_smoke_secret_file "SMOKE_LANGFUSE_SECRET_KEY_FILE" "./secrets/smoke/langfuse_secret_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_S3_ACCESS_KEY_ID_FILE" "./secrets/smoke/s3_access_key_id.txt" "empty"
     ensure_smoke_secret_file "SMOKE_S3_SECRET_ACCESS_KEY_FILE" "./secrets/smoke/s3_secret_access_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_TAVILY_API_KEY_FILE" "./secrets/smoke/tavily_api_key.txt" "empty"
 }
 
 ensure_smoke_volumes() {
