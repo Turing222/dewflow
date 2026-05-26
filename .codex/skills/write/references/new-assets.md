@@ -22,6 +22,6 @@ Use this reference when adding new files or a new capability.
 
 Choose the narrowest useful check:
 
-- Local skill changes: run the skill validator.
+- Local skill changes: inspect changed `SKILL.md`, `references/`, and `agents/openai.yaml` for valid YAML frontmatter, working relative links, and clear trigger boundaries. If a skill validator exists, run it.
 - Python source changes: run `make qa-lint` or the focused test command.
 - Boundary-sensitive changes: run `make qa-boundaries`.

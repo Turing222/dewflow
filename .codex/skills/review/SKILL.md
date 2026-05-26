@@ -5,7 +5,19 @@ description: "Multi-angle code review against Dewflow project skill conventions.
 
 # Code Review
 
-Review staged or specified changes against project conventions in `.codex/skills/project/references/`.
+Review the full current workspace change set by default, including staged changes, unstaged tracked changes, and untracked files. If the user specifies files, a commit, a PR, or a diff range, review only that requested scope.
+
+## Scope Gathering
+
+Before reviewing, gather scope with:
+
+1. `git status --short`
+2. `git diff --stat`
+3. `git diff`
+4. `git diff --staged`
+5. Read relevant untracked files listed by `git status --short`.
+
+Do not ignore untracked files unless they are clearly scratch or generated output files, and state that exclusion explicitly.
 
 ## Review Strategy
 
@@ -60,7 +72,8 @@ Check:
 Good template:
 
 ```md
-## Review: [branch or files]
+## Review: workspace changes
+Scope: staged + unstaged + untracked files from `git status --short`.
 
 ### 风格与命名
 未发现问题。

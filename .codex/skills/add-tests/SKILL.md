@@ -14,6 +14,7 @@ Use this skill for test-only work or test coverage paired with a code change.
 3. Choose the lowest test layer that proves the behavior.
 4. Mirror existing fixture, marker, naming, and assertion style.
 5. Run the focused pytest command through `uv run`, or explain why it was not run.
+6. If files were modified, append the Change Summary block from `.codex/skills/project/references/handoff.md`.
 
 ## Progressive Disclosure
 

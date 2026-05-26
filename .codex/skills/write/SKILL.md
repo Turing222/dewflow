@@ -15,6 +15,7 @@ Use this skill for creating new files or new capability surfaces.
 4. Add only the references or support files the new asset needs. Do not add workflow automation unless the user explicitly asks.
 5. Validate with the smallest relevant command from the project quality reference; use `uv run` for Python commands.
 6. If behavior changed or a new capability was added, consider loading `add-tests` for focused pytest coverage.
+7. If files were modified, append the Change Summary block from `.codex/skills/project/references/handoff.md`.
 
 ## Progressive Disclosure
 

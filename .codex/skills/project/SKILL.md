@@ -13,6 +13,7 @@ Use this skill as the shared project map. Load only the reference needed for the
 - [architecture.md](references/architecture.md): web/worker split, dependency injection, and 3-tier call chain.
 - [coding.md](references/coding.md): naming, typing, async, comments, and errors.
 - [config-policy.md](references/config-policy.md): when to use config, YAML, settings, or code constants.
+- [secrets-and-flags.md](references/secrets-and-flags.md): secret file injection, smoke secret wiring, and feature flag governance.
 - [quality.md](references/quality.md): Make targets, `uv run`, Docker checks, and command constraints.
 - [handoff.md](references/handoff.md): change summary and commit message conventions.
 - [task-mode.md](references/task-mode.md): mode selection, skill collaboration, and `agents/openai.yaml` purpose.

@@ -15,6 +15,7 @@ Use this skill when the primary task is changing existing files.
 4. Preserve architecture boundaries: endpoint → service → repository, and web → dispatcher → worker.
 5. Run focused validation first, then broader checks only when the change risk justifies it.
 6. If behavior changed or coverage gaps are exposed, consider loading `add-tests`.
+7. If files were modified, append the Change Summary block from `.codex/skills/project/references/handoff.md`.
 
 ## Progressive Disclosure
 

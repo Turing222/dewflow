@@ -156,6 +156,51 @@ make env-smoke-wait
 - `frontend`、`prometheus`、`grafana`、`vector`、`loki` 暂不作为日常 Smoke 的必需项；如需验证前端容器链路，先运行 `make frontend-image-build` 再启动 Compose 中的 `frontend` 服务。
 - `env-smoke-prepare` 会基于仓库里的 `.env.smoke.template` 生成本地 `.env.smoke`，本地与 CI 共用同一份模板。
 
+### Smoke Secrets 与 Feature Flags
+
+Smoke 环境中的真实密钥不要写入 `.env.smoke` 或提交到 Git。统一使用 `secrets/smoke/*.txt`，再通过 Docker secrets 挂载进容器：
+
+```text
+secrets/smoke/<name>.txt
+  -> docker-compose.db.yml secrets: FOO
+  -> /run/secrets/FOO
+  -> FOO_FILE=/run/secrets/FOO
+  -> backend/core/secret_env.py
+  -> Settings / ai_settings
+```
+
+新增一个 API key 或 secret 时，按同一条链路补齐：
+
+1. 在 `backend/core/secret_env.py` 的白名单加入 `FOO`。
+2. 在 `docker-compose.db.yml` 的 app secrets、`*_FILE` 环境变量和 `secrets:` 块加入 `FOO`。
+3. 在 `.env.smoke.template` 加入 `SMOKE_FOO_FILE=./secrets/smoke/foo.txt`。
+4. 在 `scripts/lib/common.sh` 的 `ensure_smoke_required_secrets` 自动创建空 secret 文件。
+5. 在 `tests/unit/core/test_config.py` 覆盖 `FOO_FILE` 能读入配置。
+
+本地真实值只写入 ignored 文件，例如：
+
+```bash
+printf '%s\n' 'real-key' > secrets/smoke/foo.txt
+chmod 600 secrets/smoke/foo.txt
+```
+
+GrowthBook feature flag 使用后端白名单出口。新增 flag 时：
+
+1. 在 GrowthBook 控制台创建 boolean feature，key 使用 `kebab-case`。
+2. 在 `FeatureFlagService` 注册 key、scope 和代码兜底默认值。
+3. 系统级开关通过 `/api/v1/auth/config` 输出，用户级开关通过 `/api/v1/users/me.features` 输出。
+4. 前端只通过 `useFeatureFlag()` 或 `FeatureGate` 消费，不直接连接 GrowthBook。
+5. 补充 `tests/unit/services/test_feature_flag_service.py` 覆盖默认兜底和云端定义后的 SDK 判定。
+
+相关变更至少运行：
+
+```bash
+bash -n scripts/lib/common.sh
+docker compose --env-file .env.smoke -f docker-compose.db.yml config --quiet
+uv run pytest tests/unit/core/test_config.py -q
+uv run pytest tests/unit/services/test_feature_flag_service.py -q
+```
+
 ### 步骤 7：运行 Smoke 测试
 
 目的：
