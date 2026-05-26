@@ -80,6 +80,7 @@ class SMSSendResponse(BaseModel):
     """发送短信验证码响应。"""
 
     message: str
+    code: str | None = None
 
 
 class GoogleAuthUrlResponse(BaseModel):
@@ -147,6 +148,9 @@ class UserResponse(UserBase):
     is_superuser: bool
     max_tokens: int
     used_tokens: int
+    features: dict[str, bool] = Field(
+        default_factory=dict, description="用户可享有的功能标志字典"
+    )
     created_at: datetime
     updated_at: datetime
 

@@ -79,6 +79,12 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     OTEL_METRICS_ENDPOINT: str = "http://prometheus:9090/api/v1/otlp"
     OTEL_TRACES_ENDPOINT: str = "http://jaeger:4318/v1/traces"
 
+    # ── GrowthBook ──────────────────────────────────────────────────
+    GROWTHBOOK_API_HOST: str = "https://cdn.growthbook.io"
+    GROWTHBOOK_SDK_KEY: str = "sdk-dummy-key-for-development"
+    BETA_USER_EMAIL_WHITELIST: str = "tony@company.com,tester@dewflow.com"
+    BETA_USER_PHONE_WHITELIST: str = ""
+
     # ── Properties ────────────────────────────────────────────────
 
     @property

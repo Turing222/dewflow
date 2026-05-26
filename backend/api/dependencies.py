@@ -18,6 +18,7 @@ from backend.api.deps.auth import (
 from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.services import (
     get_credit_service,
+    get_feature_flag_service,
     get_knowledge_service,
     get_object_storage,
     get_session_query_service,
@@ -50,6 +51,7 @@ __all__ = [
     "get_current_active_user",
     "get_current_superuser",
     "get_current_user",
+    "get_feature_flag_service",
     "get_knowledge_service",
     "get_knowledge_upload_workflow",
     "get_login_data",

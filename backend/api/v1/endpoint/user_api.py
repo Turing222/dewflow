@@ -7,6 +7,7 @@ from backend.api.dependencies import (
     get_audit_service,
     get_current_active_user,
     get_current_superuser,
+    get_feature_flag_service,
     get_user_import_service,
     get_user_service,
 )
@@ -21,6 +22,7 @@ from backend.models.schemas.user_schema import (
     UserUpdate,
 )
 from backend.services.audit_service import AuditAction, AuditService, capture_audit
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.user_import_service import UserImportService
 from backend.services.user_service import UserService
 
@@ -32,14 +34,17 @@ UpFile = Annotated[UploadFile, File()]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 UserImportServiceDep = Annotated[UserImportService, Depends(get_user_import_service)]
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
+FeatureFlagServiceDep = Annotated[FeatureFlagService, Depends(get_feature_flag_service)]
 
 
 @router.get("/me")
 async def read_users_me(
     current_user: CurrentUserDep,
+    feature_flag_service: FeatureFlagServiceDep,
 ) -> UserResponse:
     user_resp_data = UserResponse.model_validate(current_user)
-    return user_resp_data
+    flags = await feature_flag_service.get_user_features(current_user)
+    return user_resp_data.model_copy(update={"features": flags})
 
 
 @router.patch("/me")

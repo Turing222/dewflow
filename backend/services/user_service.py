@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.core.exceptions import (
+    app_bad_request,
     app_not_found,
     app_validation_error,
 )
@@ -192,11 +193,24 @@ class UserService(BaseService[AbstractUnitOfWork]):
         msg = "无法生成唯一用户名"
         raise RuntimeError(msg)
 
-    async def find_or_create_by_phone(self, phone: str) -> User:
-        """按手机号查找用户，不存在则自动注册。"""
+    async def find_or_create_by_phone(
+        self, phone: str, *, allow_new_registration: bool = True
+    ) -> User:
+        """按手机号查找用户，不存在则自动注册。
+
+        Args:
+            allow_new_registration: 当 False 且用户不存在时，抛出 REGISTRATION_CLOSED 异常
+                而非自动创建。用于封闭内测阶段的新用户注册门控。
+        """
         user = await self.uow.user_repo.get_by_phone(phone)
         if user:
             return user
+
+        if not allow_new_registration:
+            raise app_bad_request(
+                "当前处于封闭内测阶段，暂不开放公开注册",
+                code="REGISTRATION_CLOSED",
+            )
 
         username = await self._generate_unique_username()
         obj_in_data = UserCreateData(
@@ -218,9 +232,19 @@ class UserService(BaseService[AbstractUnitOfWork]):
         return user
 
     async def find_or_create_by_google(
-        self, google_sub: str, email: str | None, name: str | None
+        self,
+        google_sub: str,
+        email: str | None,
+        name: str | None,
+        *,
+        allow_new_registration: bool = True,
     ) -> User:
-        """按 Google sub 查找用户，不存在则自动注册或关联已有邮箱账号。"""
+        """按 Google sub 查找用户，不存在则自动注册或关联已有邮箱账号。
+
+        Args:
+            allow_new_registration: 当 False 且无现有用户时，抛出 REGISTRATION_CLOSED 异常
+                而非自动创建。用于封闭内测阶段的新用户注册门控。
+        """
         # 1. 按 google_sub 查找
         user = await self.uow.user_repo.get_by_google_sub(google_sub)
         if user:
@@ -233,7 +257,14 @@ class UserService(BaseService[AbstractUnitOfWork]):
                 await self.link_google_account(user.id, google_sub)
                 return user
 
-        # 3. 自动创建新用户
+        # 3. 注册门控
+        if not allow_new_registration:
+            raise app_bad_request(
+                "当前处于封闭内测阶段，暂不开放公开注册",
+                code="REGISTRATION_CLOSED",
+            )
+
+        # 4. 自动创建新用户
         username = await self._generate_unique_username()
         obj_in_data = UserCreateData(
             username=username,

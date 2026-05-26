@@ -3,7 +3,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from backend.api.dependencies import get_audit_service, get_login_data, get_user_service
+from backend.api.dependencies import (
+    get_audit_service,
+    get_feature_flag_service,
+    get_login_data,
+    get_user_service,
+)
 from backend.api.deps.services import get_google_oauth_service, get_sms_service
 from backend.config.settings import settings
 from backend.core.exceptions import app_bad_request
@@ -22,6 +27,7 @@ from backend.models.schemas.user_schema import (
     UserResponse,
 )
 from backend.services.audit_service import AuditAction, AuditService, record_audit
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.google_oauth_service import GoogleOAuthService
 from backend.services.sms_service import SMSService
 from backend.services.user_service import UserService
@@ -44,10 +50,29 @@ LoginDataDep = Annotated[UserLogin, Depends(get_login_data)]
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
 SMSServiceDep = Annotated[SMSService, Depends(get_sms_service)]
 GoogleOAuthServiceDep = Annotated[GoogleOAuthService, Depends(get_google_oauth_service)]
+FeatureFlagServiceDep = Annotated[FeatureFlagService, Depends(get_feature_flag_service)]
+
+
+@router.get("/config")
+async def get_system_config(
+    feature_flag_service: FeatureFlagServiceDep,
+) -> dict[str, bool]:
+    """获取系统级公开灰度/控制开关（免登录）。"""
+    return await feature_flag_service.get_system_features()
 
 
 @router.post("/register", dependencies=[Depends(register_limiter)])
-async def register(user_in: UserCreate, user_service: UserServiceDep) -> UserResponse:
+async def register(
+    user_in: UserCreate,
+    user_service: UserServiceDep,
+    feature_flag_service: FeatureFlagServiceDep,
+) -> UserResponse:
+    system_flags = await feature_flag_service.get_system_features()
+    if not system_flags.get("enable-public-registration", True):
+        raise app_bad_request(
+            "当前处于封闭内测阶段，暂不开放公开注册", code="REGISTRATION_CLOSED"
+        )
+
     async with user_service.write():
         user = await user_service.user_register_with_personal_workspace(user_in)
     return UserResponse.model_validate(user)
@@ -58,6 +83,7 @@ async def login(
     login_data: LoginDataDep,
     user_service: UserServiceDep,
     audit_service: AuditServiceDep,
+    feature_flag_service: FeatureFlagServiceDep,
 ) -> Token:
     # 1. 调用 Service 验证
     async with user_service.write():
@@ -87,7 +113,17 @@ async def login(
             )
             raise app_bad_request("用户名或密码错误", code="BAD_CREDENTIALS")
 
-    # 2. 发放 Token (Token 生成是纯 CPU 计算，无需 await)
+    # 2. 校验封闭内测登录限制（在写事务之外，用户标量属性已加载到内存）
+    system_flags = await feature_flag_service.get_system_features()
+    if system_flags.get(
+        "enable-closed-beta-login", False
+    ) and not feature_flag_service.is_beta_user(user):
+        raise app_bad_request(
+            "系统正在维护或处于封闭内测中，当前仅限内测人员登录",
+            code="BETA_LIMIT_LOGIN",
+        )
+
+    # 3. 发放 Token (Token 生成是纯 CPU 计算，无需 await)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         subject=user.id,
@@ -110,8 +146,11 @@ async def login(
 @router.post("/sms/send", dependencies=[Depends(sms_limiter)])
 async def sms_send(body: SMSSendRequest, sms_service: SMSServiceDep) -> SMSSendResponse:
     """发送短信验证码。"""
-    await sms_service.send_code(body.phone)
-    return SMSSendResponse(message="验证码已发送")
+    code = await sms_service.send_code(body.phone)
+    return SMSSendResponse(
+        message="验证码已发送",
+        code=code if sms_service._sms_mock_mode else None,
+    )
 
 
 @router.post("/sms/login")
@@ -120,16 +159,33 @@ async def sms_login(
     user_service: UserServiceDep,
     sms_service: SMSServiceDep,
     audit_service: AuditServiceDep,
+    feature_flag_service: FeatureFlagServiceDep,
 ) -> Token:
     """手机号 + 验证码登录（首次自动注册）。"""
     if not await sms_service.verify_code(body.phone, body.code):
         raise app_bad_request("验证码错误或已过期", code="INVALID_SMS_CODE")
 
+    # 事务前获取注册开关，传入 service 原子判定
+    system_flags = await feature_flag_service.get_system_features()
+    allow_new = system_flags.get("enable-public-registration", True)
+
     async with user_service.write():
-        user = await user_service.find_or_create_by_phone(body.phone)
+        user = await user_service.find_or_create_by_phone(
+            body.phone, allow_new_registration=allow_new
+        )
 
     if not user.is_active:
         raise app_bad_request("账号已停用", code="INACTIVE_USER")
+
+    # 校验封闭内测登录限制（在写事务之外）
+    system_flags = await feature_flag_service.get_system_features()
+    if system_flags.get(
+        "enable-closed-beta-login", False
+    ) and not feature_flag_service.is_beta_user(user):
+        raise app_bad_request(
+            "系统正在维护或处于封闭内测中，当前仅限内测人员登录",
+            code="BETA_LIMIT_LOGIN",
+        )
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -166,19 +222,35 @@ async def google_callback(
     user_service: UserServiceDep,
     google_service: GoogleOAuthServiceDep,
     audit_service: AuditServiceDep,
+    feature_flag_service: FeatureFlagServiceDep,
 ) -> Token:
     """用 Google 授权码换取 JWT（首次自动注册）。"""
     claims = await google_service.exchange_code(body.code, body.redirect_uri)
+
+    # 事务前获取注册开关，传入 service 原子判定
+    system_flags = await feature_flag_service.get_system_features()
+    allow_new = system_flags.get("enable-public-registration", True)
 
     async with user_service.write():
         user = await user_service.find_or_create_by_google(
             google_sub=claims["sub"],
             email=claims.get("email"),
             name=claims.get("name"),
+            allow_new_registration=allow_new,
         )
 
     if not user.is_active:
         raise app_bad_request("账号已停用", code="INACTIVE_USER")
+
+    # 校验封闭内测登录限制（在写事务之外）
+    system_flags = await feature_flag_service.get_system_features()
+    if system_flags.get(
+        "enable-closed-beta-login", False
+    ) and not feature_flag_service.is_beta_user(user):
+        raise app_bad_request(
+            "系统正在维护或处于封闭内测中，当前仅限内测人员登录",
+            code="BETA_LIMIT_LOGIN",
+        )
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

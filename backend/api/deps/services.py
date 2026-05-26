@@ -9,6 +9,7 @@ from backend.config.web_settings import get_web_settings
 from backend.contracts.interfaces import AbstractUnitOfWork
 from backend.infra.redis import redis_client
 from backend.services.credit_service import CreditService
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.google_oauth_service import GoogleOAuthService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.object_storage import ObjectStorage, create_object_storage
@@ -96,3 +97,26 @@ def get_credit_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
 ) -> CreditService:
     return CreditService(uow=uow)
+
+
+@lru_cache(maxsize=1)
+def get_feature_flag_service() -> FeatureFlagService:
+    """进程级单例：FeatureFlagService 持有内存缓存，每次请求重建开销无意义。
+
+    测试时可通过 get_feature_flag_service.cache_clear() + app.dependency_overrides 重置。
+    """
+    return FeatureFlagService(
+        growthbook_api_host=settings.GROWTHBOOK_API_HOST,
+        growthbook_sdk_key=settings.GROWTHBOOK_SDK_KEY,
+        app_env=settings.APP_ENV,
+        beta_user_email_whitelist={
+            e.strip()
+            for e in settings.BETA_USER_EMAIL_WHITELIST.split(",")
+            if e.strip()
+        },
+        beta_user_phone_whitelist={
+            p.strip()
+            for p in settings.BETA_USER_PHONE_WHITELIST.split(",")
+            if p.strip()
+        },
+    )
