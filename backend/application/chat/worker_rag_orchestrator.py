@@ -25,7 +25,9 @@ from backend.models.schemas.chat.payloads import GenerationPayload
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.rag_evidence_policy import RAGEvidenceDecision, RAGEvidencePolicy
 from backend.services.rag_planning_service import (
+    DEFAULT_MODEL_ROUTE_REASON,
     RAG_PLANNER_FALLBACK_REASON,
+    PlannerModelTier,
     RAGExecutionPlan,
     RAGPlanningService,
 )
@@ -40,6 +42,9 @@ class PreparedGenerationContext:
     assembled_prompt: Any | None
     search_context: dict | None
     refusal_decision: RAGEvidenceDecision | None = None
+    answer_model_tier: PlannerModelTier = "balanced"
+    model_route_confidence: float = 1.0
+    model_route_reason: str = DEFAULT_MODEL_ROUTE_REASON
 
 
 class WorkerRAGOrchestrator:
@@ -84,6 +89,9 @@ class WorkerRAGOrchestrator:
             if ai_settings.RAG_PLANNER_ROUTING_ENABLED:
                 metrics["answer_route"] = rag_plan.answer_route
                 metrics["route_confidence"] = rag_plan.route_confidence
+            metrics["answer_model_tier"] = rag_plan.answer_model_tier
+            metrics["model_route_confidence"] = rag_plan.model_route_confidence
+            metrics["model_route_reason"] = rag_plan.model_route_reason
             metrics["external_context_planned"] = rag_plan.should_use_external_context
 
             preflight_refusal = self._build_planner_preflight_refusal(
@@ -112,6 +120,9 @@ class WorkerRAGOrchestrator:
                     assembled_prompt=None,
                     search_context=search_context,
                     refusal_decision=preflight_refusal,
+                    answer_model_tier=rag_plan.answer_model_tier,
+                    model_route_confidence=rag_plan.model_route_confidence,
+                    model_route_reason=rag_plan.model_route_reason,
                 )
 
             retrieve_started = perf_start()
@@ -179,6 +190,9 @@ class WorkerRAGOrchestrator:
                     assembled_prompt=None,
                     search_context=search_context,
                     refusal_decision=refusal_decision,
+                    answer_model_tier=rag_plan.answer_model_tier,
+                    model_route_confidence=rag_plan.model_route_confidence,
+                    model_route_reason=rag_plan.model_route_reason,
                 )
 
             context_started = perf_start()
@@ -225,6 +239,9 @@ class WorkerRAGOrchestrator:
             return PreparedGenerationContext(
                 assembled_prompt=prepared_context.assembled_prompt,
                 search_context=search_context,
+                answer_model_tier=rag_plan.answer_model_tier,
+                model_route_confidence=rag_plan.model_route_confidence,
+                model_route_reason=rag_plan.model_route_reason,
             )
 
     async def build_rag_plan(

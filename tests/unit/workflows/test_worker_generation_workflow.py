@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -22,6 +23,7 @@ from backend.application.chat.stream_events import (
 from backend.application.chat.worker_generation_workflow import (
     LLMGenerationWorkerWorkflow,
 )
+from backend.application.chat.worker_rag_orchestrator import PreparedGenerationContext
 from backend.core.exceptions import app_service_error
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
 from backend.models.schemas.chat.payloads import GenerationPayload
@@ -153,6 +155,17 @@ class RecordingRAGPlanner:
         return self.response_plan
 
 
+class StaticRAGOrchestrator:
+    def __init__(self, prepared_context: PreparedGenerationContext) -> None:
+        self.prepared_context = prepared_context
+
+    async def prepare_context(
+        self,
+        payload: GenerationPayload,
+    ) -> PreparedGenerationContext:
+        return self.prepared_context
+
+
 def make_rerank_impl(
     llm_service: StreamingLLM,
 ) -> Callable[[str, list[dict], int | None], Awaitable[list[dict]]]:
@@ -243,6 +256,7 @@ async def test_worker_generation_persists_success_and_publishes_done(
             "chat.session_id": payload.session_id,
             "chat.assistant_message_id": assistant_message_id,
             "chat.stream": True,
+            "llm.model_tier": "balanced",
         }
     ]
 
@@ -276,7 +290,7 @@ async def test_worker_generation_fetches_current_redis_connection(monkeypatch) -
     assert redis_client.init_calls >= 2
 
 
-async def test_worker_nonstream_uses_payload_billing_model_name(monkeypatch) -> None:
+async def test_worker_nonstream_uses_selected_llm_model_name(monkeypatch) -> None:
     install_llm_slot_recorder(monkeypatch)
     workflow = LLMGenerationWorkerWorkflow(
         uow=FakeChatUow(),
@@ -304,7 +318,196 @@ async def test_worker_nonstream_uses_payload_billing_model_name(monkeypatch) -> 
     )
 
     assert result.success is True
-    assert persist_success.await_args.kwargs["model_name"] == "billing-model"
+    assert persist_success.await_args.kwargs["model_name"] == "fake-model"
+
+
+async def test_worker_generation_accepts_legacy_prepared_generation_tuple(
+    monkeypatch,
+) -> None:
+    install_llm_slot_recorder(monkeypatch)
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=FakeChatUow(),
+        redis_client=FakeRedisClient(FakeRedis()),
+        llm_service=NonStreamingLLM(LLMResultDTO(content="hello", success=True)),
+    )
+
+    legacy_prepared = (
+        SimpleNamespace(session_id=uuid.uuid4(), query_text="hi"),
+        12,
+        {"metrics": {"planner_used": False}},
+    )
+
+    prepared = workflow._coerce_prepared_generation(legacy_prepared)
+
+    assert prepared.llm_query is legacy_prepared[0]
+    assert prepared.tokens_input == 12
+    assert prepared.search_context == {"metrics": {"planner_used": False}}
+    assert prepared.selected_llm.tier == "balanced"
+    assert prepared.selected_llm.model_name == "fake-model"
+
+
+async def test_worker_nonstream_routes_to_planner_model_tier(monkeypatch) -> None:
+    install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTING_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTE_FAST_PROVIDER",
+        "fast-provider",
+    )
+    default_llm = NonStreamingLLM(LLMResultDTO(content="default", success=True))
+    routed_llm = NonStreamingLLM(LLMResultDTO(content="fast", success=True))
+    routed_llm.provider_name = "fast"
+    routed_llm.model_name = "fast-model"
+    resolver_calls: list[str | None] = []
+
+    def resolve_llm(provider: str | None):
+        resolver_calls.append(provider)
+        return routed_llm
+
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=FakeChatUow(),
+        redis_client=FakeRedisClient(FakeRedis()),
+        llm_service=default_llm,
+        llm_service_resolver=resolve_llm,
+        rag_orchestrator=StaticRAGOrchestrator(
+            PreparedGenerationContext(
+                assembled_prompt=SimpleNamespace(
+                    total_tokens=3,
+                    messages=[{"role": "user", "content": "hi"}],
+                ),
+                search_context={"metrics": {"planner_used": True}},
+                answer_model_tier="fast",
+                model_route_confidence=0.92,
+                model_route_reason="简单改写",
+            )
+        ),
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+    )
+
+    assert result.success is True
+    assert result.content == "fast"
+    assert resolver_calls == ["fast-provider"]
+    update_kwargs = workflow.uow.chat_repo.update_message_status.await_args.kwargs
+    metrics = update_kwargs["message_metadata"]["metrics"]
+    assert metrics["answer_model_tier"] == "fast"
+    assert metrics["answer_model_provider"] == "fast-provider"
+    assert metrics["answer_model_name"] == "fast-model"
+    usage_kwargs = workflow.uow.credit_repo.create_usage_record.await_args.kwargs
+    assert usage_kwargs["model_name"] == "fast-model"
+
+
+async def test_worker_stream_routes_to_planner_model_tier(monkeypatch) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTING_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTE_REASONING_PROVIDER",
+        "reasoning-provider",
+    )
+    default_llm = StreamingLLM(["default"])
+    routed_llm = StreamingLLM(["reasoned"])
+    routed_llm.provider_name = "reasoning"
+    routed_llm.model_name = "reasoning-model"
+    resolver_calls: list[str | None] = []
+
+    def resolve_llm(provider: str | None):
+        resolver_calls.append(provider)
+        return routed_llm
+
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=FakeChatUow(),
+        redis_client=FakeRedisClient(redis),
+        llm_service=default_llm,
+        llm_service_resolver=resolve_llm,
+        rag_orchestrator=StaticRAGOrchestrator(
+            PreparedGenerationContext(
+                assembled_prompt=SimpleNamespace(
+                    total_tokens=3,
+                    messages=[{"role": "user", "content": "hi"}],
+                ),
+                search_context={"metrics": {"planner_used": True}},
+                answer_model_tier="reasoning",
+                model_route_confidence=0.93,
+                model_route_reason="复杂推理",
+            )
+        ),
+    )
+
+    await workflow.generate_stream(
+        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        channel="stream:test",
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+    )
+
+    assert resolver_calls == ["reasoning-provider"]
+    assert default_llm.stream_queries == []
+    assert len(routed_llm.stream_queries) == 1
+    update_kwargs = workflow.uow.chat_repo.update_message_status.await_args.kwargs
+    assert update_kwargs["content"] == "reasoned"
+    metrics = update_kwargs["message_metadata"]["metrics"]
+    assert metrics["answer_model_tier"] == "reasoning"
+    assert metrics["answer_model_provider"] == "reasoning-provider"
+    assert metrics["answer_model_name"] == "reasoning-model"
+
+
+async def test_worker_nonstream_falls_back_when_model_route_provider_fails(
+    monkeypatch,
+) -> None:
+    install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTING_ENABLED",
+        True,
+    )
+    default_llm = NonStreamingLLM(LLMResultDTO(content="default", success=True))
+
+    def resolve_llm(provider: str | None):
+        raise RuntimeError(f"missing {provider}")
+
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=FakeChatUow(),
+        redis_client=FakeRedisClient(FakeRedis()),
+        llm_service=default_llm,
+        llm_service_resolver=resolve_llm,
+        rag_orchestrator=StaticRAGOrchestrator(
+            PreparedGenerationContext(
+                assembled_prompt=SimpleNamespace(
+                    total_tokens=3,
+                    messages=[{"role": "user", "content": "hi"}],
+                ),
+                search_context=None,
+                answer_model_tier="reasoning",
+                model_route_confidence=0.95,
+                model_route_reason="复杂推理",
+            )
+        ),
+    )
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        assistant_message_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+    )
+
+    assert result.success is True
+    assert result.content == "default"
+    update_kwargs = workflow.uow.chat_repo.update_message_status.await_args.kwargs
+    metrics = update_kwargs["message_metadata"]["metrics"]
+    assert metrics["answer_model_tier"] == "balanced"
+    assert metrics["answer_model_provider"] == "default"
+    assert metrics["model_route_fallback"] is True
+    usage_kwargs = workflow.uow.credit_repo.create_usage_record.await_args.kwargs
+    assert usage_kwargs["model_name"] == "fake-model"
 
 
 async def test_worker_generation_marks_failed_and_publishes_error(monkeypatch) -> None:
@@ -432,6 +635,7 @@ async def test_worker_nonstream_generation_uses_llm_slot_and_persists_success(
             "chat.session_id": payload.session_id,
             "chat.assistant_message_id": assistant_message_id,
             "chat.stream": False,
+            "llm.model_tier": "balanced",
         }
     ]
 
@@ -1139,6 +1343,7 @@ async def test_worker_generation_reranks_candidates_when_enabled(
             "chat.session_id": payload.session_id,
             "chat.assistant_message_id": assistant_message_id,
             "chat.stream": True,
+            "llm.model_tier": "balanced",
         },
     ]
 

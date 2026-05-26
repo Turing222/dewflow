@@ -29,6 +29,7 @@ from backend.services.unit_of_work import SQLAlchemyUnitOfWork
 from backend.worker.dependencies import (
     get_worker_external_context_provider,
     get_worker_llm_service,
+    get_worker_llm_service_for_provider,
     get_worker_rag_planning_service,
     get_worker_rag_service,
     get_worker_session_factory,
@@ -166,6 +167,7 @@ async def _generate_llm_stream_task(
             uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
             redis_client=redis_client,
             llm_service=llm_service,
+            llm_service_resolver=get_worker_llm_service_for_provider,
             rag_service=get_worker_rag_service(llm_service=llm_service),
             rag_planning_service=get_worker_rag_planning_service(),
             external_context_provider=get_worker_external_context_provider(),
@@ -261,6 +263,7 @@ async def _generate_llm_nonstream_task(
             uow=SQLAlchemyUnitOfWork(get_worker_session_factory()),
             redis_client=redis_client,
             llm_service=llm_service,
+            llm_service_resolver=get_worker_llm_service_for_provider,
             rag_service=get_worker_rag_service(llm_service=llm_service),
             rag_planning_service=get_worker_rag_planning_service(),
             external_context_provider=get_worker_external_context_provider(),

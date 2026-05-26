@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 RAGRetrievalMode = Literal["vector", "fulltext", "hybrid"]
 ExternalContextSource = Literal["web"]
 PlannerAnswerRoute = Literal["refuse", "rag", "large"]
+PlannerModelTier = Literal["fast", "balanced", "reasoning"]
 RAG_PLANNER_FALLBACK_REASON = "RAG planner 降级为默认计划"
+DEFAULT_MODEL_ROUTE_REASON = "default model tier"
 
 
 class RAGExecutionPlan(BaseModel):
@@ -51,6 +53,9 @@ class RAGExecutionPlan(BaseModel):
     answer_route: PlannerAnswerRoute = "rag"
     route_confidence: float = 0.0
     planner_refusal_reason: str = ""
+    answer_model_tier: PlannerModelTier = "balanced"
+    model_route_confidence: float = 0.0
+    model_route_reason: str = ""
     reason: str = ""
 
     @model_validator(mode="after")
@@ -120,6 +125,9 @@ class RAGExecutionPlan(BaseModel):
             external_top_k=ai_settings.EXTERNAL_CONTEXT_TOP_K,
             answer_route=answer_route,
             route_confidence=1.0,
+            answer_model_tier="balanced",
+            model_route_confidence=1.0,
+            model_route_reason=DEFAULT_MODEL_ROUTE_REASON,
             reason=reason,
         ).clamped()
 
@@ -141,6 +149,16 @@ class RAGExecutionPlan(BaseModel):
             ai_settings.EXTERNAL_CONTEXT_TOP_K,
         )
         route_confidence = _clamp_float(self.route_confidence, 0.0, 1.0)
+        model_route_confidence = _clamp_float(
+            self.model_route_confidence,
+            0.0,
+            1.0,
+        )
+        answer_model_tier = self.answer_model_tier
+        model_route_reason = self.model_route_reason
+        if model_route_confidence < ai_settings.LLM_MODEL_ROUTE_MIN_CONFIDENCE:
+            answer_model_tier = "balanced"
+            model_route_reason = "low confidence, fallback to balanced"
         selected_sources = [
             source
             for source in dict.fromkeys(self.selected_sources)
@@ -161,6 +179,9 @@ class RAGExecutionPlan(BaseModel):
                 "external_sources": external_sources,
                 "external_top_k": external_top_k,
                 "route_confidence": route_confidence,
+                "answer_model_tier": answer_model_tier,
+                "model_route_confidence": model_route_confidence,
+                "model_route_reason": model_route_reason,
             }
         )
 
@@ -308,6 +329,8 @@ def _trace_attrs(
         "rag.planner.use_rerank": plan.use_rerank,
         "rag.planner.answer_route": plan.answer_route,
         "rag.planner.route_confidence": plan.route_confidence,
+        "rag.planner.answer_model_tier": plan.answer_model_tier,
+        "rag.planner.model_route_confidence": plan.model_route_confidence,
         "context.mode": plan.context_mode,
         "context.selected_sources": ",".join(plan.selected_sources),
         "external_context.should_use": plan.should_use_external_context,
@@ -365,6 +388,9 @@ _PLANNER_INSTRUCTIONS = """你是 RAG 检索规划器。
 - answer_route: 明显不应继续检索或生成时为 refuse；需要知识库或外部上下文时为 rag；普通闲聊、写作或无需上下文的问题为 large。
 - route_confidence: 对 answer_route 的置信度，0.0 到 1.0。
 - planner_refusal_reason: answer_route=refuse 时填写简短中文拒答原因，否则为空字符串。
+- answer_model_tier: 按问题复杂度选择回答模型档位；改写、翻译、闲聊、格式整理为 fast；普通问答、普通 RAG 为 balanced；多约束分析、代码、数学、长上下文综合、规划推理为 reasoning。
+- model_route_confidence: 对 answer_model_tier 的置信度，0.0 到 1.0；不确定时降低置信度。
+- model_route_reason: 简短中文说明为什么选择该模型档位。
 - reason: 简短中文原因。
 约束：
 - context_mode=off 时 selected_sources 必须为 []。

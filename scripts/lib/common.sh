@@ -90,6 +90,25 @@ smoke_env_value() {
     printf '%s\n' "$default_value"
 }
 
+llm_secret_provider() {
+    local provider="$1"
+    case "$provider" in
+        bifrost|bifrost_pro|bifrost_flash|bifrost_reasoner|bifrost_v4_pro|bifrost_v4_flash)
+            echo "bifrost"
+            ;;
+        deepseek|deepseek_pro|deepseek_v4_pro|deepseek_v4_flash|deepseek-v4-pro|deepseek-v4-flash)
+            echo "deepseek"
+            ;;
+        *)
+            echo "${provider%%/*}"
+            ;;
+    esac
+}
+
+llm_needs_bifrost_profile() {
+    [[ "$(llm_secret_provider "$1")" == "bifrost" ]]
+}
+
 generate_smoke_secret() {
     if command -v openssl >/dev/null 2>&1; then
         openssl rand -base64 48
@@ -195,7 +214,7 @@ compose_smoke() {
     elif [[ -f "$smoke_env_path" ]]; then
         local llm_provider
         llm_provider="$(sed -n 's/^LLM_PROVIDER=//p' "$smoke_env_path" 2>/dev/null | head -1)" || true
-        if [[ "${llm_provider%%/*}" == "bifrost" ]]; then
+        if llm_needs_bifrost_profile "$llm_provider"; then
             profile_args=(--profile bifrost)
         fi
     fi

@@ -101,6 +101,11 @@ class AISettings(BaseSettings):
     LLM_RESERVED_RESPONSE_TOKENS: int = 1024
     LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
     LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 30
+    LLM_MODEL_ROUTING_ENABLED: bool = False
+    LLM_MODEL_ROUTE_FAST_PROVIDER: str = "bifrost_flash"
+    LLM_MODEL_ROUTE_BALANCED_PROVIDER: str = "bifrost_pro"
+    LLM_MODEL_ROUTE_REASONING_PROVIDER: str = "bifrost_reasoner"
+    LLM_MODEL_ROUTE_MIN_CONFIDENCE: float = Field(default=0.65, ge=0.0, le=1.0)
 
     # ── Chat Stream Timeouts ──────────────────────────────────────
     CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS: int = 30

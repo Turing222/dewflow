@@ -16,6 +16,7 @@ if [[ -z "$PROVIDER" ]]; then
     log_error "Examples:"
     log_error "  make set-llm PROVIDER=mock                    # LLM=mock, EMBED unchanged"
     log_error "  make set-llm PROVIDER=gemini                  # LLM=gemini, EMBED unchanged"
+    log_error "  make set-llm PROVIDER=bifrost MODEL_ROUTING=true  # LLM=bifrost_pro + routing tiers"
     log_error "  make set-llm PROVIDER=gemini EMBED_PROVIDER=google  # LLM=gemini, EMBED=google"
     log_error "  make set-llm PROVIDER=mock EMBED_PROVIDER=mock      # both mock"
     exit 1
@@ -53,6 +54,32 @@ secret_path_for_provider() {
     resolve_project_path "$(smoke_env_value "$secret_file_var" "$default_path")"
 }
 
+configure_model_routing() {
+    local enabled="${MODEL_ROUTING:-}"
+    if [[ -z "$enabled" ]]; then
+        return
+    fi
+
+    case "$enabled" in
+        true|false) ;;
+        *)
+            log_error "MODEL_ROUTING must be true or false, got: $enabled"
+            exit 1
+            ;;
+    esac
+
+    update_env_smoke "LLM_MODEL_ROUTING_ENABLED" "$enabled"
+    if [[ "$enabled" == "false" ]]; then
+        return
+    fi
+
+    update_env_smoke "LLM_PROVIDER" "${ROUTING_LLM_PROVIDER:-bifrost_pro}"
+    update_env_smoke "LLM_MODEL_ROUTE_FAST_PROVIDER" "${FAST_PROVIDER:-bifrost_flash}"
+    update_env_smoke "LLM_MODEL_ROUTE_BALANCED_PROVIDER" "${BALANCED_PROVIDER:-bifrost_pro}"
+    update_env_smoke "LLM_MODEL_ROUTE_REASONING_PROVIDER" "${REASONING_PROVIDER:-bifrost_reasoner}"
+    update_env_smoke "LLM_MODEL_ROUTE_MIN_CONFIDENCE" "${MIN_CONFIDENCE:-0.65}"
+}
+
 write_secret_for_provider() {
     local provider="$1"
     local key="$2"
@@ -77,10 +104,16 @@ write_secret_for_provider() {
 
 # --- LLM Provider ---
 if [[ "$PROVIDER" == "mock" ]]; then
+    if [[ "${MODEL_ROUTING:-}" == "true" ]]; then
+        log_error "MODEL_ROUTING=true requires a non-mock provider."
+        exit 1
+    fi
     update_env_smoke "LLM_PROVIDER" "mock"
+    configure_model_routing
 else
     KEY=""
-    existing_secret="$(secret_path_for_provider "$PROVIDER")"
+    secret_provider="$(llm_secret_provider "$PROVIDER")"
+    existing_secret="$(secret_path_for_provider "$secret_provider")"
     if [[ -f "$existing_secret" && -s "$existing_secret" ]]; then
         KEY="$(cat "$existing_secret")"
         log_info "Using existing API key from $existing_secret"
@@ -101,15 +134,20 @@ else
             exit 1
         fi
     fi
-    if [[ "$PROVIDER" == "bifrost" && "$KEY" != sk-bf-* ]]; then
+    if [[ "$secret_provider" == "bifrost" && "$KEY" != sk-bf-* ]]; then
         log_error "Bifrost virtual keys must start with 'sk-bf-'."
         exit 1
     fi
 
-    write_secret_for_provider "$PROVIDER" "$KEY"
-    update_env_smoke "LLM_PROVIDER" "$PROVIDER"
+    write_secret_for_provider "$secret_provider" "$KEY"
+    if [[ "${MODEL_ROUTING:-}" == "true" ]]; then
+        configure_model_routing
+    else
+        update_env_smoke "LLM_PROVIDER" "$PROVIDER"
+        configure_model_routing
+    fi
 
-    if [[ "$PROVIDER" == "bifrost" ]]; then
+    if [[ "$secret_provider" == "bifrost" ]]; then
         BIFROST_ENC_KEY=""
         existing_enc_secret="$(secret_path_for_provider "bifrost_encryption")"
         if [[ -f "$existing_enc_secret" && -s "$existing_enc_secret" ]]; then

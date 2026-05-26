@@ -8,6 +8,7 @@
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from backend.ai.core.chat_context_builder import ChatContextBuilder
@@ -19,8 +20,9 @@ from backend.application.chat.timing import (
 )
 from backend.application.chat.worker_guardrail_handler import WorkerGuardrailHandler
 from backend.application.chat.worker_persistence_handler import WorkerPersistenceHandler
-from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+from backend.application.chat.worker_rag_orchestrator import PreparedGenerationContext, WorkerRAGOrchestrator
 from backend.application.chat.worker_stream_publisher import WorkerStreamPublisher
+from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.contracts.interfaces import (
     AbstractExternalContextProvider,
@@ -52,10 +54,33 @@ from backend.services.citation_validator import (
     validate_citations,
 )
 from backend.services.rag_evidence_policy import RAGEvidencePolicy
-from backend.services.rag_planning_service import RAGPlanningService
+from backend.services.rag_planning_service import (
+    DEFAULT_MODEL_ROUTE_REASON,
+    RAGPlanningService,
+)
 from backend.utils.token_estimation import count_tokens
 
 logger = logging.getLogger(__name__)
+
+
+def _provider_for_model_tier(tier: str) -> str:
+    if tier == "fast":
+        return ai_settings.LLM_MODEL_ROUTE_FAST_PROVIDER
+    if tier == "reasoning":
+        return ai_settings.LLM_MODEL_ROUTE_REASONING_PROVIDER
+    return ai_settings.LLM_MODEL_ROUTE_BALANCED_PROVIDER
+
+
+def _normalize_model_tier(tier: str) -> str:
+    return tier if tier in {"fast", "balanced", "reasoning"} else "balanced"
+
+
+def _default_model_name() -> str:
+    try:
+        return get_llm_model_config().resolve_profile().model
+    except Exception as exc:
+        logger.debug("Failed to resolve default LLM model name: %s", exc)
+        return "default"
 
 
 @dataclass
@@ -63,6 +88,26 @@ class _RAGRefusalSignal(Exception):
     """Signal from _prepare_generation when RAG refuses to answer."""
 
     search_context: dict | None
+
+
+@dataclass(frozen=True, slots=True)
+class _SelectedLLM:
+    service: AbstractLLMService
+    tier: str
+    provider: str
+    provider_config: str
+    model_name: str
+    route_confidence: float
+    route_reason: str
+    fallback: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedGeneration:
+    llm_query: LLMQueryDTO
+    tokens_input: int
+    search_context: dict | None
+    selected_llm: _SelectedLLM
 
 
 class LLMGenerationWorkerWorkflow:
@@ -83,10 +128,13 @@ class LLMGenerationWorkerWorkflow:
         persistence_handler: WorkerPersistenceHandler | None = None,
         stream_publisher: WorkerStreamPublisher | None = None,
         guardrail_handler: WorkerGuardrailHandler | None = None,
+        llm_service_resolver: Callable[[str | None], AbstractLLMService]
+        | None = None,
     ) -> None:
         self._redis_client = redis_client
         self.uow = uow
         self.llm_service = llm_service
+        self.llm_service_resolver = llm_service_resolver
         self.rag_orchestrator = rag_orchestrator or WorkerRAGOrchestrator(
             rag_service=rag_service,
             rag_planning_service=rag_planning_service,
@@ -112,8 +160,8 @@ class LLMGenerationWorkerWorkflow:
     async def _prepare_generation(
         self,
         payload: GenerationPayload,
-    ) -> tuple[LLMQueryDTO, int, dict | None]:
-        """RAG context -> LLMQueryDTO + tokens_input + search_context.
+    ) -> _PreparedGeneration:
+        """RAG context -> selected LLM + query + tokens + search context.
 
         Raises _RAGRefusalSignal when RAG refuses to answer.
         Raises RuntimeError when assembled prompt is missing.
@@ -132,7 +180,81 @@ class LLMGenerationWorkerWorkflow:
             conversation_history=assembled.messages,
             extra_body=payload.extra_body,
         )
-        return llm_query, tokens_input, search_context
+        selected_llm = self._select_llm(prepared_context)
+        if search_context is not None:
+            search_context = merge_metrics(
+                search_context,
+                self._model_route_metrics(selected_llm),
+            )
+        return _PreparedGeneration(
+            llm_query=llm_query,
+            tokens_input=tokens_input,
+            search_context=search_context,
+            selected_llm=selected_llm,
+        )
+
+    def _coerce_prepared_generation(self, prepared: object) -> _PreparedGeneration:
+        if isinstance(prepared, _PreparedGeneration):
+            return prepared
+        if isinstance(prepared, tuple) and len(prepared) == 3:
+            llm_query, tokens_input, search_context = prepared
+            return _PreparedGeneration(
+                llm_query=llm_query,
+                tokens_input=tokens_input,
+                search_context=search_context,
+                selected_llm=self._default_selected_llm(),
+            )
+        raise TypeError("Invalid prepared generation payload")
+
+    def _default_selected_llm(self) -> _SelectedLLM:
+        return _SelectedLLM(
+            service=self.llm_service,
+            tier="balanced",
+            provider=getattr(self.llm_service, "provider_name", "unknown"),
+            provider_config="default",
+            model_name=getattr(self.llm_service, "model_name", _default_model_name()),
+            route_confidence=1.0,
+            route_reason=DEFAULT_MODEL_ROUTE_REASON,
+        )
+
+    def _select_llm(self, prepared_context: PreparedGenerationContext) -> _SelectedLLM:
+        tier = _normalize_model_tier(prepared_context.answer_model_tier)
+        route_confidence = float(prepared_context.model_route_confidence or 0.0)
+        route_reason = str(prepared_context.model_route_reason or "")
+        provider_config = (
+            _provider_for_model_tier(tier)
+            if ai_settings.LLM_MODEL_ROUTING_ENABLED
+            and route_confidence >= ai_settings.LLM_MODEL_ROUTE_MIN_CONFIDENCE
+            else None
+        )
+        service = self.llm_service
+        fallback = False
+        if provider_config is not None:
+            if self.llm_service_resolver is None:
+                provider_config = None
+                fallback = True
+            else:
+                try:
+                    service = self.llm_service_resolver(provider_config)
+                except Exception as exc:
+                    fallback = True
+                    logger.warning(
+                        "Model tier routing failed, falling back to default LLM: tier=%s provider=%s error=%s",
+                        tier,
+                        provider_config,
+                        exc,
+                    )
+                    provider_config = None
+        return _SelectedLLM(
+            service=service,
+            tier=tier if provider_config is not None else "balanced",
+            provider=getattr(service, "provider_name", "unknown"),
+            provider_config=provider_config or "default",
+            model_name=getattr(service, "model_name", _default_model_name()),
+            route_confidence=route_confidence,
+            route_reason=route_reason,
+            fallback=fallback,
+        )
 
     async def _handle_generation_error(
         self,
@@ -164,6 +286,7 @@ class LLMGenerationWorkerWorkflow:
     def _build_span_attributes(
         self,
         *,
+        llm_service: AbstractLLMService,
         stream: bool,
         session_id: uuid.UUID,
         assistant_message_id: uuid.UUID | None,
@@ -174,8 +297,8 @@ class LLMGenerationWorkerWorkflow:
         """Build OTel span attributes shared by stream and non-stream paths."""
         attrs: dict[str, object] = {
             **build_llm_span_attributes(
-                provider=getattr(self.llm_service, "provider_name", "unknown"),
-                model=getattr(self.llm_service, "model_name", "unknown"),
+                provider=getattr(llm_service, "provider_name", "unknown"),
+                model=getattr(llm_service, "model_name", "unknown"),
                 operation="generate",
                 stream=stream,
             ),
@@ -183,7 +306,7 @@ class LLMGenerationWorkerWorkflow:
             "chat.assistant_message_id": assistant_message_id,
             "chat.prompt.tokens_input": tokens_input,
             "chat.prompt.uses_rag": search_context is not None,
-            "llm.provider": getattr(self.llm_service, "provider_name", "unknown"),
+            "llm.provider": getattr(llm_service, "provider_name", "unknown"),
         }
         if channel is not None:
             attrs["redis.channel"] = channel
@@ -221,13 +344,29 @@ class LLMGenerationWorkerWorkflow:
                 assistant_message_id=assistant_message_id,
             )
 
-    def _count_output_tokens(self, content: str) -> int:
+    def _count_output_tokens(
+        self,
+        content: str,
+        llm_service: AbstractLLMService | None = None,
+    ) -> int:
+        service = llm_service or self.llm_service
         model_name = getattr(
-            self.llm_service,
+            service,
             "model_name",
             get_llm_model_config().resolve_profile().model,
         )
         return count_tokens(content, model_name)
+
+    @staticmethod
+    def _model_route_metrics(selected_llm: _SelectedLLM) -> dict[str, object]:
+        return {
+            "answer_model_tier": selected_llm.tier,
+            "answer_model_provider": selected_llm.provider_config,
+            "answer_model_name": selected_llm.model_name,
+            "model_route_confidence": selected_llm.route_confidence,
+            "model_route_reason": selected_llm.route_reason,
+            "model_route_fallback": selected_llm.fallback,
+        }
 
     @staticmethod
     def _enrich_metadata_with_citation(
@@ -278,11 +417,9 @@ class LLMGenerationWorkerWorkflow:
                 )
                 return
             try:
-                (
-                    llm_query,
-                    tokens_input,
-                    search_context,
-                ) = await self._prepare_generation(payload)
+                prepared = self._coerce_prepared_generation(
+                    await self._prepare_generation(payload)
+                )
             except _RAGRefusalSignal as sig:
                 await self.guardrail_handler.handle_stream_refusal(
                     channel=channel,
@@ -294,9 +431,16 @@ class LLMGenerationWorkerWorkflow:
                 )
                 return
 
+            llm_query = prepared.llm_query
+            tokens_input = prepared.tokens_input
+            search_context = prepared.search_context
+            selected_llm = prepared.selected_llm
+            model_route_metrics = self._model_route_metrics(selected_llm)
+
             with trace_span(
                 "taskiq.llm_stream.generate_and_publish",
                 self._build_span_attributes(
+                    llm_service=selected_llm.service,
                     stream=True,
                     session_id=payload.session_id,
                     assistant_message_id=assistant_message_id,
@@ -329,9 +473,10 @@ class LLMGenerationWorkerWorkflow:
                         "chat.session_id": payload.session_id,
                         "chat.assistant_message_id": assistant_message_id,
                         "chat.stream": True,
+                        "llm.model_tier": selected_llm.tier,
                     }
                 ):
-                    async for chunk in self.llm_service.stream_response(llm_query):
+                    async for chunk in selected_llm.service.stream_response(llm_query):
                         candidate_content = "".join([*accumulated_content, chunk])
                         output_decision = evaluate_output_guardrail(candidate_content)
                         if output_decision.triggered:
@@ -400,6 +545,7 @@ class LLMGenerationWorkerWorkflow:
                             citation_result=citation_result,
                         ),
                         {
+                            **model_route_metrics,
                             "worker_total_latency_ms": worker_total_latency_ms,
                             "llm_first_token_ms": first_published_from_llm_ms,
                             "first_token_latency_ms": first_token_latency_ms,
@@ -413,7 +559,7 @@ class LLMGenerationWorkerWorkflow:
                         },
                     ),
                     idempotency_lock_key=idempotency_lock_key,
-                    model_name=payload.billing_model_name,
+                    model_name=selected_llm.model_name,
                 )
 
                 citation_attrs: dict[str, object] = {}
@@ -436,6 +582,8 @@ class LLMGenerationWorkerWorkflow:
                         "chat.tokens_output": tokens_output,
                         "gen_ai.usage.input_tokens": tokens_input,
                         "gen_ai.usage.output_tokens": tokens_output,
+                        "llm.model_tier": selected_llm.tier,
+                        "llm.route.provider_config": selected_llm.provider_config,
                         **citation_attrs,
                     },
                 )
@@ -477,11 +625,9 @@ class LLMGenerationWorkerWorkflow:
                     idempotency_lock_key=idempotency_lock_key,
                 )
             try:
-                (
-                    llm_query,
-                    tokens_input,
-                    search_context,
-                ) = await self._prepare_generation(payload)
+                prepared = self._coerce_prepared_generation(
+                    await self._prepare_generation(payload)
+                )
             except _RAGRefusalSignal as sig:
                 return await self.guardrail_handler.handle_nonstream_refusal(
                     assistant_message_id=assistant_message_id,
@@ -491,9 +637,16 @@ class LLMGenerationWorkerWorkflow:
                     idempotency_lock_key=idempotency_lock_key,
                 )
 
+            llm_query = prepared.llm_query
+            tokens_input = prepared.tokens_input
+            search_context = prepared.search_context
+            selected_llm = prepared.selected_llm
+            model_route_metrics = self._model_route_metrics(selected_llm)
+
             with trace_span(
                 "taskiq.llm_nonstream.generate",
                 self._build_span_attributes(
+                    llm_service=selected_llm.service,
                     stream=False,
                     session_id=payload.session_id,
                     assistant_message_id=assistant_message_id,
@@ -506,10 +659,11 @@ class LLMGenerationWorkerWorkflow:
                         "chat.session_id": payload.session_id,
                         "chat.assistant_message_id": assistant_message_id,
                         "chat.stream": False,
+                        "llm.model_tier": selected_llm.tier,
                     }
                 ):
                     llm_started = perf_start()
-                    result = await self.llm_service.generate_response(llm_query)
+                    result = await selected_llm.service.generate_response(llm_query)
                     llm_generate_ms = elapsed_ms(llm_started)
                 set_span_attributes(
                     span,
@@ -521,6 +675,8 @@ class LLMGenerationWorkerWorkflow:
                         "llm.response.char_count": len(result.content),
                         "gen_ai.usage.input_tokens": result.prompt_tokens,
                         "gen_ai.usage.output_tokens": result.completion_tokens,
+                        "llm.model_tier": selected_llm.tier,
+                        "llm.route.provider_config": selected_llm.provider_config,
                     },
                 )
 
@@ -558,7 +714,8 @@ class LLMGenerationWorkerWorkflow:
             tokens_output = (
                 self._count_output_tokens(full_content)
                 if output_decision.triggered
-                else result.completion_tokens or self._count_output_tokens(full_content)
+                else result.completion_tokens
+                or self._count_output_tokens(full_content)
             )
             worker_total_latency_ms = elapsed_ms(worker_started)
 
@@ -579,6 +736,7 @@ class LLMGenerationWorkerWorkflow:
                         citation_result=citation_result,
                     ),
                     {
+                        **model_route_metrics,
                         "worker_total_latency_ms": worker_total_latency_ms,
                         "llm_generate_ms": llm_generate_ms,
                         "tokens_input": tokens_input,
@@ -590,7 +748,7 @@ class LLMGenerationWorkerWorkflow:
                     },
                 ),
                 idempotency_lock_key=idempotency_lock_key,
-                model_name=payload.billing_model_name,
+                model_name=selected_llm.model_name,
             )
 
             if citation_result is not None:

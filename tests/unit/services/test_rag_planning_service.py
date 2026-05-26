@@ -82,6 +82,7 @@ def test_rag_execution_plan_clamps_values_to_config_limits(
     assert plan.external_sources == ["web"]
     assert plan.external_top_k == 4
     assert plan.route_confidence == 0.0
+    assert plan.answer_model_tier == "balanced"
 
 
 def test_rag_execution_plan_clamps_route_confidence() -> None:
@@ -89,9 +90,41 @@ def test_rag_execution_plan_clamps_route_confidence() -> None:
         should_use_rag=False,
         selected_sources=[],
         route_confidence=1.5,
+        model_route_confidence=1.5,
     ).clamped()
 
     assert plan.route_confidence == 1.0
+    assert plan.model_route_confidence == 1.0
+
+
+def test_rag_execution_plan_falls_back_to_balanced_for_low_model_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.LLM_MODEL_ROUTE_MIN_CONFIDENCE",
+        0.65,
+    )
+
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        selected_sources=[],
+        answer_model_tier="fast",
+        model_route_confidence=0.4,
+    ).clamped()
+
+    assert plan.answer_model_tier == "balanced"
+    assert plan.model_route_confidence == 0.4
+    assert plan.model_route_reason == "low confidence, fallback to balanced"
+
+
+def test_rag_execution_plan_rejects_invalid_model_tier() -> None:
+    with pytest.raises(ValidationError):
+        RAGExecutionPlan(
+            should_use_rag=False,
+            selected_sources=[],
+            answer_model_tier="tiny",
+            model_route_confidence=0.9,
+        )
 
 
 def test_from_settings_sets_answer_route_from_selected_sources() -> None:
@@ -106,6 +139,8 @@ def test_from_settings_sets_answer_route_from_selected_sources() -> None:
 
     assert rag_plan.answer_route == "rag"
     assert large_plan.answer_route == "large"
+    assert rag_plan.answer_model_tier == "balanced"
+    assert rag_plan.model_route_confidence == 1.0
 
 
 def test_refuse_route_clears_context_sources() -> None:
@@ -403,6 +438,8 @@ async def test_rag_planning_service_returns_fallback_on_invalid_output(
 def test_planner_instructions_include_level2_route_contract() -> None:
     assert "answer_route" in _PLANNER_INSTRUCTIONS
     assert "route_confidence" in _PLANNER_INSTRUCTIONS
+    assert "answer_model_tier" in _PLANNER_INSTRUCTIONS
+    assert "多约束分析" in _PLANNER_INSTRUCTIONS
     assert "普通闲聊" in _PLANNER_INSTRUCTIONS
 
 

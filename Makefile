@@ -97,7 +97,7 @@ help:
 		'  env-debug-down       Stop Docker debug dependencies' \
 		'  env-debug-logs       Show recent Docker debug dependency logs' \
 		'  env-debug-services   List services enabled by the debug compose stack' \
-		'  set-llm              Set API key securely (Usage: make set-llm PROVIDER=gemini [EMBED_PROVIDER=google])' \
+		'  set-llm              Set API key securely (Usage: make set-llm PROVIDER=bifrost [MODEL_ROUTING=true])' \
 		'  seed-dev             Seed fixed local data for admin/permission testing' \
 		'  pr-report            Generate a local PR readiness Markdown report' \
 		'  verify-smoke         Run smoke HTTP checks against the running stack' \
@@ -229,7 +229,13 @@ env-smoke-create-kb:
 	bash scripts/smoke/create_kb.sh $(ARGS)
 
 set-llm:
-	@bash scripts/smoke/set_llm.sh "$(PROVIDER)" "$(or $(EMBED_PROVIDER),)"
+	@MODEL_ROUTING="$(or $(MODEL_ROUTING),)" \
+	ROUTING_LLM_PROVIDER="$(or $(ROUTING_LLM_PROVIDER),)" \
+	FAST_PROVIDER="$(or $(FAST_PROVIDER),)" \
+	BALANCED_PROVIDER="$(or $(BALANCED_PROVIDER),)" \
+	REASONING_PROVIDER="$(or $(REASONING_PROVIDER),)" \
+	MIN_CONFIDENCE="$(or $(MIN_CONFIDENCE),)" \
+	bash scripts/smoke/set_llm.sh "$(PROVIDER)" "$(or $(EMBED_PROVIDER),)"
 
 seed-dev:
 	uv run python scripts/seed/dev_seed.py $(ARGS)

@@ -42,6 +42,9 @@ class DummyContainer:
     def get_llm_service(self) -> object:
         return self.llm_service
 
+    def get_llm_service_for_provider(self, provider: str | None) -> object:
+        return self.llm_service
+
     def get_embedder(self) -> object:
         return self.embedder
 
@@ -106,6 +109,7 @@ def test_wrapper_functions_delegate_to_container_return_services() -> None:
 
     assert dependencies.get_worker_session_factory() is container.session_factory
     assert dependencies.get_worker_llm_service() is container.llm_service
+    assert dependencies.get_worker_llm_service_for_provider("fast") is container.llm_service
     assert dependencies.get_worker_embedder() is container.embedder
     assert dependencies.get_worker_rag_service() is container.rag_service
     assert (
@@ -172,6 +176,51 @@ def test_get_rerank_service_returns_none_when_disabled(monkeypatch) -> None:
 
     container = WorkerContainer()
     assert container.get_rerank_service() is None
+
+
+def test_get_llm_service_for_provider_caches_services(monkeypatch) -> None:
+    from backend.worker.dependencies import WorkerContainer
+
+    created: list[str | None] = []
+
+    def fake_create(provider: str | None = None) -> object:
+        created.append(provider)
+        return object()
+
+    monkeypatch.setattr(
+        "backend.worker.dependencies.LLMProviderFactory.create",
+        fake_create,
+    )
+
+    container = WorkerContainer()
+    first = container.get_llm_service_for_provider("fast")
+    second = container.get_llm_service_for_provider("fast")
+
+    assert first is second
+    assert created == ["fast"]
+
+
+def test_get_llm_service_for_provider_caches_create_errors(monkeypatch) -> None:
+    from backend.worker.dependencies import WorkerContainer
+
+    created: list[str | None] = []
+
+    def fake_create(provider: str | None = None) -> object:
+        created.append(provider)
+        raise RuntimeError("bad provider")
+
+    monkeypatch.setattr(
+        "backend.worker.dependencies.LLMProviderFactory.create",
+        fake_create,
+    )
+
+    container = WorkerContainer()
+    with pytest.raises(RuntimeError, match="bad provider"):
+        container.get_llm_service_for_provider("missing")
+    with pytest.raises(RuntimeError, match="bad provider"):
+        container.get_llm_service_for_provider("missing")
+
+    assert created == ["missing"]
 
 
 @pytest.mark.asyncio

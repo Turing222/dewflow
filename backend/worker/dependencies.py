@@ -37,6 +37,8 @@ class WorkerContainer:
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker | None = None
         self._llm_service: AbstractLLMService | None = None
+        self._llm_services_by_provider: dict[str, AbstractLLMService] = {}
+        self._llm_service_errors_by_provider: dict[str, Exception] = {}
         self._embedder: AbstractRAGEmbedder | None = None
         self._rerank_service: AbstractRerankService | None = None
         self._rag_service: AbstractRAGService | None = None
@@ -55,6 +57,25 @@ class WorkerContainer:
         if self._llm_service is None:
             self._llm_service = LLMProviderFactory.create()
         return self._llm_service
+
+    def get_llm_service_for_provider(
+        self,
+        provider: str | None,
+    ) -> AbstractLLMService:
+        """Return a cached worker LLM service for an explicit provider/profile."""
+        if provider is None:
+            return self.get_llm_service()
+        if provider in self._llm_service_errors_by_provider:
+            raise self._llm_service_errors_by_provider[provider]
+        if provider not in self._llm_services_by_provider:
+            try:
+                self._llm_services_by_provider[provider] = LLMProviderFactory.create(
+                    provider
+                )
+            except Exception as exc:
+                self._llm_service_errors_by_provider[provider] = exc
+                raise
+        return self._llm_services_by_provider[provider]
 
     def get_embedder(self) -> AbstractRAGEmbedder:
         """Return the cached worker RAG embedder."""
@@ -135,6 +156,9 @@ class WorkerContainer:
         """Release cached resources owned by this worker process."""
         if self._llm_service is not None:
             await self._llm_service.close()
+        for service in self._llm_services_by_provider.values():
+            if service is not self._llm_service:
+                await service.close()
         if self._embedder is not None:
             await self._embedder.close()
         if self._external_context_provider is not None:
@@ -147,6 +171,8 @@ class WorkerContainer:
         self._session_factory = None
         self._rag_service = None
         self._llm_service = None
+        self._llm_services_by_provider = {}
+        self._llm_service_errors_by_provider = {}
         self._embedder = None
         self._rerank_service = None
         self._rag_planning_service = None
@@ -187,6 +213,13 @@ def get_worker_session_factory() -> async_sessionmaker:
 def get_worker_llm_service() -> AbstractLLMService:
     """Return the cached worker LLM service."""
     return get_worker_container().get_llm_service()
+
+
+def get_worker_llm_service_for_provider(
+    provider: str | None,
+) -> AbstractLLMService:
+    """Return the cached worker LLM service for an explicit provider/profile."""
+    return get_worker_container().get_llm_service_for_provider(provider)
 
 
 def get_worker_embedder() -> AbstractRAGEmbedder:

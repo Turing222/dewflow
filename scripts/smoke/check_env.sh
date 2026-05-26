@@ -29,9 +29,7 @@ check_provider_secret() {
 
 # 1. Check LLM_PROVIDER
 if [[ "${LLM_PROVIDER:-mock}" != "mock" ]]; then
-    # Some providers like 'deepseek/deepseek-reasoner' have slashes
-    # We only care about the base provider name.
-    base_provider="${LLM_PROVIDER%%/*}"
+    base_provider="$(llm_secret_provider "$LLM_PROVIDER")"
     check_provider_secret "$base_provider"
 
     if [[ "$base_provider" == "bifrost" ]]; then
