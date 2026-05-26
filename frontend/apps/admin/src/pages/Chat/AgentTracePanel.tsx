@@ -173,7 +173,7 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                                 <div className={styles['trace-step-details']}>
                                                     {Object.entries(displayMetrics).map(([key, value]) => (
                                                         <span key={key}>
-                                                            {key}: {formatMetricValue(key, value)}
+                                                            {t(`trace.metrics.${key}`, key)}: {formatMetricValue(key, value)}
                                                         </span>
                                                     ))}
                                                 </div>
@@ -412,6 +412,7 @@ function formatMetricValue(key: string, value: number | string | boolean): strin
     if (typeof value === 'boolean') return value ? 'yes' : 'no';
     if (typeof value === 'number') {
         if (key.endsWith('_ms')) return formatDuration(value);
+        if (key === 'model_route_confidence') return `${(value * 100).toFixed(0)}%`;
         return String(value);
     }
     return value;

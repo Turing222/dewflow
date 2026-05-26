@@ -85,6 +85,16 @@
     height: 36px;
 }
 
+.assistant-avatar-wrapper {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: -3px 0;
+}
+
 .chat-bubble {
     max-width: 75%;
     padding: 10px 14px;

@@ -84,6 +84,12 @@ export const ragMetricsSchema = z.object({
     answer_route: z.string().optional(),
     route_confidence: z.number().optional(),
     planner_refusal_reason: z.string().optional(),
+    answer_model_tier: z.string().optional(),
+    answer_model_provider: z.string().optional(),
+    answer_model_name: z.string().optional(),
+    model_route_confidence: z.number().optional(),
+    model_route_reason: z.string().optional(),
+    model_route_fallback: z.boolean().optional(),
 }).partial();
 
 export const chatMessageMetricsSchema = z.object({
@@ -96,6 +102,12 @@ export const chatMessageMetricsSchema = z.object({
     tokens_input: z.number().optional(),
     tokens_output: z.number().optional(),
     tokens_per_second: z.number().optional(),
+    answer_model_tier: z.string().optional(),
+    answer_model_provider: z.string().optional(),
+    answer_model_name: z.string().optional(),
+    model_route_confidence: z.number().optional(),
+    model_route_reason: z.string().optional(),
+    model_route_fallback: z.boolean().optional(),
 }).partial();
 
 export const searchContextSchema = z.object({

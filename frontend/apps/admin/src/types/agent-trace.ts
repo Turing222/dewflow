@@ -6,6 +6,13 @@ import {
 import type { ChatMessageMetrics, RagMetrics } from '../schemas/chat';
 
 export type AgentTraceStepStatus = 'idle' | 'running' | 'done' | 'skipped' | 'error';
+type ModelRouteMetricKey =
+    | 'answer_model_tier'
+    | 'answer_model_provider'
+    | 'answer_model_name'
+    | 'model_route_confidence'
+    | 'model_route_reason'
+    | 'model_route_fallback';
 
 export interface AgentTraceStep {
     id: string;
@@ -106,6 +113,16 @@ function hasAnyMetric(
         (messageMetrics && Object.keys(messageMetrics).length > 0) ||
         (ragMetrics && Object.keys(ragMetrics).length > 0),
     );
+}
+
+function pickModelRouteMetric(
+    key: ModelRouteMetricKey,
+    messageMetrics?: ChatMessageMetrics,
+    ragMetrics?: RagMetrics,
+) {
+    // Message metadata reflects the final generation model; RAG metrics are
+    // retained as a fallback for older records or pre-generation traces.
+    return messageMetrics?.[key] ?? ragMetrics?.[key];
 }
 
 export function applyTraceMetricsToSteps(
@@ -230,6 +247,20 @@ export function applyTraceMetricsToSteps(
             if (firstToken !== undefined) metricDetails.first_token_latency_ms = firstToken;
             if (messageMetrics?.llm_first_token_ms !== undefined) {
                 metricDetails.llm_first_token_ms = messageMetrics.llm_first_token_ms;
+            }
+            const modelRouteKeys: ModelRouteMetricKey[] = [
+                'answer_model_tier',
+                'answer_model_provider',
+                'answer_model_name',
+                'model_route_confidence',
+                'model_route_reason',
+                'model_route_fallback',
+            ];
+            for (const key of modelRouteKeys) {
+                const value = pickModelRouteMetric(key, messageMetrics, ragMetrics);
+                if (value !== undefined) {
+                    metricDetails[key] = value;
+                }
             }
             return {
                 ...step,

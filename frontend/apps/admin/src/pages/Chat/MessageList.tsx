@@ -6,6 +6,7 @@ import type { ChatMessage } from '../../types/chat';
 import type { ChatMode } from '../../features/chat/use-chat-controller';
 import { parseCitations } from '../../types/agent-trace';
 import styles from './MessageList.module.css';
+import PixelAvatar from './PixelAvatar';
 
 const { TextArea } = Input;
 
@@ -175,11 +176,20 @@ const MessageList: React.FC<MessageListProps> = ({
         const isUser = msg.role === 'user';
         return (
             <div key={msg.id} className={`${styles['chat-message']} chat-message ${isUser ? `${styles.user} user` : `${styles.assistant} assistant`}`}>
-                <Avatar
-                    className={styles['chat-avatar']}
-                    style={{ backgroundColor: isUser ? 'var(--color-bg-subtle)' : 'var(--color-bg-container)', flexShrink: 0 }}
-                    icon={isUser ? <UserIcon size={18} color="var(--color-primary)" /> : <Bot size={18} color="var(--color-primary-gradient-end)" />}
-                />
+                {isUser ? (
+                    <Avatar
+                        className={styles['chat-avatar']}
+                        style={{ backgroundColor: 'var(--color-bg-subtle)', flexShrink: 0 }}
+                        icon={<UserIcon size={18} color="var(--color-primary)" />}
+                    />
+                ) : (
+                    <div className={styles['assistant-avatar-wrapper']}>
+                        <PixelAvatar 
+                            isStreaming={false} 
+                            isUserTyping={inputValue.trim().length > 0} 
+                        />
+                    </div>
+                )}
                 <div className={`${styles['chat-bubble']} ${isUser ? styles['user-bubble'] : styles['assistant-bubble']}`}>
                     {msg.status === 'failed' ? (
                         <>
@@ -276,11 +286,9 @@ const MessageList: React.FC<MessageListProps> = ({
                         {messages.map(renderMessage)}
                         {isStreaming && streamingText && (
                             <div className={`${styles['chat-message']} chat-message ${styles.assistant} assistant`}>
-                                <Avatar
-                                    className={styles['chat-avatar']}
-                                    style={{ backgroundColor: 'var(--color-bg-container)', flexShrink: 0 }}
-                                    icon={<Bot size={18} color="var(--color-primary-gradient-end)" />}
-                                />
+                                <div className={styles['assistant-avatar-wrapper']}>
+                                    <PixelAvatar isStreaming={true} isUserTyping={false} />
+                                </div>
                                 <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
                                     <div className={`${styles['message-text']} message-text`}>
                                         {renderMessageContent(streamingText)}
@@ -291,11 +299,9 @@ const MessageList: React.FC<MessageListProps> = ({
                         )}
                         {isStreaming && !streamingText && (
                             <div className={`${styles['chat-message']} chat-message ${styles.assistant} assistant`}>
-                                <Avatar
-                                    className={styles['chat-avatar']}
-                                    style={{ backgroundColor: 'var(--color-bg-container)', flexShrink: 0 }}
-                                    icon={<Bot size={18} color="var(--color-primary-gradient-end)" />}
-                                />
+                                <div className={styles['assistant-avatar-wrapper']}>
+                                    <PixelAvatar isStreaming={true} isUserTyping={false} />
+                                </div>
                                 <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
                                     <div className={styles['thinking-dots']}>
                                         <span></span><span></span><span></span>

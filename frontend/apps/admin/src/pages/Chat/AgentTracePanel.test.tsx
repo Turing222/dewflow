@@ -172,7 +172,11 @@ describe('AgentTracePanel', () => {
                     ...step,
                     status: 'done',
                     durationMs: 1500,
-                    metricDetails: { first_token_latency_ms: 320 },
+                    metricDetails: {
+                        first_token_latency_ms: 320,
+                        answer_model_tier: 'fast',
+                        model_route_confidence: 0.91,
+                    },
                 };
             }
             if (step.id === 'kb-search') {
@@ -205,5 +209,7 @@ describe('AgentTracePanel', () => {
         expect(screen.getByTestId('trace-metrics-summary')).toHaveTextContent('2.6 s');
         expect(screen.getByTestId('trace-step-duration-kb-search')).toHaveTextContent('120 ms');
         expect(screen.getByText(/hybrid/)).toBeInTheDocument();
+        expect(screen.getByText(/fast/)).toBeInTheDocument();
+        expect(screen.getByText(/91%/)).toBeInTheDocument();
     });
 });

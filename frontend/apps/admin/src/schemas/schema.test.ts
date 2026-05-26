@@ -76,12 +76,15 @@ describe('schema layer', () => {
                     hit_count: 4,
                     retrieval_mode: 'hybrid',
                     rerank_used: true,
+                    answer_model_tier: 'fast',
+                    model_route_confidence: 0.91,
                 },
             },
             message_metadata: {
                 metrics: {
                     first_token_latency_ms: 250,
                     tokens_per_second: 12.5,
+                    answer_model_name: 'deepseek-v4-flash',
                 },
             },
             created_at: '2026-05-21T12:00:00Z',
@@ -92,8 +95,10 @@ describe('schema layer', () => {
         expect(message.message_metadata?.metrics).toEqual({
             first_token_latency_ms: 250,
             tokens_per_second: 12.5,
+            answer_model_name: 'deepseek-v4-flash',
         });
         expect(searchContext.metrics?.retrieval_mode).toBe('hybrid');
+        expect(searchContext.metrics?.answer_model_tier).toBe('fast');
     });
 
     describe('credit schema', () => {
