@@ -77,7 +77,8 @@ async def test_worker_container_close_disposes_engine_and_clears_refs() -> None:
     container._session_factory = object()
     container._llm_service = llm_service
     container._embedder = embedder
-    container._rerank_service = AsyncMock()
+    rerank_service = AsyncMock()
+    container._rerank_service = rerank_service
     container._rag_service = object()
     container._rag_planning_service = object()
     container._external_context_provider = external_context_provider
@@ -88,7 +89,7 @@ async def test_worker_container_close_disposes_engine_and_clears_refs() -> None:
     engine.dispose.assert_awaited_once()
     llm_service.close.assert_awaited_once()
     embedder.close.assert_awaited_once()
-    container._rerank_service.close.assert_awaited_once()
+    rerank_service.close.assert_awaited_once()
     external_context_provider.close.assert_awaited_once()
     assert container._engine is None
     assert container._session_factory is None
@@ -109,7 +110,10 @@ def test_wrapper_functions_delegate_to_container_return_services() -> None:
 
     assert dependencies.get_worker_session_factory() is container.session_factory
     assert dependencies.get_worker_llm_service() is container.llm_service
-    assert dependencies.get_worker_llm_service_for_provider("fast") is container.llm_service
+    assert (
+        dependencies.get_worker_llm_service_for_provider("fast")
+        is container.llm_service
+    )
     assert dependencies.get_worker_embedder() is container.embedder
     assert dependencies.get_worker_rag_service() is container.rag_service
     assert (
@@ -235,15 +239,11 @@ async def test_get_rag_service_prefers_reranker_over_llm(monkeypatch) -> None:
         "backend.worker.dependencies.RerankProviderFactory.create",
         lambda provider: fake_reranker,
     )
-    monkeypatch.setattr(
-        "backend.worker.dependencies.ai_settings.RAG_TOP_K", 4
-    )
+    monkeypatch.setattr("backend.worker.dependencies.ai_settings.RAG_TOP_K", 4)
     monkeypatch.setattr(
         "backend.worker.dependencies.ai_settings.RAG_RERANK_CANDIDATE_COUNT", 20
     )
-    monkeypatch.setattr(
-        "backend.worker.dependencies.ai_settings.RAG_RERANK_TOP_K", 4
-    )
+    monkeypatch.setattr("backend.worker.dependencies.ai_settings.RAG_RERANK_TOP_K", 4)
     monkeypatch.setattr(
         "backend.worker.dependencies.ai_settings.RAG_EMBED_BATCH_SIZE", 10
     )

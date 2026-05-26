@@ -77,7 +77,12 @@ class AsyncContextManagerMock:
     async def __aenter__(self) -> None:
         pass
 
-    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
         pass
 
 
@@ -128,4 +133,3 @@ async def test_delete_kb_file_success() -> None:
         audit_service=SimpleNamespace(),
     )
     service.remove_file.assert_awaited_once_with(file_id=file_id, user_id=user_id)
-

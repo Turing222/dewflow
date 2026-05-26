@@ -60,8 +60,9 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose }) 
             await refreshUser();
             antdMessage.success(t('auth.profile_update_success', '个人信息更新成功'));
             onClose();
-        } catch (err: any) {
-            const detail = err?.response?.data?.detail || err?.message;
+        } catch (err: unknown) {
+            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+                || (err instanceof Error ? err.message : undefined);
             antdMessage.error(detail || t('auth.profile_update_error', '更新个人信息失败'));
         }
     };

@@ -15,6 +15,7 @@ const PhoneLoginForm: React.FC = () => {
     const [loading, setLoading] = React.useState(false);
     const [codeSent, setCodeSent] = React.useState(false);
     const [countdown, setCountdown] = React.useState(0);
+    const [demoCode, setDemoCode] = React.useState<string | null>(null);
     const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
     React.useEffect(() => {
@@ -43,17 +44,21 @@ const PhoneLoginForm: React.FC = () => {
                 form.validateFields(['phone']);
                 return;
             }
-            await sendSMSCodeAPI(phone);
+            const res = await sendSMSCodeAPI(phone);
             setCodeSent(true);
             startCountdown();
             message.success(t('auth.code_sent'));
-            // Mock 模式下，本地开发自动填充与手机号绑定的确定性 6 位验证码
-            if (import.meta.env.DEV) {
+            if (res.code) {
+                setDemoCode(res.code);
+                form.setFieldValue('code', res.code);
+            } else if (import.meta.env.DEV) {
+                // Fallback: mock 模式下本地计算确定性验证码
                 let h = 0;
                 for (let i = 0; i < phone.length; i++) {
                     h = (31 * h + phone.charCodeAt(i)) & 0xFFFFFFFF;
                 }
                 const mockCode = (h % 900000 + 100000).toString();
+                setDemoCode(mockCode);
                 form.setFieldValue('code', mockCode);
             }
         } catch {
@@ -124,6 +129,22 @@ const PhoneLoginForm: React.FC = () => {
                     </Button>
                 </div>
             </Form.Item>
+
+            {demoCode && (
+                <div
+                    style={{
+                        textAlign: 'center',
+                        marginBottom: 12,
+                        padding: '6px 12px',
+                        background: 'rgba(0,0,0,0.04)',
+                        borderRadius: 6,
+                        fontSize: 13,
+                        color: '#666',
+                    }}
+                >
+                    {t('auth.demo_code')}: <strong>{demoCode}</strong>
+                </div>
+            )}
 
             <Form.Item style={{ marginBottom: 0 }}>
                 <Button type="primary" htmlType="submit" block size="large" loading={loading}>

@@ -72,7 +72,6 @@ export async function performLogin(
   code = '123456',
 ) {
   await page.getByTestId('user-menu-btn').click();
-  await page.getByRole('menuitem', { name: '登录' }).click();
   await page.locator('.auth-modal').locator('input#phone-login_phone').fill(phone);
   await page.locator('.auth-modal').locator('input[maxlength="6"]').fill(code);
   await page.locator('.auth-modal').locator('button[type="submit"]').click();

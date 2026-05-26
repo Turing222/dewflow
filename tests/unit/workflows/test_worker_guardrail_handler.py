@@ -153,7 +153,9 @@ async def test_stream_refusal_uses_planner_message_and_metadata() -> None:
     )
     kwargs = persistence.persist_success.call_args.kwargs
     assert kwargs["content"] == ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
-    assert kwargs["message_metadata"]["badcase"]["reason"] == "planner_preflight_refusal"
+    assert (
+        kwargs["message_metadata"]["badcase"]["reason"] == "planner_preflight_refusal"
+    )
 
 
 async def test_nonstream_input_block_returns_result_and_persists() -> None:
@@ -211,7 +213,9 @@ async def test_nonstream_refusal_uses_planner_message_and_metadata() -> None:
 
     assert result.content == ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
     kwargs = persistence.persist_success.call_args.kwargs
-    assert kwargs["message_metadata"]["badcase"]["reason"] == "planner_preflight_refusal"
+    assert (
+        kwargs["message_metadata"]["badcase"]["reason"] == "planner_preflight_refusal"
+    )
 
 
 async def test_idempotency_lock_skipped_when_message_id_none() -> None:

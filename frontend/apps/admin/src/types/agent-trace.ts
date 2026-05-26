@@ -30,7 +30,7 @@ export interface CitationItem {
     relevanceScore: number;
     summarySnippet: string;
     chunkIndex?: number;
-    metaInfo?: Record<string, any>;
+    metaInfo?: Record<string, unknown>;
     url?: string;
     provider?: string;
     scoreKind?: string;
@@ -321,7 +321,7 @@ export function parseCitations(
                                 relevanceScore: typeof ch.score === 'number' ? ch.score : 0,
                                 summarySnippet: (ch.text as string) || (ch.content as string) || '',
                                 chunkIndex: typeof ch.chunk_index === 'number' ? ch.chunk_index : undefined,
-                                metaInfo: (ch.meta_info && typeof ch.meta_info === 'object') ? ch.meta_info as Record<string, any> : undefined,
+                                metaInfo: (ch.meta_info && typeof ch.meta_info === 'object') ? ch.meta_info as Record<string, unknown> : undefined,
                                 url: (ch.url as string) || (ref.url as string) || undefined,
                                 provider: (ch.provider as string) || (ref.provider as string) || undefined,
                                 scoreKind: (ch.score_kind as string) || undefined,

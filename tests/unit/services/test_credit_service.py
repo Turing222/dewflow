@@ -25,7 +25,9 @@ def make_account(*, balance: int = 1000) -> SimpleNamespace:
 
 
 def make_user(*, max_tokens: int = 100000, used_tokens: int = 0) -> SimpleNamespace:
-    return SimpleNamespace(id=uuid.uuid4(), max_tokens=max_tokens, used_tokens=used_tokens)
+    return SimpleNamespace(
+        id=uuid.uuid4(), max_tokens=max_tokens, used_tokens=used_tokens
+    )
 
 
 def make_uow() -> SimpleNamespace:
@@ -291,7 +293,9 @@ async def test_spend_sufficient_credits() -> None:
     uow.credit_repo.get_account_with_lock.return_value = account
     uow.user_repo.get_with_lock.return_value = user
     uow.credit_repo.try_decrement_balance.return_value = True
-    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(id=uuid.uuid4(), credit_cost=10)
+    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(
+        id=uuid.uuid4(), credit_cost=10
+    )
     uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
 
     service = CreditService(uow)
@@ -316,7 +320,9 @@ async def test_spend_partial_credits() -> None:
     uow.credit_repo.get_account_with_lock.return_value = account
     uow.user_repo.get_with_lock.return_value = user
     uow.credit_repo.try_decrement_balance.return_value = True
-    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(id=uuid.uuid4(), credit_cost=4)
+    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(
+        id=uuid.uuid4(), credit_cost=4
+    )
     uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
 
     service = CreditService(uow)
@@ -353,7 +359,9 @@ async def test_spend_partial_credits_no_over_deduction_for_fractional_cost() -> 
     uow = make_uow()
     uow.credit_repo.get_account_with_lock.return_value = account
     uow.user_repo.get_with_lock.return_value = user
-    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(id=uuid.uuid4(), credit_cost=0)
+    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(
+        id=uuid.uuid4(), credit_cost=0
+    )
     uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
 
     service = CreditService(uow)
@@ -380,7 +388,9 @@ async def test_spend_zero_credits() -> None:
     uow = make_uow()
     uow.credit_repo.get_account_with_lock.return_value = account
     uow.user_repo.get_with_lock.return_value = user
-    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(id=uuid.uuid4(), credit_cost=0)
+    uow.credit_repo.create_usage_record.return_value = SimpleNamespace(
+        id=uuid.uuid4(), credit_cost=0
+    )
     uow.credit_repo.add_transaction.return_value = SimpleNamespace(id=uuid.uuid4())
 
     service = CreditService(uow)
@@ -407,7 +417,9 @@ async def test_spend_rejects_when_token_quota_is_insufficient() -> None:
     account = make_account(balance=0)
     uow = make_uow()
     uow.credit_repo.get_account_with_lock.return_value = account
-    uow.user_repo.get_with_lock.return_value = make_user(max_tokens=1000, used_tokens=500)
+    uow.user_repo.get_with_lock.return_value = make_user(
+        max_tokens=1000, used_tokens=500
+    )
     uow.user_repo.try_increment_used_tokens_with_limit.return_value = False
 
     service = CreditService(uow)

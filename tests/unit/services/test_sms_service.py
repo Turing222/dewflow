@@ -65,7 +65,9 @@ async def test_send_code_generates_6_digit_code() -> None:
 async def test_send_code_stores_in_redis_with_ttl() -> None:
     redis = _make_redis_mock()
     service = make_sms_service(
-        redis=redis, sms_code_expire_seconds=300, sms_code_rate_limit_seconds=60,
+        redis=redis,
+        sms_code_expire_seconds=300,
+        sms_code_rate_limit_seconds=60,
     )
 
     code = await service.send_code("13800138000")

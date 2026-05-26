@@ -183,8 +183,10 @@ async def test_token_quota_exceeded_raises_error() -> None:
 
     session = MagicMock(id=uuid.uuid4(), title="Session", kb_id=None)
     assistant_msg = MagicMock(
-        id=uuid.uuid4(), session_id=session.id,
-        created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+        id=uuid.uuid4(),
+        session_id=session.id,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     with (

@@ -410,3 +410,68 @@ async def test_find_or_create_by_google_links_email_user_after_integrity_error(
         db_obj=existing_user,
         obj_in={"google_sub": google_sub, "auth_provider": "google"},
     )
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_by_phone_raises_when_registration_closed(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    """When allow_new_registration=False and no existing user, raise REGISTRATION_CLOSED."""
+    user_service_ctx.repo.get_by_phone.return_value = None
+
+    with pytest.raises(AppException, match="封闭内测") as exc_info:
+        await user_service_ctx.service.find_or_create_by_phone(
+            "13800000000", allow_new_registration=False
+        )
+    assert exc_info.value.code == "REGISTRATION_CLOSED"
+    user_service_ctx.repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_by_phone_returns_existing_when_registration_closed(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    """When allow_new_registration=False but user exists, return normally."""
+    existing = SimpleNamespace(id=uuid.uuid4(), phone="13800000000")
+    user_service_ctx.repo.get_by_phone.return_value = existing
+
+    result = await user_service_ctx.service.find_or_create_by_phone(
+        "13800000000", allow_new_registration=False
+    )
+    assert result is existing
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_by_google_raises_when_registration_closed(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    """When allow_new_registration=False and no existing user, raise REGISTRATION_CLOSED."""
+    user_service_ctx.repo.get_by_google_sub.return_value = None
+    user_service_ctx.repo.get_by_email.return_value = None
+
+    with pytest.raises(AppException, match="封闭内测") as exc_info:
+        await user_service_ctx.service.find_or_create_by_google(
+            google_sub="google_new",
+            email="new@example.com",
+            name="New User",
+            allow_new_registration=False,
+        )
+    assert exc_info.value.code == "REGISTRATION_CLOSED"
+    user_service_ctx.repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_by_google_returns_existing_when_registration_closed(
+    user_service_ctx: SimpleNamespace,
+) -> None:
+    """When allow_new_registration=False but user exists by google_sub, return normally."""
+    existing = SimpleNamespace(id=uuid.uuid4(), google_sub="google_existing")
+    user_service_ctx.repo.get_by_google_sub.return_value = existing
+
+    result = await user_service_ctx.service.find_or_create_by_google(
+        google_sub="google_existing",
+        email="existing@example.com",
+        name="Existing User",
+        allow_new_registration=False,
+    )
+    assert result is existing

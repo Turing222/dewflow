@@ -29,8 +29,9 @@ const KBFilesModal: React.FC<KBFilesModalProps> = ({ visible, onClose }) => {
             console.error('Failed to load KB files:', error);
             message.error(t('chat.load_kb_files_failed', '加载文件列表失败'));
         } finally {
-            if (version !== fetchVersionRef.current) return;
-            setLoading(false);
+            if (version === fetchVersionRef.current) {
+                setLoading(false);
+            }
         }
     }, [t]);
 

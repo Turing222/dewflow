@@ -86,7 +86,10 @@ async def test_persist_success_token_limit_exceeded_writes_failed(
     fake_persistence_uow.chat_repo.update_message_status.assert_awaited_once()
     call_kwargs = fake_persistence_uow.chat_repo.update_message_status.call_args.kwargs
     assert call_kwargs["status"] == MessageStatus.FAILED
-    assert call_kwargs["content"] == "Credits 余额不足，本次生成未记录。已生成的内容不会被扣费，请签到后再试。"
+    assert (
+        call_kwargs["content"]
+        == "Credits 余额不足，本次生成未记录。已生成的内容不会被扣费，请签到后再试。"
+    )
     assert call_kwargs["message_metadata"]["response_outcome"] == "failed"
 
 

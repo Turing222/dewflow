@@ -7,7 +7,7 @@ test.describe('Real backend: minimal chat chain', () => {
     await page.goto('/');
 
     await page.getByTestId('user-menu-btn').click();
-    await page.getByRole('menuitem', { name: '登录' }).click();
+    // Guest user-menu-btn directly opens the AuthModal (no intermediate menu)
 
     const randomPhone = `138${Math.floor(10000000 + Math.random() * 90000000)}`;
     await page.locator('.auth-modal').locator('input#phone-login_phone').fill(randomPhone);

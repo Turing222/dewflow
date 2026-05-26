@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useAuth } from '../../context/useAuth';
@@ -97,7 +97,7 @@ export function useChatController(): UseChatControllerReturn {
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const retryCacheRef = useRef<Map<string, RetryCacheEntry>>(new Map());
-    const pollIntervalRef = useRef<any>(null);
+    const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const tabSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
@@ -116,14 +116,13 @@ export function useChatController(): UseChatControllerReturn {
     const displayedActiveSession = isSessionFromHistory && sessionDetailData
         ? sessionDetailData.session
         : activeSession;
-    const displayedMessages = isSessionFromHistory && sessionDetailData
+    const displayedMessages = useMemo(() => isSessionFromHistory && sessionDetailData
         ? sessionDetailData.messages || []
-        : messages;
+        : messages, [isSessionFromHistory, sessionDetailData, messages]);
 
     useEffect(() => {
         if (!isSessionFromHistory || !sessionDetailData) return;
         // Historical session selection hydrates local chat state from query data.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMessages(sessionDetailData.messages || []);
         const lastAssistantMsg = [...(sessionDetailData.messages || [])]
             .reverse()

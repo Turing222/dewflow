@@ -11,6 +11,7 @@ import MessageList from './MessageList';
 import AgentTracePanel from './AgentTracePanel';
 import UserProfileModal from './UserProfileModal';
 import KBFilesModal from './KBFilesModal';
+import { FeatureGate } from '../../context/FeatureGate';
 import styles from './ChatPage.module.css';
 
 const ChatPage: React.FC = () => {
@@ -39,14 +40,14 @@ const ChatPage: React.FC = () => {
         const mentionedIds = matches.map((match) => match.slice(1, -1));
         
         return rawCitations.filter((cit) => {
-            const cleanId = cit.chunkId.replace(/[\[\]]/g, '');
+            const cleanId = cit.chunkId.replace(/[[]]/g, '');
             return mentionedIds.some((refId) => cleanId === refId || cleanId.startsWith(refId + '.'));
         });
     }, [controller.citations, lastAssistantMsg]);
     
     useEffect(() => {
         if (controller.isIngestionSidebarOpen) {
-            setTracePanelCollapsed(false);
+            setTracePanelCollapsed(false); // eslint-disable-line react-hooks/set-state-in-effect
             controller.setIsIngestionSidebarOpen(false);
         }
     }, [controller.isIngestionSidebarOpen, controller]);
@@ -92,48 +93,50 @@ const ChatPage: React.FC = () => {
                 </div>
 
                 {/* Credits Section */}
-                <div className={styles['popover-section']}>
-                    <div className={styles['popover-section-header']}>
-                        <div
-                            className={styles['popover-section-title-link']}
-                            onClick={() => navigate('/credits')}
-                        >
-                            <Coins size={14} className={styles['popover-coin-icon']} />
-                            <span>{t('credits.title')} ↗</span>
-                        </div>
-                    </div>
-                    <div className={styles['popover-credit-balance-card']}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '11px', color: 'var(--color-text-desc)', marginBottom: '2px' }}>
-                                {t('credits.my_balance', '当前可用积分')}
-                            </span>
-                            <div className={styles['popover-credit-balance-value']}>
-                                {loadingCredits ? '—' : (credits?.balance ?? 0)}
+                <FeatureGate flag="enable-credits">
+                    <div className={styles['popover-section']}>
+                        <div className={styles['popover-section-header']}>
+                            <div
+                                className={styles['popover-section-title-link']}
+                                onClick={() => navigate('/credits')}
+                            >
+                                <Coins size={14} className={styles['popover-coin-icon']} />
+                                <span>{t('credits.title')} ↗</span>
                             </div>
                         </div>
-                        {credits?.is_checked_in_today ? (
-                            <Button
-                                type="primary"
-                                size="small"
-                                className={styles['popover-recharge-btn']}
-                                style={{ opacity: 0.7, cursor: 'default' }}
-                                onClick={() => antdMessage.info(t('credits.checked_in_today', '今日已签到'))}
-                            >
-                                {t('credits.checked_in_today', '已签到')}
-                            </Button>
-                        ) : (
-                            <Button
-                                type="primary"
-                                size="small"
-                                className={styles['popover-recharge-btn']}
-                                loading={checkinMutation.isPending}
-                                onClick={handleCheckin}
-                            >
-                                {t('credits.checkin_btn', '签到领积分')}
-                            </Button>
-                        )}
+                        <div className={styles['popover-credit-balance-card']}>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '11px', color: 'var(--color-text-desc)', marginBottom: '2px' }}>
+                                    {t('credits.my_balance', '当前可用积分')}
+                                </span>
+                                <div className={styles['popover-credit-balance-value']}>
+                                    {loadingCredits ? '—' : (credits?.balance ?? 0)}
+                                </div>
+                            </div>
+                            {credits?.is_checked_in_today ? (
+                                <Button
+                                    type="primary"
+                                    size="small"
+                                    className={styles['popover-recharge-btn']}
+                                    style={{ opacity: 0.7, cursor: 'default' }}
+                                    onClick={() => antdMessage.info(t('credits.checked_in_today', '今日已签到'))}
+                                >
+                                    {t('credits.checked_in_today', '已签到')}
+                                </Button>
+                            ) : (
+                                <Button
+                                    type="primary"
+                                    size="small"
+                                    className={styles['popover-recharge-btn']}
+                                    loading={checkinMutation.isPending}
+                                    onClick={handleCheckin}
+                                >
+                                    {t('credits.checkin_btn', '签到领积分')}
+                                </Button>
+                            )}
+                        </div>
                     </div>
-                </div>
+                </FeatureGate>
 
                 {/* Token Usage Section */}
                 <div className={styles['popover-section']}>
@@ -268,15 +271,17 @@ const ChatPage: React.FC = () => {
                         isIngesting={controller.isIngesting}
                     />
                 </div>
-                <AgentTracePanel
-                    traceSteps={controller.traceSteps}
-                    citations={filteredCitations}
-                    ingestionSteps={controller.ingestionSteps}
-                    activeTraceTab={controller.activeTraceTab}
-                    setActiveTraceTab={controller.setActiveTraceTab}
-                    collapsed={tracePanelCollapsed}
-                    onToggle={() => setTracePanelCollapsed(!tracePanelCollapsed)}
-                />
+                <FeatureGate flag="enable-agent-trace">
+                    <AgentTracePanel
+                        traceSteps={controller.traceSteps}
+                        citations={filteredCitations}
+                        ingestionSteps={controller.ingestionSteps}
+                        activeTraceTab={controller.activeTraceTab}
+                        setActiveTraceTab={controller.setActiveTraceTab}
+                        collapsed={tracePanelCollapsed}
+                        onToggle={() => setTracePanelCollapsed(!tracePanelCollapsed)}
+                    />
+                </FeatureGate>
             </div>
             <UserProfileModal
                 isOpen={isProfileModalOpen}

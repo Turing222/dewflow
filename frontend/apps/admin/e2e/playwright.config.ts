@@ -23,6 +23,7 @@ export default defineConfig({
     {
       name: 'smoke',
       testDir: './tests/smoke',
+      workers: 1,
     },
   ],
   webServer: {

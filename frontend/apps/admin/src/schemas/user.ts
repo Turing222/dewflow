@@ -12,6 +12,7 @@ export const userSchema = z.object({
     avatar: z.string().nullable().optional(),
     is_superuser: z.boolean().nullable().optional(),
     is_active: z.boolean().nullable().optional(),
+    features: z.record(z.string(), z.boolean()).optional().nullable(),
     max_tokens: z.number().int().nonnegative().nullable().optional(),
     used_tokens: z.number().int().nonnegative().nullable().optional(),
     created_at: z.string().nullable().optional(),

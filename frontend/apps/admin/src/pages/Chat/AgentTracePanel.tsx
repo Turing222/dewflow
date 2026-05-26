@@ -290,11 +290,11 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                                 const webUrl = cit.url
                                                     || (cit.documentName.startsWith('http') ? cit.documentName : undefined);
                                                 const isWebUrl = Boolean(webUrl);
-                                                const pageLabel = cit.metaInfo?.page_label || cit.metaInfo?.page;
+                                                const pageLabel = (cit.metaInfo?.page_label as string | number | undefined) || (cit.metaInfo?.page as string | number | undefined);
                                                 const locationText = pageLabel
                                                     ? `${t('trace.page_label', '第')} ${pageLabel} ${t('trace.page_unit', '页')}`
                                                     : (typeof cit.chunkIndex === 'number' ? `${t('trace.paragraph_label', '第')} ${cit.chunkIndex + 1} ${t('trace.paragraph_unit', '段')}` : '');
-                                                const sectionPath = cit.metaInfo?.section_path;
+                                                const sectionPath = cit.metaInfo?.section_path as string | undefined;
                                                 const isExpanded = !!expandedCitations[cit.chunkId];
                                                 const needsTruncation = cit.summarySnippet.length > 150;
 

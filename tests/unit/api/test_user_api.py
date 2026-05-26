@@ -85,12 +85,29 @@ def import_service() -> SimpleNamespace:
 @pytest.mark.asyncio
 async def test_read_users_me_returns_user_response() -> None:
     current_user = make_user(username="me_user", email="me@example.com")
+    feature_flag_service = SimpleNamespace(
+        get_user_features=AsyncMock(
+            return_value={
+                "enable-pixel-avatar": True,
+                "enable-credits": False,
+                "enable-agent-trace": False,
+            }
+        ),
+    )
 
-    result = await user_api.read_users_me(current_user=current_user)
+    result = await user_api.read_users_me(
+        current_user=current_user,
+        feature_flag_service=feature_flag_service,
+    )
 
     assert result.id == current_user.id
     assert result.username == "me_user"
     assert result.email == "me@example.com"
+    assert result.features == {
+        "enable-pixel-avatar": True,
+        "enable-credits": False,
+        "enable-agent-trace": False,
+    }
 
 
 @pytest.mark.asyncio
@@ -261,7 +278,9 @@ async def test_csv_bulk_insert_users_success(import_service: SimpleNamespace) ->
 async def test_update_my_profile_success(user_service: SimpleNamespace) -> None:
     current_user = make_user(username="me_user", email="me@example.com")
     user_in = UserProfileUpdate(username="new_me", email="new_me@example.com")
-    updated = make_user(id=current_user.id, username="new_me", email="new_me@example.com")
+    updated = make_user(
+        id=current_user.id, username="new_me", email="new_me@example.com"
+    )
     user_service.user_update.return_value = updated
 
     result = await user_api.update_my_profile(

@@ -7,6 +7,7 @@ import type { ChatMode } from '../../features/chat/use-chat-controller';
 import { parseCitations } from '../../types/agent-trace';
 import styles from './MessageList.module.css';
 import PixelAvatar from './PixelAvatar';
+import { FeatureGate } from '../../context/FeatureGate';
 
 const { TextArea } = Input;
 
@@ -39,9 +40,9 @@ const MessageList: React.FC<MessageListProps> = ({
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation();
 
-    const renderMessageContent = useCallback((content: string, searchContext?: Record<string, any>) => {
+    const renderMessageContent = useCallback((content: string, searchContext?: Record<string, unknown>) => {
         if (!content) return '';
-        const citations = searchContext ? parseCitations(searchContext as Record<string, unknown>) : [];
+        const citations = searchContext ? parseCitations(searchContext) : [];
         const citationRegex = /\[[RW]\d+(?:\.\d+)?\]/g;
         
         const parts = [];
@@ -59,7 +60,7 @@ const MessageList: React.FC<MessageListProps> = ({
             const refIdStr = matchText.slice(1, -1);
             
             const citation = citations.find(c => {
-                const cleanId = c.chunkId.replace(/[\[\]]/g, '');
+                const cleanId = c.chunkId.replace(/[[]]/g, '');
                 return cleanId === refIdStr || cleanId.startsWith(refIdStr + '.');
             });
             
@@ -69,7 +70,7 @@ const MessageList: React.FC<MessageListProps> = ({
                     : 'N/A';
                     
                 const isWeb = Boolean(citation.url) || citation.chunkId.startsWith('W');
-                const pageLabel = citation.metaInfo?.page_label || citation.metaInfo?.page;
+                const pageLabel = (citation.metaInfo?.page_label as string | undefined) || (citation.metaInfo?.page as string | number | undefined);
                 const locationText = isWeb
                     ? ''
                     : pageLabel
@@ -184,10 +185,21 @@ const MessageList: React.FC<MessageListProps> = ({
                     />
                 ) : (
                     <div className={styles['assistant-avatar-wrapper']}>
-                        <PixelAvatar 
-                            isStreaming={false} 
-                            isUserTyping={inputValue.trim().length > 0} 
-                        />
+                        <FeatureGate
+                            flag="enable-pixel-avatar"
+                            fallback={
+                                <Avatar
+                                    className={styles['chat-avatar']}
+                                    style={{ backgroundColor: 'var(--color-bg-subtle)', flexShrink: 0 }}
+                                    icon={<Bot size={18} color="var(--color-primary)" />}
+                                />
+                            }
+                        >
+                            <PixelAvatar 
+                                isStreaming={false} 
+                                isUserTyping={inputValue.trim().length > 0} 
+                            />
+                        </FeatureGate>
                     </div>
                 )}
                 <div className={`${styles['chat-bubble']} ${isUser ? styles['user-bubble'] : styles['assistant-bubble']}`}>
@@ -213,7 +225,7 @@ const MessageList: React.FC<MessageListProps> = ({
                         </>
                     ) : (
                         <div className={`${styles['message-text']} message-text`}>
-                            {renderMessageContent(msg.content, msg.search_context as Record<string, any>)}
+                            {renderMessageContent(msg.content, msg.search_context ?? undefined)}
                         </div>
                     )}
                     {msg.latency_ms && (
@@ -287,7 +299,18 @@ const MessageList: React.FC<MessageListProps> = ({
                         {isStreaming && streamingText && (
                             <div className={`${styles['chat-message']} chat-message ${styles.assistant} assistant`}>
                                 <div className={styles['assistant-avatar-wrapper']}>
-                                    <PixelAvatar isStreaming={true} isUserTyping={false} />
+                                    <FeatureGate
+                                        flag="enable-pixel-avatar"
+                                        fallback={
+                                            <Avatar
+                                                className={styles['chat-avatar']}
+                                                style={{ backgroundColor: 'var(--color-bg-subtle)', flexShrink: 0 }}
+                                                icon={<Bot size={18} color="var(--color-primary)" />}
+                                            />
+                                        }
+                                    >
+                                        <PixelAvatar isStreaming={true} isUserTyping={false} />
+                                    </FeatureGate>
                                 </div>
                                 <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
                                     <div className={`${styles['message-text']} message-text`}>
@@ -300,7 +323,18 @@ const MessageList: React.FC<MessageListProps> = ({
                         {isStreaming && !streamingText && (
                             <div className={`${styles['chat-message']} chat-message ${styles.assistant} assistant`}>
                                 <div className={styles['assistant-avatar-wrapper']}>
-                                    <PixelAvatar isStreaming={true} isUserTyping={false} />
+                                    <FeatureGate
+                                        flag="enable-pixel-avatar"
+                                        fallback={
+                                            <Avatar
+                                                className={styles['chat-avatar']}
+                                                style={{ backgroundColor: 'var(--color-bg-subtle)', flexShrink: 0 }}
+                                                icon={<Bot size={18} color="var(--color-primary)" />}
+                                            />
+                                        }
+                                    >
+                                        <PixelAvatar isStreaming={true} isUserTyping={false} />
+                                    </FeatureGate>
                                 </div>
                                 <div className={`${styles['chat-bubble']} ${styles['assistant-bubble']}`}>
                                     <div className={styles['thinking-dots']}>

@@ -240,7 +240,9 @@ async def test_list_files_by_kb_id_returns_files(
     kb_id = uuid.uuid4()
     user_id = uuid.uuid4()
     files = [SimpleNamespace(id=uuid.uuid4(), filename="file1.md")]
-    repo.get_kb_for_user.return_value = SimpleNamespace(id=kb_id, user_id=user_id, workspace_id=None)
+    repo.get_kb_for_user.return_value = SimpleNamespace(
+        id=kb_id, user_id=user_id, workspace_id=None
+    )
     repo.list_files_by_kb = AsyncMock(return_value=files)
 
     result = await service.list_files_by_kb_id(kb_id=kb_id, user_id=user_id)
@@ -268,7 +270,9 @@ async def test_remove_file_success(
         storage_key="test_key",
     )
     repo.get_file = AsyncMock(return_value=file_obj)
-    repo.get_kb_for_user.return_value = SimpleNamespace(id=kb_id, user_id=user_id, workspace_id=None)
+    repo.get_kb_for_user.return_value = SimpleNamespace(
+        id=kb_id, user_id=user_id, workspace_id=None
+    )
     repo.delete_chunks_for_file = AsyncMock()
     repo.delete_file_record = AsyncMock()
 
@@ -280,4 +284,3 @@ async def test_remove_file_success(
     service.storage.delete.assert_awaited_once()
     repo.delete_chunks_for_file.assert_awaited_once_with(file_id)
     repo.delete_file_record.assert_awaited_once_with(file_id)
-
