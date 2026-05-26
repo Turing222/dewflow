@@ -65,7 +65,9 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
     ) -> None:
         self._api_key = api_key or ai_settings.TAVILY_API_KEY
         self._base_url = (base_url or ai_settings.TAVILY_BASE_URL).rstrip("/")
-        self._timeout_seconds = timeout_seconds or ai_settings.EXTERNAL_CONTEXT_TIMEOUT_SECONDS
+        self._timeout_seconds = (
+            timeout_seconds or ai_settings.EXTERNAL_CONTEXT_TIMEOUT_SECONDS
+        )
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -104,9 +106,7 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
                 )
                 response.raise_for_status()
                 chunks = self._parse_response(response.json(), top_k=top_k)
-                set_span_attributes(
-                    span, {"external_context.hit_count": len(chunks)}
-                )
+                set_span_attributes(span, {"external_context.hit_count": len(chunks)})
                 return chunks
         except Exception as exc:
             logger.warning("Tavily 外部上下文检索失败，降级为空结果: %s", exc)
@@ -159,7 +159,5 @@ def create_external_context_provider() -> AbstractExternalContextProvider | None
         return None
     if ai_settings.EXTERNAL_CONTEXT_PROVIDER == "tavily":
         return TavilyExternalContextProvider()
-    logger.warning(
-        "未知外部上下文 provider: %s", ai_settings.EXTERNAL_CONTEXT_PROVIDER
-    )
+    logger.warning("未知外部上下文 provider: %s", ai_settings.EXTERNAL_CONTEXT_PROVIDER)
     return None

@@ -146,7 +146,6 @@ async def get_default_kb(
 
 @router.get(
     "/default/files",
-    response_model=list[KnowledgeFileResponse],
 )
 async def get_default_kb_files(
     current_user: CurrentUserDep,
@@ -172,12 +171,14 @@ async def delete_kb_file(
     service: KnowledgeServiceDep,
     audit_service: AuditServiceDep,
 ) -> None:
-    async with capture_audit(
-        audit_service,
-        action=AuditAction.FILE_DELETE,
-        actor_user_id=current_user.id,
-        resource_type="file",
-        resource_id=file_id,
-    ), service.write():
+    async with (
+        capture_audit(
+            audit_service,
+            action=AuditAction.FILE_DELETE,
+            actor_user_id=current_user.id,
+            resource_type="file",
+            resource_id=file_id,
+        ),
+        service.write(),
+    ):
         await service.remove_file(file_id=file_id, user_id=current_user.id)
-

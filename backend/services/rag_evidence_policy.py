@@ -54,9 +54,8 @@ class RAGEvidencePolicy:
                 "RAG 拒答策略未启用", hit_count, best_score, best_rerank_score
             )
         if (
-            (kb_id is None or not rag_plan.should_use_rag)
-            and not rag_plan.should_use_external_context
-        ):
+            kb_id is None or not rag_plan.should_use_rag
+        ) and not rag_plan.should_use_external_context:
             return self._allow(
                 "当前问题不需要知识库证据", hit_count, best_score, best_rerank_score
             )

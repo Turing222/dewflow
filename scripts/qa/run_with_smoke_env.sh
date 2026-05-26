@@ -86,6 +86,24 @@ if [[ -n "$redis_pass" ]]; then
     export TEST_TASKIQ_REDIS_URL="redis://:${redis_enc}@${REDIS_HOST}:${redis_port}/1"
 fi
 
+# S3 / MinIO — compose defaults to minioadmin/minioadmin on port 9000.
+s3_endpoint="$(_smoke_env_value S3_ENDPOINT_URL)"
+s3_access_key="$(_smoke_env_value S3_ACCESS_KEY_ID)"
+s3_secret_key="$(_smoke_env_value S3_SECRET_ACCESS_KEY)"
+if [[ -n "$s3_endpoint" ]]; then
+    # Override container-internal hostname to localhost.
+    s3_endpoint="${s3_endpoint//minio/localhost}"
+else
+    s3_endpoint="http://localhost:${MINIO_API_PORT:-9000}"
+fi
+s3_access_key="${s3_access_key:-minioadmin}"
+s3_secret_key="${s3_secret_key:-minioadmin}"
+s3_enc_user="$(_url_encode "$s3_access_key")"
+s3_enc_pass="$(_url_encode "$s3_secret_key")"
+export TEST_S3_ENDPOINT_URL="${s3_endpoint}"
+export S3_ACCESS_KEY_ID="$s3_access_key"
+export S3_SECRET_ACCESS_KEY="$s3_secret_key"
+
 export DEWFLOW_TEST_PROFILE="${DEWFLOW_TEST_PROFILE:-local}"
 
 exec "$@"

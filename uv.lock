@@ -570,6 +570,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "boto3" },
+    { name = "growthbook" },
     { name = "jieba" },
     { name = "langfuse" },
     { name = "openpyxl" },
@@ -633,6 +634,7 @@ requires-dist = [
     { name = "boto3", specifier = "~=1.42.0" },
     { name = "fastapi", marker = "extra == 'web'", specifier = "~=0.128.0" },
     { name = "google-auth", extras = ["requests"], marker = "extra == 'web'", specifier = "~=2.49.0" },
+    { name = "growthbook", specifier = "==2.1.0" },
     { name = "httpx", marker = "extra == 'web'", specifier = "~=0.28.0" },
     { name = "jieba", specifier = "~=0.42.1" },
     { name = "jinja2", marker = "extra == 'ai'", specifier = "~=3.1.0" },
@@ -1050,6 +1052,21 @@ source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/9d/82/74f4a3310cdabfbb10da554c3a672847f1ed33c6f61dd472681ce7f1fe67/griffelib-2.0.2.tar.gz", hash = "sha256:3cf20b3bc470e83763ffbf236e0076b1211bac1bc67de13daf494640f2de707e", size = 166461, upload-time = "2026-03-27T11:34:51.091Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/11/8c/c9138d881c79aa0ea9ed83cbd58d5ca75624378b38cee225dcf5c42cc91f/griffelib-2.0.2-py3-none-any.whl", hash = "sha256:925c857658fb1ba40c0772c37acbc2ab650bd794d9c1b9726922e36ea4117ea1", size = 142357, upload-time = "2026-03-27T11:34:46.275Z" },
+]
+
+[[package]]
+name = "growthbook"
+version = "2.1.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "cryptography" },
+    { name = "typing-extensions" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0f/b1/222605c5d10358f7001bde88a642f687e3c9b07413f1a7c937a9a7762b5a/growthbook-2.1.0.tar.gz", hash = "sha256:dd7c765731b3fa26997315c983d28f2314dd5c5cc4b4778ed3102d23fd0b06d7", size = 68362, upload-time = "2026-01-22T19:47:38.415Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/33/fb/07fdee7685c382712bfc3ee5e66fe1147ef823898e95cd3a80687018c8f9/growthbook-2.1.0-py2.py3-none-any.whl", hash = "sha256:622a13a961c92806426d80c2bf61ad6c2f21f7cd2632310c20d6b807ae78175b", size = 44895, upload-time = "2026-01-22T19:47:37.121Z" },
 ]
 
 [[package]]

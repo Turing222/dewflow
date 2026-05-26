@@ -253,7 +253,11 @@ class KnowledgeService(BaseService[AbstractUnitOfWork]):
             try:
                 await self.storage.delete(stored_obj)
             except Exception:
-                logger.warning("Storage delete failed for key=%s", file_obj.storage_key, exc_info=True)
+                logger.warning(
+                    "Storage delete failed for key=%s",
+                    file_obj.storage_key,
+                    exc_info=True,
+                )
 
         await self.uow.knowledge_repo.delete_chunks_for_file(file_id)
         await self.uow.knowledge_repo.delete_file_record(file_id)

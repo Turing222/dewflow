@@ -85,9 +85,7 @@ class WorkerGuardrailHandler:
         start_time: float,
         idempotency_lock_key: str | None,
     ) -> None:
-        planner_refusal = bool(
-            search_context and search_context.get("planner_refusal")
-        )
+        planner_refusal = bool(search_context and search_context.get("planner_refusal"))
         refusal_content = (
             ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
             if planner_refusal
@@ -159,9 +157,7 @@ class WorkerGuardrailHandler:
         start_time: float,
         idempotency_lock_key: str | None,
     ) -> GenerationResult:
-        planner_refusal = bool(
-            search_context and search_context.get("planner_refusal")
-        )
+        planner_refusal = bool(search_context and search_context.get("planner_refusal"))
         refusal_content = (
             ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
             if planner_refusal

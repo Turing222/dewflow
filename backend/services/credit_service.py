@@ -252,7 +252,8 @@ class CreditService(BaseService[AbstractUnitOfWork]):
         # 3. 混合抵扣算法：从原始未取整金额计算总 token 等价值，避免双重取整超扣
         total_token_value = math.ceil(
             (tokens_input * input_rate + tokens_output * output_rate)
-            * credit_settings.CREDIT_TO_TOKEN_RATIO / 1000.0
+            * credit_settings.CREDIT_TO_TOKEN_RATIO
+            / 1000.0
         )
 
         if account.balance >= cost:
@@ -271,7 +272,9 @@ class CreditService(BaseService[AbstractUnitOfWork]):
 
         # 4. 原子扣减积分
         if credits_to_deduct > 0:
-            ok = await self.uow.credit_repo.try_decrement_balance(account.id, credits_to_deduct)
+            ok = await self.uow.credit_repo.try_decrement_balance(
+                account.id, credits_to_deduct
+            )
             if not ok:
                 raise app_validation_error(
                     "您的 Credits 余额不足，请先签到获取额度",

@@ -49,7 +49,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 	pr-report \
 	verify-smoke \
 	flow-static flow-runtime flow-dev-check \
-	flow-fast flow-local flow-ci \
+	flow-fast flow-local flow-local-full flow-ci \
 	lint format typecheck test check clean-cache
 
 help:
@@ -84,7 +84,8 @@ help:
 		'  frontend-build       Build the frontend app bundle' \
 		'  frontend-e2e-mock    Run frontend Playwright tests with mocked API routes' \
 		'  frontend-e2e-smoke   Run frontend Playwright smoke tests against a real backend' \
-		'  frontend-check       Run frontend lint, typecheck, tests, build, and mock e2e' \
+		'  frontend-check        Run frontend lint, typecheck, tests, and build' \
+		'  frontend-check-full  frontend-check + mock e2e' \
 		'  image-build          Build the backend Docker image' \
 		'  frontend-image-build  Build the frontend Docker image' \
 		'  image-build-all       Build all Docker images (backend + frontend)' \
@@ -107,7 +108,8 @@ help:
 		'  flow-runtime         Run runtime checks (build+smoke up+smoke tests+smoke down)' \
 		'  flow-dev-check       Run the full dev verification flow (static + runtime)' \
 		'  flow-fast            Quick feedback: backend static + unit + component; frontend check' \
-		'  flow-local           Full local verify: flow-fast + integration (with .env.smoke) + e2e-mock' \
+		'  flow-local           Full local verify: flow-fast + smoke stack + integration + e2e' \
+		'  flow-local-full      Everything in flow-local + LLM and performance tests' \
 		'  flow-ci              PR gate baseline: flow-fast + integration (CI env) + e2e-mock'
 
 qa-lint:
@@ -203,6 +205,8 @@ frontend-check:
 	$(MAKE) frontend-typecheck
 	$(MAKE) frontend-test
 	$(MAKE) frontend-build
+
+frontend-check-full: frontend-check
 	$(MAKE) frontend-e2e-mock
 
 image-build:
@@ -293,10 +297,17 @@ flow-fast:
 	$(MAKE) qa-test-component
 	$(MAKE) frontend-check
 
-# flow-local: requires Docker smoke stack running (make env-smoke-up)
+# flow-local: requires Docker smoke stack (auto-starts if not running)
 flow-local: flow-fast
-	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "not performance" $(PYTEST_ARGS)
-	$(MAKE) frontend-e2e-mock
+	$(MAKE) env-smoke-up
+	$(MAKE) env-smoke-wait
+	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "not performance and not requires_llm" $(PYTEST_ARGS)
+	$(MAKE) frontend-e2e-smoke
+
+# flow-local-full: full local verify including LLM and performance tests
+flow-local-full: flow-local
+	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "requires_llm" $(PYTEST_ARGS)
+	bash scripts/qa/run_with_smoke_env.sh uv run pytest -m "performance" $(PYTEST_ARGS)
 
 # flow-ci: PR gate baseline; Docker smoke/full-stack coverage lives in smoke-ci.
 flow-ci: flow-fast

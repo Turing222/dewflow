@@ -20,7 +20,10 @@ from backend.application.chat.timing import (
 )
 from backend.application.chat.worker_guardrail_handler import WorkerGuardrailHandler
 from backend.application.chat.worker_persistence_handler import WorkerPersistenceHandler
-from backend.application.chat.worker_rag_orchestrator import PreparedGenerationContext, WorkerRAGOrchestrator
+from backend.application.chat.worker_rag_orchestrator import (
+    PreparedGenerationContext,
+    WorkerRAGOrchestrator,
+)
 from backend.application.chat.worker_stream_publisher import WorkerStreamPublisher
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
@@ -128,8 +131,7 @@ class LLMGenerationWorkerWorkflow:
         persistence_handler: WorkerPersistenceHandler | None = None,
         stream_publisher: WorkerStreamPublisher | None = None,
         guardrail_handler: WorkerGuardrailHandler | None = None,
-        llm_service_resolver: Callable[[str | None], AbstractLLMService]
-        | None = None,
+        llm_service_resolver: Callable[[str | None], AbstractLLMService] | None = None,
     ) -> None:
         self._redis_client = redis_client
         self.uow = uow
@@ -714,8 +716,7 @@ class LLMGenerationWorkerWorkflow:
             tokens_output = (
                 self._count_output_tokens(full_content)
                 if output_decision.triggered
-                else result.completion_tokens
-                or self._count_output_tokens(full_content)
+                else result.completion_tokens or self._count_output_tokens(full_content)
             )
             worker_total_latency_ms = elapsed_ms(worker_started)
 
