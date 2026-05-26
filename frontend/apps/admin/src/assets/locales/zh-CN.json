@@ -131,8 +131,9 @@
     "steps": {
       "receive-query": "接收问题",
       "router-judge": "Router 判断",
-      "knowledge-path": "知识路径",
-      "retrieve-docs": "检索资料",
+      "kb-search": "文档查询",
+      "local-search": "本地知识库查询",
+      "web-search": "联网查询",
       "generate-answer": "生成回答",
       "organize-citations": "整理引用",
       "complete": "完成"

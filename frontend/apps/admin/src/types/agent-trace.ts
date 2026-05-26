@@ -39,8 +39,9 @@ export interface AgentTraceState {
 export const TRACE_STEP_DEFS = [
     { id: 'receive-query' },
     { id: 'router-judge' },
-    { id: 'knowledge-path' },
-    { id: 'retrieve-docs' },
+    { id: 'kb-search' },
+    { id: 'local-search' },
+    { id: 'web-search' },
     { id: 'generate-answer' },
     { id: 'organize-citations' },
     { id: 'complete' },
@@ -122,7 +123,16 @@ export function applyTraceMetricsToSteps(
             finishedAt: Date.now(),
         }));
 
+    const isRefusal = Boolean(ragMetrics?.planner_refusal || ragMetrics?.answer_route === 'refuse');
+
     return baseSteps.map((step) => {
+        if (step.id === 'receive-query') {
+            return {
+                ...step,
+                durationMs: step.durationMs ?? messageMetrics?.queue_wait_ms,
+                description: step.description || (messageMetrics?.queue_wait_ms !== undefined ? '服务器调度与队列等待' : step.description),
+            };
+        }
         if (step.id === 'router-judge') {
             const metricDetails: Record<string, number | string | boolean> = {};
             if (ragMetrics?.planner_used !== undefined) {
@@ -140,13 +150,36 @@ export function applyTraceMetricsToSteps(
             if (ragMetrics?.external_context_planned !== undefined) {
                 metricDetails.external_context_planned = ragMetrics.external_context_planned;
             }
+            if (ragMetrics?.answer_route !== undefined) {
+                metricDetails.answer_route = ragMetrics.answer_route;
+            }
+            if (ragMetrics?.route_confidence !== undefined) {
+                metricDetails.route_confidence = ragMetrics.route_confidence;
+            }
+            if (ragMetrics?.planner_refusal !== undefined) {
+                metricDetails.planner_refusal = ragMetrics.planner_refusal;
+            }
+            if (ragMetrics?.planner_refusal_reason !== undefined) {
+                metricDetails.planner_refusal_reason = ragMetrics.planner_refusal_reason;
+            }
             return {
                 ...step,
                 durationMs: ragMetrics?.planner_ms,
                 metricDetails: Object.keys(metricDetails).length > 0 ? metricDetails : step.metricDetails,
             };
         }
-        if (step.id === 'retrieve-docs') {
+        const selected = ragMetrics?.selected_sources ? ragMetrics.selected_sources.split(',') : [];
+        const isKbActive = ragMetrics?.planner_used === false
+            ? true
+            : (ragMetrics?.selected_sources ? selected.includes('kb') : (ragMetrics?.retrieve_ms !== undefined || ragMetrics?.candidate_count !== undefined));
+        const isWebActive = ragMetrics?.planner_used === false
+            ? true
+            : (ragMetrics?.selected_sources ? selected.includes('web') : (ragMetrics?.external_context_ms !== undefined || ragMetrics?.external_context_hit_count !== undefined));
+
+        if (step.id === 'kb-search') {
+            if (isRefusal || !isKbActive) {
+                return { ...step, status: 'skipped' as const, finishedAt: Date.now() };
+            }
             const metricDetails: Record<string, number | string | boolean> = {};
             if (ragMetrics?.candidate_count !== undefined) {
                 metricDetails.candidate_count = ragMetrics.candidate_count;
@@ -163,18 +196,29 @@ export function applyTraceMetricsToSteps(
             if (ragMetrics?.rerank_ms !== undefined) {
                 metricDetails.rerank_ms = ragMetrics.rerank_ms;
             }
+            return {
+                ...step,
+                durationMs: ragMetrics?.retrieve_ms,
+                metricDetails: Object.keys(metricDetails).length > 0 ? metricDetails : step.metricDetails,
+            };
+        }
+        if (step.id === 'local-search') {
+            return { ...step, status: 'skipped' as const, finishedAt: Date.now() };
+        }
+        if (step.id === 'web-search') {
+            if (isRefusal || !isWebActive) {
+                return { ...step, status: 'skipped' as const, finishedAt: Date.now() };
+            }
+            const metricDetails: Record<string, number | string | boolean> = {};
             if (ragMetrics?.external_context_hit_count !== undefined) {
                 metricDetails.external_context_hit_count = ragMetrics.external_context_hit_count;
             }
             if (ragMetrics?.external_context_provider !== undefined) {
                 metricDetails.external_context_provider = ragMetrics.external_context_provider;
             }
-            if (ragMetrics?.external_context_ms !== undefined) {
-                metricDetails.external_context_ms = ragMetrics.external_context_ms;
-            }
             return {
                 ...step,
-                durationMs: ragMetrics?.retrieve_ms,
+                durationMs: ragMetrics?.external_context_ms,
                 metricDetails: Object.keys(metricDetails).length > 0 ? metricDetails : step.metricDetails,
             };
         }
@@ -193,8 +237,14 @@ export function applyTraceMetricsToSteps(
                 metricDetails: Object.keys(metricDetails).length > 0 ? metricDetails : step.metricDetails,
             };
         }
-        if (step.id === 'organize-citations' && ragMetrics?.citation_validate_ms !== undefined) {
-            return { ...step, durationMs: ragMetrics.citation_validate_ms };
+        if (step.id === 'organize-citations') {
+            if (isRefusal) {
+                return { ...step, status: 'skipped' as const, finishedAt: Date.now() };
+            }
+            if (ragMetrics?.citation_validate_ms !== undefined) {
+                return { ...step, durationMs: ragMetrics.citation_validate_ms };
+            }
+            return step;
         }
         if (step.id === 'complete') {
             const metricDetails: Record<string, number | string | boolean> = {};

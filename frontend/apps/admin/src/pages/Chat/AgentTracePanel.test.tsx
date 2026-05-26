@@ -65,7 +65,7 @@ describe('AgentTracePanel', () => {
         mockUseAuth.mockReturnValue(defaultAuth);
         const steps = createInitialTraceSteps();
         renderPanel({ traceSteps: steps });
-        const stepIds = ['receive-query', 'router-judge', 'knowledge-path', 'retrieve-docs', 'generate-answer', 'organize-citations', 'complete'];
+        const stepIds = ['receive-query', 'router-judge', 'kb-search', 'local-search', 'web-search', 'generate-answer', 'organize-citations', 'complete'];
         for (const id of stepIds) {
             expect(screen.getByTestId(`trace-step-${id}`)).toBeInTheDocument();
         }
@@ -175,7 +175,7 @@ describe('AgentTracePanel', () => {
                     metricDetails: { first_token_latency_ms: 320 },
                 };
             }
-            if (step.id === 'retrieve-docs') {
+            if (step.id === 'kb-search') {
                 return {
                     ...step,
                     status: 'done',
@@ -203,7 +203,7 @@ describe('AgentTracePanel', () => {
 
         expect(screen.getByTestId('trace-metrics-summary')).toHaveTextContent('320 ms');
         expect(screen.getByTestId('trace-metrics-summary')).toHaveTextContent('2.6 s');
-        expect(screen.getByTestId('trace-step-duration-retrieve-docs')).toHaveTextContent('120 ms');
+        expect(screen.getByTestId('trace-step-duration-kb-search')).toHaveTextContent('120 ms');
         expect(screen.getByText(/hybrid/)).toBeInTheDocument();
     });
 });

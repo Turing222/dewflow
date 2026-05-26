@@ -131,8 +131,9 @@
     "steps": {
       "receive-query": "Receive Query",
       "router-judge": "Router Decision",
-      "knowledge-path": "Knowledge Path",
-      "retrieve-docs": "Retrieve Documents",
+      "kb-search": "Document Search",
+      "local-search": "Local Database Search",
+      "web-search": "Web Search",
       "generate-answer": "Generate Answer",
       "organize-citations": "Organize Citations",
       "complete": "Complete"

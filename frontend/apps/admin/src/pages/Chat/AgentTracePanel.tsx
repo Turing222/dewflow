@@ -182,10 +182,24 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
                                         {step.metricDetails?.route_reason && (
                                             <div className={styles['trace-step-reason-box']}>
                                                 <div className={styles['trace-step-reason-header']}>
-                                                    💡 {t('trace.route_reason_title', 'RAG 决策路由分析')}
+                                                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
+                                                        <span>💡 {t('trace.route_reason_title', 'RAG 决策路由分析')}</span>
+                                                        {step.metricDetails?.route_confidence !== undefined && (
+                                                            <span className={styles['trace-confidence-badge']}>
+                                                                {t('trace.confidence_label', '置信度')}: {(Number(step.metricDetails.route_confidence) * 100).toFixed(0)}%
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className={styles['trace-step-reason-content']}>
                                                     {String(step.metricDetails.route_reason)}
+                                                    {step.metricDetails?.planner_refusal === true && (
+                                                        <div style={{ display: 'block', width: '100%' }}>
+                                                            <div className={styles['trace-refusal-alert']}>
+                                                                ⚠️ {t('trace.preflight_refused', '规划器前置决策：拒答此问题')}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
@@ -389,6 +403,7 @@ const AgentTracePanel: React.FC<AgentTracePanelProps> = ({
 export default AgentTracePanel;
 
 function formatDuration(value: number): string {
+    if (value === 0) return '< 1 ms';
     if (value < 1000) return `${Math.round(value)} ms`;
     return `${(value / 1000).toFixed(1)} s`;
 }

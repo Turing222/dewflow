@@ -24,6 +24,26 @@ const ChatPage: React.FC = () => {
 
     const controller = useChatController();
     
+    const lastAssistantMsg = React.useMemo(() => {
+        return [...controller.messages]
+            .reverse()
+            .find((m) => m.role === 'assistant');
+    }, [controller.messages]);
+
+    const filteredCitations = React.useMemo(() => {
+        const rawCitations = controller.citations;
+        if (!lastAssistantMsg || !lastAssistantMsg.content) return [];
+        
+        const citationRegex = /\[[RW]\d+(?:\.\d+)?\]/g;
+        const matches = lastAssistantMsg.content.match(citationRegex) || [];
+        const mentionedIds = matches.map((match) => match.slice(1, -1));
+        
+        return rawCitations.filter((cit) => {
+            const cleanId = cit.chunkId.replace(/[\[\]]/g, '');
+            return mentionedIds.some((refId) => cleanId === refId || cleanId.startsWith(refId + '.'));
+        });
+    }, [controller.citations, lastAssistantMsg]);
+    
     useEffect(() => {
         if (controller.isIngestionSidebarOpen) {
             setTracePanelCollapsed(false);
@@ -250,7 +270,7 @@ const ChatPage: React.FC = () => {
                 </div>
                 <AgentTracePanel
                     traceSteps={controller.traceSteps}
-                    citations={controller.citations}
+                    citations={filteredCitations}
                     ingestionSteps={controller.ingestionSteps}
                     activeTraceTab={controller.activeTraceTab}
                     setActiveTraceTab={controller.setActiveTraceTab}

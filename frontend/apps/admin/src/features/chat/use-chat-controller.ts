@@ -266,6 +266,8 @@ export function useChatController(): UseChatControllerReturn {
         let messageId = '';
         let accumulatedContent = '';
 
+        const queryStartTime = Date.now();
+
         streamChatQuery(
             {
                 query: normalizedText,
@@ -276,13 +278,77 @@ export function useChatController(): UseChatControllerReturn {
                 signal: newController.signal,
             },
             {
+                onStarted() {
+                    if (newController.signal.aborted) return;
+                    const networkMs = Date.now() - queryStartTime;
+                    setTraceSteps((prev) =>
+                        prev.map((step) =>
+                            step.id === 'receive-query'
+                                ? {
+                                      ...step,
+                                      status: 'done' as const,
+                                      finishedAt: Date.now(),
+                                      durationMs: networkMs,
+                                      description: '网络连接建立成功',
+                                  }
+                                : step
+                        )
+                    );
+                },
                 onMeta(event) {
                     if (newController.signal.aborted) return;
                     if (metaReceived) return;
                     metaReceived = true;
                     messageId = event.message_id || '';
                     runtimeSessionId = event.session_id || runtimeSessionId;
-                    advanceToStep('retrieve-docs');
+
+                    const currentMode = chatMode;
+                    const now = Date.now();
+
+                    setTraceSteps((prev) => {
+                        return prev.map((step) => {
+                            if (step.id === 'receive-query' || step.id === 'router-judge') {
+                                return { ...step, status: 'done' as const, finishedAt: now };
+                            }
+                            if (step.id === 'kb-search') {
+                                if (currentMode === 'normal') {
+                                    return { ...step, status: 'skipped' as const, finishedAt: now };
+                                }
+                                return { ...step, status: 'running' as const, startedAt: now };
+                            }
+                            if (step.id === 'local-search') {
+                                return { ...step, status: 'skipped' as const, finishedAt: now };
+                            }
+                            if (step.id === 'web-search') {
+                                if (currentMode === 'normal' || currentMode === 'rag') {
+                                    return { ...step, status: 'skipped' as const, finishedAt: now };
+                                }
+                                return step; // Remain idle for sequential simulation
+                            }
+                            return step;
+                        });
+                    });
+
+                    if (currentMode === 'normal') {
+                        advanceToStep('generate-answer');
+                    } else if (currentMode === 'web_rag') {
+                        // Simulate a sequential delay for kb-search -> web-search
+                        tabSwitchTimerRef.current = setTimeout(() => {
+                            setTraceSteps((prev) => {
+                                if (firstChunkReceived) return prev;
+                                return prev.map((step) => {
+                                    if (step.id === 'kb-search' && step.status === 'running') {
+                                        return { ...step, status: 'done' as const, finishedAt: Date.now() };
+                                    }
+                                    if (step.id === 'web-search' && step.status === 'idle') {
+                                        return { ...step, status: 'running' as const, startedAt: Date.now() };
+                                    }
+                                    return step;
+                                });
+                            });
+                        }, 700);
+                    }
+
                     if (!activeSessionId) {
                         setActiveSessionId(event.session_id);
                         setActiveSession({
@@ -301,6 +367,18 @@ export function useChatController(): UseChatControllerReturn {
                     if (newController.signal.aborted) return;
                     if (!firstChunkReceived) {
                         firstChunkReceived = true;
+                        setTraceSteps((prev) => {
+                            const now = Date.now();
+                            return prev.map((step) => {
+                                if (step.id === 'kb-search' && (step.status === 'running' || step.status === 'idle')) {
+                                    return { ...step, status: 'done' as const, finishedAt: now };
+                                }
+                                if (step.id === 'web-search' && (step.status === 'running' || step.status === 'idle')) {
+                                    return { ...step, status: 'done' as const, finishedAt: now };
+                                }
+                                return step;
+                            });
+                        });
                         advanceToStep('generate-answer');
                     }
                     accumulatedContent += event.content;

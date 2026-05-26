@@ -237,6 +237,10 @@ describe('useChatController', () => {
             wrapper: createWrapper(),
         });
 
+        act(() => {
+            result.current.setChatMode('rag');
+        });
+
         await act(async () => {
             result.current.sendQuery('test');
         });
@@ -245,12 +249,13 @@ describe('useChatController', () => {
             capturedCallbacks.onMeta!({ type: 'meta', session_id: 's1', session_title: 'Test', message_id: 'm1' });
         });
 
-        // Steps 0-2 should be done, step 3 (retrieve-docs) running
+        // Steps 0-1 should be done, step 2 (kb-search) running, others skipped
         expect(result.current.traceSteps[0].status).toBe('done');
         expect(result.current.traceSteps[1].status).toBe('done');
-        expect(result.current.traceSteps[2].status).toBe('done');
-        expect(result.current.traceSteps[3].status).toBe('running');
-        expect(result.current.traceSteps[3].id).toBe('retrieve-docs');
+        expect(result.current.traceSteps[2].status).toBe('running');
+        expect(result.current.traceSteps[2].id).toBe('kb-search');
+        expect(result.current.traceSteps[3].status).toBe('skipped');
+        expect(result.current.traceSteps[4].status).toBe('skipped');
     });
 
     it('advances trace steps on first onChunk', async () => {
@@ -265,6 +270,10 @@ describe('useChatController', () => {
             wrapper: createWrapper(),
         });
 
+        act(() => {
+            result.current.setChatMode('rag');
+        });
+
         await act(async () => {
             result.current.sendQuery('test');
         });
@@ -277,8 +286,8 @@ describe('useChatController', () => {
             capturedCallbacks.onChunk!({ type: 'chunk', content: 'Hello' });
         });
 
-        expect(result.current.traceSteps[4].status).toBe('running');
-        expect(result.current.traceSteps[4].id).toBe('generate-answer');
+        expect(result.current.traceSteps[5].status).toBe('running');
+        expect(result.current.traceSteps[5].id).toBe('generate-answer');
     });
 
     it('marks all remaining steps done on onDone', async () => {
@@ -291,6 +300,10 @@ describe('useChatController', () => {
 
         const { result } = renderHook(() => useChatController(), {
             wrapper: createWrapper(),
+        });
+
+        act(() => {
+            result.current.setChatMode('rag');
         });
 
         await act(async () => {
@@ -307,7 +320,11 @@ describe('useChatController', () => {
         });
 
         for (const step of result.current.traceSteps) {
-            expect(step.status).toBe('done');
+            if (step.id === 'local-search' || step.id === 'web-search') {
+                expect(step.status).toBe('skipped');
+            } else {
+                expect(step.status).toBe('done');
+            }
         }
     });
 
@@ -323,6 +340,10 @@ describe('useChatController', () => {
             wrapper: createWrapper(),
         });
 
+        act(() => {
+            result.current.setChatMode('rag');
+        });
+
         await act(async () => {
             result.current.sendQuery('test');
         });
@@ -331,13 +352,13 @@ describe('useChatController', () => {
             capturedCallbacks.onMeta!({ type: 'meta', session_id: 's1', session_title: 'Test', message_id: 'm1' });
         });
 
-        // Step 3 (retrieve-docs) is running at this point
+        // Step 2 (kb-search) is running at this point
         act(() => {
             capturedCallbacks.onError!(new Error('fail'));
         });
 
         const runningIdx = result.current.traceSteps.findIndex((s) => s.status === 'error');
-        expect(runningIdx).toBe(3);
+        expect(runningIdx).toBe(2);
 
         for (let i = runningIdx + 1; i < result.current.traceSteps.length; i++) {
             expect(result.current.traceSteps[i].status).toBe('skipped');
@@ -428,7 +449,7 @@ describe('useChatController', () => {
         expect(result.current.citations).toHaveLength(2);
         expect(result.current.citations[0].documentName).toBe('doc1.pdf');
         expect(result.current.citations[1].documentName).toBe('report.docx');
-        expect(result.current.traceSteps.find((step) => step.id === 'retrieve-docs')?.durationMs).toBe(42);
+        expect(result.current.traceSteps.find((step) => step.id === 'kb-search')?.durationMs).toBe(42);
         expect(result.current.traceSteps.find((step) => step.id === 'generate-answer')?.metricDetails?.first_token_latency_ms).toBe(320);
         expect(result.current.traceSteps.find((step) => step.id === 'complete')?.durationMs).toBe(1200);
     });

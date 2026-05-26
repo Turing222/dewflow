@@ -79,6 +79,11 @@ export const ragMetricsSchema = z.object({
     selected_sources: z.string().optional(),
     route_reason: z.string().optional(),
     external_context_planned: z.boolean().optional(),
+    planner_refusal: z.boolean().optional(),
+    refusal_type: z.string().optional(),
+    answer_route: z.string().optional(),
+    route_confidence: z.number().optional(),
+    planner_refusal_reason: z.string().optional(),
 }).partial();
 
 export const chatMessageMetricsSchema = z.object({
