@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from backend.services.rag_planning_service import (
+    _PLANNER_INSTRUCTIONS,
     RAG_PLANNER_FALLBACK_REASON,
     RAGExecutionPlan,
     RAGPlanningService,
@@ -80,6 +81,57 @@ def test_rag_execution_plan_clamps_values_to_config_limits(
     assert plan.should_use_external_context is True
     assert plan.external_sources == ["web"]
     assert plan.external_top_k == 4
+    assert plan.route_confidence == 0.0
+
+
+def test_rag_execution_plan_clamps_route_confidence() -> None:
+    plan = RAGExecutionPlan(
+        should_use_rag=False,
+        selected_sources=[],
+        route_confidence=1.5,
+    ).clamped()
+
+    assert plan.route_confidence == 1.0
+
+
+def test_from_settings_sets_answer_route_from_selected_sources() -> None:
+    rag_plan = RAGExecutionPlan.from_settings(
+        has_kb=True,
+        query_text="test query",
+    )
+    large_plan = RAGExecutionPlan.from_settings(
+        has_kb=False,
+        query_text="test query",
+    )
+
+    assert rag_plan.answer_route == "rag"
+    assert large_plan.answer_route == "large"
+
+
+def test_refuse_route_clears_context_sources() -> None:
+    plan = RAGExecutionPlan(
+        selected_sources=["kb", "web"],
+        should_use_rag=True,
+        should_use_external_context=True,
+        external_sources=["web"],
+        answer_route="refuse",
+        route_confidence=0.9,
+    )
+
+    assert plan.selected_sources == []
+    assert plan.should_use_rag is False
+    assert plan.should_use_external_context is False
+    assert plan.external_sources == []
+
+
+def test_large_route_with_kb_source_normalizes_to_rag() -> None:
+    plan = RAGExecutionPlan(
+        should_use_rag=True,
+        answer_route="large",
+    )
+
+    assert plan.answer_route == "rag"
+    assert plan.selected_sources == ["kb"]
 
 
 def test_from_settings_enables_external_context_when_allowed(
@@ -205,6 +257,118 @@ def test_rag_planning_service_builds_plan_via_model(
     assert captured["max_retries"] is None
 
 
+def test_rag_planning_service_deepseek_alias_resolves_to_flash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_create_model(
+        *, profile: object, api_key: str, max_retries: object = None
+    ) -> str:
+        captured["profile"] = profile
+        captured["api_key"] = api_key
+        return "model"
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "planner-key")
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.create_pydantic_ai_model",
+        fake_create_model,
+    )
+
+    model = RAGPlanningService(provider="deepseek")._create_model()
+
+    assert model == "model"
+    assert captured["profile"].name == "deepseek_v4_flash"
+    assert captured["profile"].model == "deepseek-v4-flash"
+
+
+def test_rag_planning_service_provider_fallback_to_ai_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_create_model(
+        *, profile: object, api_key: str, max_retries: object = None
+    ) -> str:
+        captured["profile"] = profile
+        return "model"
+
+    monkeypatch.setenv("BIFROST_API_KEY", "bifrost-key")
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.RAG_PLANNER_PROVIDER",
+        "bifrost_flash",
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.LLM_PROVIDER",
+        "bifrost_pro",
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.create_pydantic_ai_model",
+        fake_create_model,
+    )
+
+    model = RAGPlanningService()._create_model()
+
+    assert model == "model"
+    assert captured["profile"].name == "bifrost_v4_flash"
+
+
+def test_rag_planning_service_llm_provider_fallback_uses_pro(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_create_model(
+        *, profile: object, api_key: str, max_retries: object = None
+    ) -> str:
+        captured["profile"] = profile
+        return "model"
+
+    monkeypatch.setenv("BIFROST_API_KEY", "chat-key")
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.RAG_PLANNER_PROVIDER",
+        None,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.ai_settings.LLM_PROVIDER",
+        "bifrost_pro",
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.create_pydantic_ai_model",
+        fake_create_model,
+    )
+
+    model = RAGPlanningService()._create_model()
+
+    assert model == "model"
+    assert captured["profile"].name == "bifrost_v4_pro"
+    assert captured["profile"].model == "deepseek/deepseek-v4-pro"
+
+
+def test_rag_planning_service_bifrost_flash_resolves_to_v4_flash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_create_model(
+        *, profile: object, api_key: str, max_retries: object = None
+    ) -> str:
+        captured["profile"] = profile
+        return "model"
+
+    monkeypatch.setenv("BIFROST_API_KEY", "bifrost-key")
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.create_pydantic_ai_model",
+        fake_create_model,
+    )
+
+    model = RAGPlanningService(provider="bifrost_flash")._create_model()
+
+    assert model == "model"
+    assert captured["profile"].name == "bifrost_v4_flash"
+    assert captured["profile"].model == "deepseek/deepseek-v4-flash"
+
+
 @pytest.mark.asyncio
 async def test_rag_planning_service_returns_fallback_on_invalid_output(
     monkeypatch: pytest.MonkeyPatch,
@@ -233,6 +397,13 @@ async def test_rag_planning_service_returns_fallback_on_invalid_output(
 
     assert plan.should_use_rag is True
     assert plan.reason == RAG_PLANNER_FALLBACK_REASON
+    assert plan.answer_route == "rag"
+
+
+def test_planner_instructions_include_level2_route_contract() -> None:
+    assert "answer_route" in _PLANNER_INSTRUCTIONS
+    assert "route_confidence" in _PLANNER_INSTRUCTIONS
+    assert "普通闲聊" in _PLANNER_INSTRUCTIONS
 
 
 @pytest.mark.asyncio

@@ -123,6 +123,11 @@ class AISettings(BaseSettings):
     RAG_PLANNER_ENABLED: bool = False
     RAG_PLANNER_PROVIDER: str | None = None
     RAG_PLANNER_TIMEOUT_SECONDS: int = Field(default=8, ge=1, le=60)
+    RAG_PLANNER_ROUTING_ENABLED: bool = False
+    RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD: float = Field(
+        default=0.85, ge=0.0, le=1.0
+    )
+    RAG_PLANNER_REFUSAL_MESSAGE: str = "当前请求暂时无法可靠回答。"
     RAG_REFUSAL_ENABLED: bool = True
     RAG_MIN_HIT_COUNT: int = Field(default=1, ge=1)
     RAG_MIN_RELEVANCE_SCORE: float = Field(default=0.2, ge=0.0, le=1.0)

@@ -81,7 +81,38 @@ class WorkerRAGOrchestrator:
             metrics["context_mode"] = rag_plan.context_mode
             metrics["selected_sources"] = ",".join(rag_plan.selected_sources)
             metrics["route_reason"] = rag_plan.reason
+            if ai_settings.RAG_PLANNER_ROUTING_ENABLED:
+                metrics["answer_route"] = rag_plan.answer_route
+                metrics["route_confidence"] = rag_plan.route_confidence
             metrics["external_context_planned"] = rag_plan.should_use_external_context
+
+            preflight_refusal = self._build_planner_preflight_refusal(
+                payload=payload,
+                rag_plan=rag_plan,
+            )
+            if preflight_refusal is not None:
+                search_context = self._build_planner_refusal_search_context(
+                    payload=payload,
+                    decision=preflight_refusal,
+                    rag_plan=rag_plan,
+                )
+                search_context = self._with_rag_metrics(search_context, metrics)
+                set_span_attributes(
+                    span,
+                    {
+                        "rag.refusal": True,
+                        "rag.refusal_reason": preflight_refusal.reason,
+                        "rag.planner.used": planner_used,
+                        "rag.planner.answer_route": rag_plan.answer_route,
+                        "rag.planner.route_confidence": rag_plan.route_confidence,
+                        "rag.planner.preflight_refusal": True,
+                    },
+                )
+                return PreparedGenerationContext(
+                    assembled_prompt=None,
+                    search_context=search_context,
+                    refusal_decision=preflight_refusal,
+                )
 
             retrieve_started = perf_start()
             rag_candidates = await self.retrieve_rag_candidates(payload, rag_plan)
@@ -139,6 +170,8 @@ class WorkerRAGOrchestrator:
                         "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
                         "context.mode": rag_plan.context_mode,
                         "context.selected_sources": ",".join(rag_plan.selected_sources),
+                        "rag.planner.answer_route": rag_plan.answer_route,
+                        "rag.planner.route_confidence": rag_plan.route_confidence,
                         "external_context.hit_count": len(external_candidates),
                     },
                 )
@@ -173,6 +206,8 @@ class WorkerRAGOrchestrator:
                     "rag.planner.should_use_rag": rag_plan.should_use_rag,
                     "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
                     "rag.planner.use_rerank": rag_plan.use_rerank,
+                    "rag.planner.answer_route": rag_plan.answer_route,
+                    "rag.planner.route_confidence": rag_plan.route_confidence,
                     "context.mode": rag_plan.context_mode,
                     "context.selected_sources": ",".join(rag_plan.selected_sources),
                     "external_context.planned": rag_plan.should_use_external_context,
@@ -228,10 +263,48 @@ class WorkerRAGOrchestrator:
                 enable_external_context=payload.enable_external_context,
                 context_mode=payload.context_mode,
             )
-            return plan.clamped(), True
+            plan = plan.clamped()
+            if plan.answer_route == "refuse" and (
+                not ai_settings.RAG_PLANNER_ROUTING_ENABLED
+                or plan.route_confidence
+                < ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD
+            ):
+                return default_plan, True
+            return plan, True
         except Exception as exc:
             logger.warning("Worker RAG Planner 规划失败，降级为默认计划: %s", exc)
             return default_plan, False
+
+    def _build_planner_preflight_refusal(
+        self,
+        *,
+        payload: GenerationPayload,
+        rag_plan: RAGExecutionPlan,
+    ) -> RAGEvidenceDecision | None:
+        if not ai_settings.RAG_PLANNER_ROUTING_ENABLED:
+            return None
+        # Preloaded RAG candidates are caller-owned context; do not let planner
+        # preflight refusal discard evidence that has already been selected.
+        if payload.rag_candidates:
+            return None
+        if rag_plan.answer_route != "refuse":
+            return None
+        if (
+            rag_plan.route_confidence
+            < ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD
+        ):
+            return None
+        reason = (
+            rag_plan.planner_refusal_reason.strip()
+            or rag_plan.reason.strip()
+            or "RAG planner 前置拒答"
+        )
+        return RAGEvidenceDecision(
+            should_refuse=True,
+            reason=reason,
+            hit_count=0,
+            policy_version=3,
+        )
 
     async def retrieve_external_context_candidates(
         self,
@@ -385,6 +458,29 @@ class WorkerRAGOrchestrator:
             "chunks": [],
         }
         search_context.update(decision.to_metadata())
+        return search_context
+
+    def _build_planner_refusal_search_context(
+        self,
+        *,
+        payload: GenerationPayload,
+        decision: RAGEvidenceDecision,
+        rag_plan: RAGExecutionPlan,
+    ) -> dict:
+        search_context = self._build_refusal_search_context(
+            payload=payload,
+            chunks=[],
+            decision=decision,
+        )
+        search_context.update(
+            {
+                "planner_refusal": True,
+                "refusal_type": "planner_preflight",
+                "answer_route": rag_plan.answer_route,
+                "route_confidence": rag_plan.route_confidence,
+                "planner_refusal_reason": decision.reason,
+            }
+        )
         return search_context
 
     @staticmethod

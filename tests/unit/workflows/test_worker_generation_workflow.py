@@ -682,6 +682,124 @@ async def test_worker_stream_refuses_when_rag_has_no_hits(monkeypatch) -> None:
     )
 
 
+async def test_worker_nonstream_planner_preflight_refusal_skips_llm(
+    monkeypatch,
+) -> None:
+    redis = FakeRedis()
+    slot_calls = install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+
+    uow = FakeChatUow()
+    uow.chat_repo.update_message_status.return_value = object()
+    llm_service = NonStreamingLLM(LLMResultDTO(content="should not run"))
+    rag_service = RecordingRAGService([make_rag_hit()])
+    planner = RecordingRAGPlanner(
+        RAGExecutionPlan(
+            should_use_rag=True,
+            answer_route="refuse",
+            route_confidence=0.9,
+            planner_refusal_reason="明显无法回答",
+        )
+    )
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=llm_service,
+        rag_service=rag_service,
+        rag_planning_service=planner,
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 5)
+
+    result = await workflow.generate_nonstream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="知识库无法回答的请求",
+            conversation_history=[],
+            kb_id=uuid.uuid4(),
+        ),
+        assistant_message_id=uuid.uuid4(),
+    )
+
+    assert result.success is True
+    assert result.content == "当前请求暂时无法可靠回答。"
+    llm_service.generate_response.assert_not_awaited()
+    rag_service.retrieve.assert_not_awaited()
+    assert slot_calls == []
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["search_context"]["planner_refusal"] is True
+    assert update_kwargs["message_metadata"]["badcase"]["reason"] == (
+        "planner_preflight_refusal"
+    )
+
+
+async def test_worker_stream_planner_preflight_refusal_skips_llm(
+    monkeypatch,
+) -> None:
+    redis = FakeRedis()
+    slot_calls = install_llm_slot_recorder(monkeypatch)
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+
+    uow = FakeChatUow()
+    uow.chat_repo.update_message_status.return_value = object()
+    llm_service = StreamingLLM(["should not stream"])
+    rag_service = RecordingRAGService([make_rag_hit()])
+    planner = RecordingRAGPlanner(
+        RAGExecutionPlan(
+            should_use_rag=True,
+            answer_route="refuse",
+            route_confidence=0.9,
+            planner_refusal_reason="明显无法回答",
+        )
+    )
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=llm_service,
+        rag_service=rag_service,
+        rag_planning_service=planner,
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 5)
+
+    await workflow.generate_stream(
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="知识库无法回答的请求",
+            conversation_history=[],
+            kb_id=uuid.uuid4(),
+        ),
+        channel="stream:test",
+        assistant_message_id=uuid.uuid4(),
+    )
+
+    assert redis.published == [
+        ("stream:test", encode_started_event()),
+        ("stream:test", encode_chunk_event("当前请求暂时无法可靠回答。")),
+        ("stream:test", encode_done_event()),
+    ]
+    assert llm_service.stream_queries == []
+    rag_service.retrieve.assert_not_awaited()
+    assert slot_calls == []
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    assert update_kwargs["search_context"]["planner_refusal"] is True
+    assert update_kwargs["message_metadata"]["badcase"]["reason"] == (
+        "planner_preflight_refusal"
+    )
+
+
 async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
     monkeypatch,
 ) -> None:

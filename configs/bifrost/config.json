@@ -48,7 +48,9 @@
           "value": "env.DEEPSEEK_API_KEY",
           "models": [
             "deepseek-chat",
-            "deepseek-reasoner"
+            "deepseek-reasoner",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro"
           ],
           "weight": 1.0
         },
@@ -57,7 +59,9 @@
           "value": "env.DEEPSEEK_API_KEY_2",
           "models": [
             "deepseek-chat",
-            "deepseek-reasoner"
+            "deepseek-reasoner",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro"
           ],
           "weight": 1.0
         }
@@ -118,7 +122,9 @@
             "provider": "deepseek",
             "allowed_models": [
               "deepseek-chat",
-              "deepseek-reasoner"
+              "deepseek-reasoner",
+              "deepseek-v4-flash",
+              "deepseek-v4-pro"
             ],
             "key_ids": [
               "*"

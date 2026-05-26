@@ -234,6 +234,9 @@ def test_rag_refusal_settings_can_load_from_env(
     monkeypatch.setenv("RAG_MIN_RELEVANCE_SCORE", "0.35")
     monkeypatch.setenv("RAG_MIN_RERANK_SCORE", "6.5")
     monkeypatch.setenv("RAG_REFUSAL_MESSAGE", "资料不足，无法回答。")
+    monkeypatch.setenv("RAG_PLANNER_ROUTING_ENABLED", "true")
+    monkeypatch.setenv("RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD", "0.75")
+    monkeypatch.setenv("RAG_PLANNER_REFUSAL_MESSAGE", "planner 拒答。")
 
     settings = Settings()
 
@@ -242,3 +245,72 @@ def test_rag_refusal_settings_can_load_from_env(
     assert settings.RAG_MIN_RELEVANCE_SCORE == 0.35
     assert settings.RAG_MIN_RERANK_SCORE == 6.5
     assert settings.RAG_REFUSAL_MESSAGE == "资料不足，无法回答。"
+    assert settings.RAG_PLANNER_ROUTING_ENABLED is True
+    assert settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD == 0.75
+    assert settings.RAG_PLANNER_REFUSAL_MESSAGE == "planner 拒答。"
+
+
+def test_rag_planner_enabled_default_from_yaml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "configs"
+    app_dir = config_dir / "app"
+    app_dir.mkdir(parents=True)
+    (app_dir / "base.yaml").write_text(
+        "LLM_PROVIDER: bifrost_pro\nRAG_PLANNER_ENABLED: true\nRAG_PLANNER_PROVIDER: bifrost_flash\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+
+    settings = Settings()
+
+    assert settings.LLM_PROVIDER == "bifrost_pro"
+    assert settings.RAG_PLANNER_ENABLED is True
+    assert settings.RAG_PLANNER_PROVIDER == "bifrost_flash"
+
+
+def test_bifrost_pro_alias_resolves_to_v4_pro_profile() -> None:
+    from backend.config.llm import get_llm_model_config
+
+    config = get_llm_model_config()
+    profile = config.resolve_profile("bifrost_pro")
+
+    assert profile.name == "bifrost_v4_pro"
+    assert profile.model == "deepseek/deepseek-v4-pro"
+    assert profile.provider == "openai-compatible"
+
+
+def test_bifrost_flash_alias_resolves_to_v4_flash_profile() -> None:
+    from backend.config.llm import get_llm_model_config
+
+    config = get_llm_model_config()
+    profile = config.resolve_profile("bifrost_flash")
+
+    assert profile.name == "bifrost_v4_flash"
+    assert profile.model == "deepseek/deepseek-v4-flash"
+    assert profile.provider == "openai-compatible"
+
+
+def test_deepseek_pro_alias_resolves_to_v4_pro_profile() -> None:
+    from backend.config.llm import get_llm_model_config
+
+    config = get_llm_model_config()
+    profile = config.resolve_profile("deepseek_pro")
+
+    assert profile.name == "deepseek_v4_pro"
+    assert profile.model == "deepseek-v4-pro"
+    assert profile.provider == "deepseek"
+
+
+def test_rag_planner_provider_deepseek_resolves_to_flash_profile() -> None:
+    from backend.config.llm import get_llm_model_config
+
+    config = get_llm_model_config()
+    profile = config.resolve_profile("deepseek")
+
+    assert profile.name == "deepseek_v4_flash"
+    assert profile.model == "deepseek-v4-flash"

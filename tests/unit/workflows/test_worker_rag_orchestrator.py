@@ -313,6 +313,417 @@ async def test_prepare_context_hybrid_rerank_uses_rerank_score_for_policy(
     )
 
 
+async def test_prepare_context_planner_preflight_refusal_skips_retrieval(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD",
+        0.85,
+    )
+
+    plan = RAGExecutionPlan(
+        should_use_rag=True,
+        answer_route="refuse",
+        route_confidence=0.9,
+        planner_refusal_reason="明显无法回答",
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=plan)
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(return_value=[make_rag_hit()])
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+    )
+    result = await orchestrator.prepare_context(
+        GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="test",
+            kb_id=uuid.uuid4(),
+            conversation_history=[],
+        )
+    )
+
+    assert result.refusal_decision is not None
+    assert result.refusal_decision.reason == "明显无法回答"
+    assert result.search_context["planner_refusal"] is True
+    assert result.search_context["refusal_type"] == "planner_preflight"
+    assert result.search_context["answer_route"] == "refuse"
+    assert result.search_context["route_confidence"] == 0.9
+    rag_service.retrieve.assert_not_awaited()
+
+
+async def test_prepare_context_low_confidence_refuse_continues_existing_flow(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        False,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+
+    plan = RAGExecutionPlan(
+        should_use_rag=True,
+        answer_route="refuse",
+        route_confidence=0.7,
+        planner_refusal_reason="不够确定",
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=plan)
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(return_value=[make_rag_hit()])
+    context_builder = MagicMock()
+    context_builder.build_from_chunks.return_value = SimpleNamespace(
+        assembled_prompt=SimpleNamespace(total_tokens=42, messages=[]),
+        search_context={"chunks": []},
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+        chat_context_builder=context_builder,
+    )
+    result = await orchestrator.prepare_context(
+        GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="test",
+            kb_id=uuid.uuid4(),
+            conversation_history=[],
+        )
+    )
+
+    assert result.refusal_decision is None
+    rag_service.retrieve.assert_awaited_once()
+    context_builder.build_from_chunks.assert_called_once()
+
+
+async def test_prepare_context_planner_large_route_skips_rag(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+
+    plan = RAGExecutionPlan(
+        selected_sources=[],
+        should_use_rag=False,
+        answer_route="large",
+        route_confidence=0.9,
+        reason="无需知识库",
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=plan)
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(return_value=[make_rag_hit()])
+    context_builder = MagicMock()
+    context_builder.build_from_chunks.return_value = SimpleNamespace(
+        assembled_prompt=SimpleNamespace(total_tokens=42, messages=[]),
+        search_context=None,
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+        chat_context_builder=context_builder,
+    )
+    result = await orchestrator.prepare_context(
+        GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            kb_id=uuid.uuid4(),
+            conversation_history=[],
+        )
+    )
+
+    assert result.refusal_decision is None
+    rag_service.retrieve.assert_not_awaited()
+    context_builder.build_from_chunks.assert_called_once()
+
+
+async def test_prepare_context_routing_disabled_ignores_refuse_route(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        False,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        False,
+    )
+
+    plan = RAGExecutionPlan(
+        should_use_rag=True,
+        answer_route="refuse",
+        route_confidence=1.0,
+        planner_refusal_reason="ignored",
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=plan)
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(return_value=[make_rag_hit()])
+    context_builder = MagicMock()
+    context_builder.build_from_chunks.return_value = SimpleNamespace(
+        assembled_prompt=SimpleNamespace(total_tokens=42, messages=[]),
+        search_context={"chunks": []},
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+        chat_context_builder=context_builder,
+    )
+    result = await orchestrator.prepare_context(
+        GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="test",
+            kb_id=uuid.uuid4(),
+            conversation_history=[],
+        )
+    )
+
+    assert result.refusal_decision is None
+    rag_service.retrieve.assert_awaited_once()
+
+
+async def test_prepare_context_planner_preflight_refusal_falls_back_to_plan_reason(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD",
+        0.85,
+    )
+
+    plan = RAGExecutionPlan(
+        should_use_rag=True,
+        answer_route="refuse",
+        route_confidence=0.9,
+        planner_refusal_reason="",
+        reason="问题超出知识库范围",
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=plan)
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(return_value=[make_rag_hit()])
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+    )
+    result = await orchestrator.prepare_context(
+        GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="test",
+            kb_id=uuid.uuid4(),
+            conversation_history=[],
+        )
+    )
+
+    assert result.refusal_decision is not None
+    assert result.refusal_decision.reason == "问题超出知识库范围"
+    rag_service.retrieve.assert_not_awaited()
+
+
+async def test_prepare_context_planner_preflight_refusal_falls_back_to_default_text(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD",
+        0.85,
+    )
+
+    plan = RAGExecutionPlan(
+        should_use_rag=True,
+        answer_route="refuse",
+        route_confidence=0.9,
+        planner_refusal_reason="",
+        reason="",
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=plan)
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(return_value=[make_rag_hit()])
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+    )
+    result = await orchestrator.prepare_context(
+        GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="test",
+            kb_id=uuid.uuid4(),
+            conversation_history=[],
+        )
+    )
+
+    assert result.refusal_decision is not None
+    assert result.refusal_decision.reason == "RAG planner 前置拒答"
+    rag_service.retrieve.assert_not_awaited()
+
+
+async def test_prepare_context_existing_rag_candidates_skips_preflight_refusal(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
+        False,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+
+    plan = RAGExecutionPlan(
+        should_use_rag=True,
+        answer_route="refuse",
+        route_confidence=0.95,
+        planner_refusal_reason="应拒答",
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=plan)
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(return_value=[make_rag_hit()])
+    context_builder = MagicMock()
+    context_builder.build_from_chunks.return_value = SimpleNamespace(
+        assembled_prompt=SimpleNamespace(total_tokens=42, messages=[]),
+        search_context={"chunks": []},
+    )
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+        chat_context_builder=context_builder,
+    )
+    result = await orchestrator.prepare_context(
+        GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="test",
+            kb_id=uuid.uuid4(),
+            conversation_history=[],
+            rag_candidates=[{"content": "pre-fetched", "score": 0.9}],
+        )
+    )
+
+    assert result.refusal_decision is None
+    rag_service.retrieve.assert_not_awaited()
+    context_builder.build_from_chunks.assert_called_once()
+
+
+async def test_prepare_context_confidence_at_threshold_triggers_refusal(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    monkeypatch.setattr(
+        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD",
+        0.85,
+    )
+
+    plan = RAGExecutionPlan(
+        should_use_rag=True,
+        answer_route="refuse",
+        route_confidence=0.85,
+        planner_refusal_reason="边界值拒答",
+    )
+    planner = MagicMock()
+    planner.plan = AsyncMock(return_value=plan)
+    rag_service = MagicMock()
+    rag_service.retrieve = AsyncMock(return_value=[make_rag_hit()])
+
+    orchestrator = WorkerRAGOrchestrator(
+        rag_service=rag_service,
+        rag_planning_service=planner,
+    )
+    result = await orchestrator.prepare_context(
+        GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="test",
+            kb_id=uuid.uuid4(),
+            conversation_history=[],
+        )
+    )
+
+    assert result.refusal_decision is not None
+    assert result.refusal_decision.reason == "边界值拒答"
+    rag_service.retrieve.assert_not_awaited()
+
+
 async def test_external_context_candidates_are_added_when_planned(monkeypatch) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload

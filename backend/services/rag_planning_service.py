@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 RAGRetrievalMode = Literal["vector", "fulltext", "hybrid"]
 ExternalContextSource = Literal["web"]
+PlannerAnswerRoute = Literal["refuse", "rag", "large"]
 RAG_PLANNER_FALLBACK_REASON = "RAG planner 降级为默认计划"
 
 
@@ -47,6 +48,9 @@ class RAGExecutionPlan(BaseModel):
     should_use_external_context: bool = False
     external_sources: list[ExternalContextSource] = Field(default_factory=list)
     external_top_k: int = Field(default=4, ge=1)
+    answer_route: PlannerAnswerRoute = "rag"
+    route_confidence: float = 0.0
+    planner_refusal_reason: str = ""
     reason: str = ""
 
     @model_validator(mode="after")
@@ -64,10 +68,14 @@ class RAGExecutionPlan(BaseModel):
             sources = [source for source in sources if source == "kb"]
         elif self.context_mode == "web_only":
             sources = [source for source in sources if source == "web"]
+        if self.answer_route == "refuse":
+            sources = []
         self.selected_sources = sources
         self.should_use_rag = "kb" in sources
         self.should_use_external_context = "web" in sources
         self.external_sources = ["web"] if "web" in sources else []
+        if self.answer_route != "refuse":
+            self.answer_route = "rag" if sources else "large"
         return self
 
     @classmethod
@@ -97,6 +105,7 @@ class RAGExecutionPlan(BaseModel):
             selected_sources.append("kb")
         if should_use_external_context:
             selected_sources.append("web")
+        answer_route: PlannerAnswerRoute = "rag" if selected_sources else "large"
         return cls(
             context_mode=resolved_mode,
             selected_sources=selected_sources,
@@ -109,6 +118,8 @@ class RAGExecutionPlan(BaseModel):
             should_use_external_context=should_use_external_context,
             external_sources=["web"] if should_use_external_context else [],
             external_top_k=ai_settings.EXTERNAL_CONTEXT_TOP_K,
+            answer_route=answer_route,
+            route_confidence=1.0,
             reason=reason,
         ).clamped()
 
@@ -129,6 +140,7 @@ class RAGExecutionPlan(BaseModel):
             1,
             ai_settings.EXTERNAL_CONTEXT_TOP_K,
         )
+        route_confidence = _clamp_float(self.route_confidence, 0.0, 1.0)
         selected_sources = [
             source
             for source in dict.fromkeys(self.selected_sources)
@@ -148,6 +160,7 @@ class RAGExecutionPlan(BaseModel):
                 "should_use_external_context": should_use_external_context,
                 "external_sources": external_sources,
                 "external_top_k": external_top_k,
+                "route_confidence": route_confidence,
             }
         )
 
@@ -278,6 +291,10 @@ def _clamp(value: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(value, maximum))
 
 
+def _clamp_float(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(float(value), maximum))
+
+
 def _trace_attrs(
     plan: RAGExecutionPlan,
     *,
@@ -289,6 +306,8 @@ def _trace_attrs(
         "rag.planner.should_use_rag": plan.should_use_rag,
         "rag.planner.retrieval_mode": plan.retrieval_mode,
         "rag.planner.use_rerank": plan.use_rerank,
+        "rag.planner.answer_route": plan.answer_route,
+        "rag.planner.route_confidence": plan.route_confidence,
         "context.mode": plan.context_mode,
         "context.selected_sources": ",".join(plan.selected_sources),
         "external_context.should_use": plan.should_use_external_context,
@@ -343,10 +362,15 @@ _PLANNER_INSTRUCTIONS = """你是 RAG 检索规划器。
 - should_use_external_context: 仅当用户允许外部上下文且问题需要最新信息、公开网页事实、知识库缺口补充时为 true。
 - external_sources: 目前只允许 ["web"]；不需要外部上下文时返回 []。
 - external_top_k: 外部上下文检索数量。
+- answer_route: 明显不应继续检索或生成时为 refuse；需要知识库或外部上下文时为 rag；普通闲聊、写作或无需上下文的问题为 large。
+- route_confidence: 对 answer_route 的置信度，0.0 到 1.0。
+- planner_refusal_reason: answer_route=refuse 时填写简短中文拒答原因，否则为空字符串。
 - reason: 简短中文原因。
 约束：
 - context_mode=off 时 selected_sources 必须为 []。
 - context_mode=kb_only 时 selected_sources 最多包含 kb。
 - context_mode=web_only 时 selected_sources 最多包含 web。
 - context_mode=auto 时按问题需要选择 kb、web 或两者。
+- 只有明显不应继续处理的请求才返回 answer_route=refuse；不确定时不要拒答。
+- 普通闲聊或无需知识库的问题返回 answer_route=large，不要误拒。
 """
