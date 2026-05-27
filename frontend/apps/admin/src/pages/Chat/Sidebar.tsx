@@ -1,6 +1,7 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Spin, Tooltip } from 'antd';
-import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, Sun, Moon } from 'lucide-react';
+import { Plus, MessageSquare, Clock, ChevronLeft, ChevronRight, Inbox, Sun, Moon, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatSession } from '../../types/chat';
 import { useChatSessionsQuery } from '../../query/hooks/chat';
@@ -24,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     collapsed,
     onToggle,
 }) => {
+    const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
     const { data, isLoading: loading } = useChatSessionsQuery();
     const sessions = data?.items || [];
@@ -62,6 +64,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                         type="text"
                         icon={<Plus size={20} />}
                         onClick={onNewChat}
+                    />
+                </Tooltip>
+                <Tooltip title={t('repo_check.page_title', '仓库可信度初筛')} placement="right">
+                    <Button
+                        className={styles['collapsed-action-btn']}
+                        type="text"
+                        icon={<ShieldCheck size={20} />}
+                        onClick={() => navigate('/repo-check')}
                     />
                 </Tooltip>
                 
@@ -113,6 +123,23 @@ const Sidebar: React.FC<SidebarProps> = ({
                     aria-label={t('sidebar.collapse')}
                     onClick={onToggle}
                 />
+            </div>
+
+            {/* 仓库可信度初筛入口 */}
+            <div className={styles['workbench-card']} onClick={() => navigate('/repo-check')}>
+                <div className={styles['workbench-card-glow']} />
+                <div className={styles['workbench-card-icon']}>
+                    <ShieldCheck size={18} />
+                </div>
+                <div className={styles['workbench-card-content']}>
+                    <div className={styles['workbench-card-title']}>
+                        {t('repo_check.sidebar_title', '仓库可信度初筛')}
+                        <span className={styles['workbench-card-tag']}>Tool</span>
+                    </div>
+                    <div className={styles['workbench-card-desc']}>
+                        {t('repo_check.sidebar_desc', 'README 信用评估')}
+                    </div>
+                </div>
             </div>
 
             <div className={styles['sidebar-section-title']}>

@@ -60,7 +60,9 @@
       "admin_panel": "后台管理",
       "token_quota": "账号 Token 额度",
       "used": "已使用"
-    }
+    },
+    "mode_repo_check_title": "仓库可信度初筛",
+    "mode_repo_check_desc": "输入公开 GitHub 仓库，生成基于 README 和元信息的非技术信用评估报告。"
   },
   "auth": {
     "title": "AI 助手",
@@ -179,5 +181,44 @@
     "history_desc": "展示最近 20 条收支变动",
     "checkin_error": "签到失败，请稍后重试",
     "week_days": ["日", "一", "二", "三", "四", "五", "六"]
+  },
+  "repo_check": {
+    "page_title": "AI 项目可信度初筛报告",
+    "page_desc": "输入公开 GitHub 仓库，生成一份基于 README 和元信息的非技术判断报告。",
+    "btn_analyze": "开始分析",
+    "enter_url_warning": "请输入 GitHub 仓库 URL",
+    "step_submit": "提交任务",
+    "step_pending": "等待调度",
+    "step_running": "分析 README",
+    "step_succeeded": "生成报告",
+    "status_pending": "等待调度",
+    "status_running": "分析中",
+    "status_succeeded": "已完成",
+    "status_failed": "失败",
+    "risk_low": "低",
+    "risk_medium": "中",
+    "risk_high": "高",
+    "risk_unknown": "未知",
+    "type_demo_wrapper": "Demo 包装",
+    "type_framework_assembly": "框架组合",
+    "type_research_prototype": "研究原型",
+    "type_product_candidate": "产品候选",
+    "type_unclear": "暂不明确",
+    "syncing_status": "正在同步分析状态",
+    "failed_message": "仓库分析失败，请稍后重试",
+    "verdict": "评估结论",
+    "metric_project_type": "项目类型",
+    "metric_hype_risk": "夸大风险",
+    "metric_evidence_strength": "证据强度",
+    "metric_generation_method": "生成方式",
+    "action_markdown": "下载 Markdown 报告",
+    "action_evidence_json": "查看原始 Evidence JSON",
+    "title_credibility_signals": "可信信号",
+    "title_missing_signals": "缺失信号",
+    "title_critical_findings": "关键发现",
+    "title_markdown_report": "Markdown 报告",
+    "evidence_detail_not_found": "未找到证据详情",
+    "empty_text": "暂无",
+    "chat_input_tip": "请输入公开 GitHub 仓库地址 (例如 https://github.com/owner/repo) 并回车评估..."
   }
 }

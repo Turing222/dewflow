@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Input, Button, Spin, Avatar, Upload, Popover } from 'antd';
-import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw, MessageSquare, Database, Globe2 } from 'lucide-react';
+import { Send, Bot, User as UserIcon, Paperclip, AlertCircle, RotateCcw, MessageSquare, Database, Globe2, Github } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ChatMessage } from '../../types/chat';
 import type { ChatMode } from '../../features/chat/use-chat-controller';
@@ -8,6 +9,8 @@ import { parseCitations } from '../../types/agent-trace';
 import styles from './MessageList.module.css';
 import PixelAvatar from './PixelAvatar';
 import { FeatureGate } from '../../context/FeatureGate';
+import RepoAnalysisCard from '../RepoCheck/RepoAnalysisCard';
+
 
 const { TextArea } = Input;
 
@@ -36,6 +39,7 @@ const MessageList: React.FC<MessageListProps> = ({
     onUploadKBFile,
     isIngesting = false,
 }) => {
+    const navigate = useNavigate();
     const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation();
@@ -175,6 +179,30 @@ const MessageList: React.FC<MessageListProps> = ({
 
     const renderMessage = (msg: ChatMessage) => {
         const isUser = msg.role === 'user';
+        const isRepoCheck = msg.message_metadata?.type === 'repo_check_run';
+
+        if (isRepoCheck) {
+            return (
+                <div key={msg.id} className={`${styles['chat-message']} chat-message ${styles.assistant} assistant`} style={{ maxWidth: '840px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <div className={styles['assistant-avatar-wrapper']}>
+                            <Avatar
+                                className={styles['chat-avatar']}
+                                style={{ backgroundColor: 'var(--color-bg-subtle)', flexShrink: 0 }}
+                                icon={<Bot size={18} color="var(--color-primary)" />}
+                            />
+                        </div>
+                        <strong style={{ color: 'var(--color-text-main)', fontSize: '14px' }}>
+                            {t('repo_check.page_title', 'AI 项目可信度初筛报告')}
+                        </strong>
+                    </div>
+                    <div style={{ width: '100%', paddingLeft: '48px', boxSizing: 'border-box' }}>
+                        <RepoAnalysisCard runId={msg.message_metadata?.run_id as string} />
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div key={msg.id} className={`${styles['chat-message']} chat-message ${isUser ? `${styles.user} user` : `${styles.assistant} assistant`}`}>
                 {isUser ? (
@@ -291,6 +319,19 @@ const MessageList: React.FC<MessageListProps> = ({
                                     <p>{t('chat.mode_web_rag_desc', '结合知识库与按需联网检索，适合需要最新公开信息的问题。')}</p>
                                 </div>
                             </div>
+
+                            <div
+                                className={`${styles['mode-card']} ${chatMode === 'repo_check' ? styles.active : ''}`}
+                                onClick={() => navigate('/repo-check')}
+                            >
+                                <div className={styles['mode-card-icon-container']}>
+                                    <Github size={20} className={styles['mode-icon']} />
+                                </div>
+                                <div className={styles['mode-card-content']}>
+                                    <h4>{t('chat.mode_repo_check_title', '仓库可信度初筛')}</h4>
+                                    <p>{t('chat.mode_repo_check_desc', '输入公开 GitHub 仓库，生成基于 README 和元信息的非技术信用评估报告。')}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 ) : (
@@ -371,7 +412,7 @@ const MessageList: React.FC<MessageListProps> = ({
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder={t('chat.input_tip')}
+                            placeholder={chatMode === 'repo_check' ? t('repo_check.chat_input_tip', '请输入公开 GitHub 仓库地址 (例如 https://github.com/owner/repo) 并回车评估...') : t('chat.input_tip')}
                             autoSize={{ minRows: 1, maxRows: 4 }}
                             disabled={isStreaming}
                         />

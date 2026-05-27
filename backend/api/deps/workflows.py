@@ -12,7 +12,7 @@ from backend.api.deps.uow import get_uow
 from backend.application.chat.web_nonstream_workflow import ChatNonStreamWorkflow
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.application.knowledge.upload_workflow import KnowledgeUploadWorkflow
-from backend.application.repo_analysis.workflow import RepoAnalysisSubmitWorkflow
+from backend.application.repo_analysis.submit_workflow import RepoAnalysisSubmitWorkflow
 from backend.contracts.interfaces import (
     AbstractTaskDispatcher,
     AbstractUnitOfWork,

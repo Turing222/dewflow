@@ -43,6 +43,22 @@ def test_growthbook_sdk_key_loads_from_secret_file(
     assert settings.GROWTHBOOK_SDK_KEY == "sdk-secret-from-file"
 
 
+def test_github_token_loads_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret_file = tmp_path / "github_token.txt"
+    secret_file.write_text("github-token-from-file\n", encoding="utf-8")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN_FILE", str(secret_file))
+
+    load_secret_env()
+
+    settings = Settings(_env_file=None)
+
+    assert settings.GITHUB_TOKEN == "github-token-from-file"
+
+
 def test_tavily_api_key_loads_from_secret_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

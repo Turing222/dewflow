@@ -60,7 +60,9 @@
       "admin_panel": "Admin Dashboard",
       "token_quota": "Account Token Quota",
       "used": "Used"
-    }
+    },
+    "mode_repo_check_title": "Repo Credibility Check",
+    "mode_repo_check_desc": "Enter a public GitHub repository URL to instantly generate a non-technical credibility assessment report based on README and metadata signals."
   },
   "auth": {
     "title": "AI Assistant",
@@ -179,5 +181,44 @@
     "history_desc": "Showing recent 20 transactions",
     "checkin_error": "Check-in failed, please try again later",
     "week_days": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  },
+  "repo_check": {
+    "page_title": "AI Project README Credibility Check",
+    "page_desc": "Enter a public GitHub repository URL to generate a structured non-technical assessment report based on README and metadata signals.",
+    "btn_analyze": "Analyze",
+    "enter_url_warning": "Please enter a valid GitHub repository URL",
+    "step_submit": "Submit Task",
+    "step_pending": "Queueing",
+    "step_running": "Analyzing README",
+    "step_succeeded": "Generate Report",
+    "status_pending": "Pending",
+    "status_running": "Analyzing",
+    "status_succeeded": "Succeeded",
+    "status_failed": "Failed",
+    "risk_low": "Low",
+    "risk_medium": "Medium",
+    "risk_high": "High",
+    "risk_unknown": "Unknown",
+    "type_demo_wrapper": "Demo Wrapper",
+    "type_framework_assembly": "Framework Assembly",
+    "type_research_prototype": "Research Prototype",
+    "type_product_candidate": "Product Candidate",
+    "type_unclear": "Unclear",
+    "syncing_status": "Syncing analysis status",
+    "failed_message": "Repository analysis failed, please try again later",
+    "verdict": "Verdict",
+    "metric_project_type": "Project Type",
+    "metric_hype_risk": "Hype Risk",
+    "metric_evidence_strength": "Evidence Strength",
+    "metric_generation_method": "Engine",
+    "action_markdown": "Download Markdown",
+    "action_evidence_json": "Evidence JSON",
+    "title_credibility_signals": "Credibility Signals",
+    "title_missing_signals": "Missing Signals",
+    "title_critical_findings": "Critical Findings",
+    "title_markdown_report": "Markdown Report",
+    "evidence_detail_not_found": "Evidence details not found",
+    "empty_text": "None",
+    "chat_input_tip": "Enter a public GitHub repository URL (e.g. https://github.com/owner/repo) and hit Enter to analyze..."
   }
 }

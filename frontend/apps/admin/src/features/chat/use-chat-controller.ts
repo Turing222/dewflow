@@ -8,6 +8,7 @@ import { useSessionDetailQuery } from '../../query/hooks/chat';
 import { getSessionDetailAPI } from '../../api/chat';
 import { streamChatQuery } from '../../streams/chat-stream';
 import { getDefaultKBAPI, uploadKBFileAPI, getKBTaskStatusAPI } from '../../api/knowledge';
+import { submitRepoReadmeCheckAPI } from '../../api/repo-analysis';
 import type { ChatMessage, ChatSession } from '../../types/chat';
 import {
     applyTraceMetricsToSteps,
@@ -37,7 +38,7 @@ type SendMessageOptions = {
     retryMessageId?: string;
 };
 
-export type ChatMode = 'normal' | 'rag' | 'web_rag';
+export type ChatMode = 'normal' | 'rag' | 'web_rag' | 'repo_check';
 
 export type UseChatControllerReturn = {
     activeSessionId: string | null;
@@ -207,6 +208,58 @@ export function useChatController(): UseChatControllerReturn {
 
         pruneRetryCache();
         setIsSessionFromHistory(false);
+
+        if (chatMode === 'repo_check') {
+            const addUserMessage = options?.addUserMessage ?? true;
+            if (addUserMessage) {
+                const userMsg: ChatMessage = {
+                    id: `temp-user-${Date.now()}`,
+                    session_id: activeSessionId || '',
+                    role: 'user',
+                    content: normalizedText,
+                    status: 'success',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                setMessages((prev) => [...prev, userMsg]);
+            }
+            setIsStreaming(false);
+            setStreamingText('');
+
+            try {
+                const response = await submitRepoReadmeCheckAPI(normalizedText);
+                const assistantMsg: ChatMessage = {
+                    id: `repo-check-msg-${Date.now()}`,
+                    session_id: activeSessionId || '',
+                    role: 'assistant',
+                    content: '',
+                    status: 'success',
+                    message_metadata: {
+                        type: 'repo_check_run',
+                        run_id: response.run_id,
+                    },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                setMessages((prev) => [...prev, assistantMsg]);
+            } catch (err: unknown) {
+                const errorMessage =
+                    err instanceof Error
+                        ? err.message
+                        : '仓库分析任务创建失败，请确保输入了合法的 GitHub 仓库 URL。';
+                const assistantMsg: ChatMessage = {
+                    id: `repo-check-err-${Date.now()}`,
+                    session_id: activeSessionId || '',
+                    role: 'assistant',
+                    content: errorMessage || '仓库分析任务创建失败，请确保输入了合法的 GitHub 仓库 URL。',
+                    status: 'failed',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                setMessages((prev) => [...prev, assistantMsg]);
+            }
+            return;
+        }
 
         const addUserMessage = options?.addUserMessage ?? true;
         const clientRequestId = resolveIdempotencyKey(options?.clientRequestId);

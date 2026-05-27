@@ -7,7 +7,7 @@
 import logging
 import uuid
 
-from backend.application.repo_analysis.workflow import RepoAnalysisWorkerWorkflow
+from backend.application.repo_analysis.worker_workflow import RepoAnalysisWorkerWorkflow
 from backend.core.exceptions import app_service_error, app_validation_error
 from backend.infra.task_broker import broker
 from backend.observability.trace_utils import trace_span, use_trace_context

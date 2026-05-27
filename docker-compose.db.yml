@@ -13,6 +13,7 @@ x-app-secrets: &app-secrets
   - DASHSCOPE_API_KEY_2
   - GEMINI_API_KEY
   - GOOGLE_API_KEY
+  - GITHUB_TOKEN
   - GROWTHBOOK_SDK_KEY
   - DEEPSEEK_API_KEY
   - DEEPSEEK_API_KEY_2
@@ -37,6 +38,7 @@ x-secret-file-env: &secret-file-env
   DASHSCOPE_API_KEY_2_FILE: /run/secrets/DASHSCOPE_API_KEY_2
   GEMINI_API_KEY_FILE: /run/secrets/GEMINI_API_KEY
   GOOGLE_API_KEY_FILE: /run/secrets/GOOGLE_API_KEY
+  GITHUB_TOKEN_FILE: /run/secrets/GITHUB_TOKEN
   GROWTHBOOK_SDK_KEY_FILE: /run/secrets/GROWTHBOOK_SDK_KEY
   DEEPSEEK_API_KEY_FILE: /run/secrets/DEEPSEEK_API_KEY
   DEEPSEEK_API_KEY_2_FILE: /run/secrets/DEEPSEEK_API_KEY_2
@@ -572,6 +574,8 @@ secrets:
     file: ${SMOKE_GEMINI_API_KEY_FILE:-./secrets/smoke/gemini_api_key.txt}
   GOOGLE_API_KEY:
     file: ${SMOKE_GOOGLE_API_KEY_FILE:-./secrets/smoke/google_api_key.txt}
+  GITHUB_TOKEN:
+    file: ${SMOKE_GITHUB_TOKEN_FILE:-./secrets/smoke/github_token.txt}
   GROWTHBOOK_SDK_KEY:
     file: ${SMOKE_GROWTHBOOK_SDK_KEY_FILE:-./secrets/smoke/growthbook_sdk_key.txt}
   DEEPSEEK_API_KEY:

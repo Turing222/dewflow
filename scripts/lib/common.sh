@@ -165,6 +165,7 @@ ensure_smoke_required_secrets() {
     ensure_smoke_secret_file "SMOKE_DASHSCOPE_API_KEY_2_FILE" "./secrets/smoke/dashscope_api_key_2.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GEMINI_API_KEY_FILE" "./secrets/smoke/gemini_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GOOGLE_API_KEY_FILE" "./secrets/smoke/google_api_key.txt" "empty"
+    ensure_smoke_secret_file "SMOKE_GITHUB_TOKEN_FILE" "./secrets/smoke/github_token.txt" "empty"
     ensure_smoke_secret_file "SMOKE_GROWTHBOOK_SDK_KEY_FILE" "./secrets/smoke/growthbook_sdk_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_FILE" "./secrets/smoke/deepseek_api_key.txt" "empty"
     ensure_smoke_secret_file "SMOKE_DEEPSEEK_API_KEY_2_FILE" "./secrets/smoke/deepseek_api_key_2.txt" "empty"

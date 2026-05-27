@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { BrowserRouter } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import styles from './Sidebar.module.css';
 import { renderWithQueryClient } from '../../test/render-with-query';
@@ -92,7 +93,11 @@ function renderSidebar(overrides: Record<string, unknown> = {}) {
         onToggle: vi.fn(),
         ...overrides,
     };
-    const result = renderWithQueryClient(<Sidebar {...props} />);
+    const result = renderWithQueryClient(
+        <BrowserRouter>
+            <Sidebar {...props} />
+        </BrowserRouter>
+    );
     return { ...result, props };
 }
 

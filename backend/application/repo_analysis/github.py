@@ -130,15 +130,17 @@ class GitHubRepoCollector:
                 "GitHub 仓库或 README 不存在", code="GITHUB_REPO_NOT_FOUND"
             )
         if response.status_code == 403:
+            details = _github_error_details(response)
             raise app_service_error(
                 "GitHub API 暂时不可用或达到访问限制",
                 code="GITHUB_RATE_LIMITED",
+                details=details,
             )
         if response.status_code >= 400:
             raise app_service_error(
                 "GitHub API 返回错误",
                 code="GITHUB_API_ERROR",
-                details={"status_code": response.status_code},
+                details=_github_error_details(response),
             )
         payload = response.json()
         if not isinstance(payload, dict):
@@ -161,3 +163,18 @@ class GitHubRepoCollector:
             raise app_service_error(
                 "GitHub README 解码失败", code="GITHUB_README_DECODE_FAILED"
             ) from exc
+
+
+def _github_error_details(response: httpx.Response) -> dict[str, object]:
+    details: dict[str, object] = {
+        "status_code": response.status_code,
+        "rate_limit_remaining": response.headers.get("x-ratelimit-remaining"),
+        "rate_limit_reset": response.headers.get("x-ratelimit-reset"),
+    }
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict) and isinstance(payload.get("message"), str):
+        details["github_message"] = payload["message"]
+    return details

@@ -73,7 +73,7 @@ COPY --from=builder-web --chown=appuser:appgroup /app/backend ./backend
 
 USER appuser
 
-RUN /app/.venv/bin/python -c "import backend; print('✅ Web image: backend module OK')"
+RUN /app/.venv/bin/python -c "import backend.main; print('✅ Web image: backend.main OK')"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health_check/live', timeout=5)" \

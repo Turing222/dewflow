@@ -10,7 +10,7 @@ from backend.api.dependencies import (
     get_repo_analysis_service,
     get_repo_analysis_submit_workflow,
 )
-from backend.application.repo_analysis.workflow import RepoAnalysisSubmitWorkflow
+from backend.application.repo_analysis.submit_workflow import RepoAnalysisSubmitWorkflow
 from backend.models.orm.user import User
 from backend.models.schemas.repo_analysis_schema import (
     RepoAnalysisRunResponse,

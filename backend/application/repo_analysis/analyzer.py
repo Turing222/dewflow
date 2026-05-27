@@ -20,6 +20,7 @@ _INSTRUCTIONS = """你是面向非技术人的 AI 开源项目可信度初筛分
 你只能基于用户提供的 README 摘要、GitHub metadata 和 evidence 判断。
 不要声称你审计了完整代码、测试覆盖率或依赖实现。
 输出要克制、可解释，所有 finding 尽量引用 evidence_refs。
+最终输出必须是符合指定 schema 的 JSON object。
 """
 
 
@@ -71,7 +72,7 @@ class RepoCredibilityAnalyzer:
     def _ensure_agent(self):
         if self._agent is None:
             try:
-                from pydantic_ai import Agent
+                from pydantic_ai import Agent, PromptedOutput
             except ImportError as exc:
                 raise RuntimeError("pydantic-ai 未安装") from exc
 
@@ -83,7 +84,7 @@ class RepoCredibilityAnalyzer:
                     profile=profile,
                     api_key=profile.resolve_api_key(),
                 ),
-                output_type=ReadmeCredibilityAssessment,
+                output_type=PromptedOutput(ReadmeCredibilityAssessment),
                 instructions=_INSTRUCTIONS,
                 instrument=True,
                 name="repo_readme_credibility_analyzer",

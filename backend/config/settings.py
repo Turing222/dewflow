@@ -85,6 +85,9 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     BETA_USER_EMAIL_WHITELIST: str = "tony@company.com,tester@dewflow.com"
     BETA_USER_PHONE_WHITELIST: str = ""
 
+    # ── GitHub ─────────────────────────────────────────────────────
+    GITHUB_TOKEN: str | None = None
+
     # ── Properties ────────────────────────────────────────────────
 
     @property
