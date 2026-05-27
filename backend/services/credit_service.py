@@ -160,7 +160,7 @@ class CreditService(BaseService[AbstractUnitOfWork]):
         valid_days = credit_settings.CREDIT_DAILY_CHECKIN_VALID_DAYS
         expires_at = now + datetime.timedelta(days=valid_days)
 
-        # 5. 添加交易流水，更新余额
+        # 5. 添加交易流水，更新余额（余额更新在 savepoint 内保证原子性）
         try:
             async with self.uow.savepoint():
                 tx = await self.uow.credit_repo.add_transaction(
@@ -171,15 +171,14 @@ class CreditService(BaseService[AbstractUnitOfWork]):
                     idempotency_key=idempotency_key,
                     metadata={"valid_days": valid_days},
                 )
+                await self.uow.credit_repo.try_increment_balance(account.id, amount)
         except IntegrityError as exc:
             raise app_validation_error(
                 "您今天已经签到过了，明天再来吧",
                 code="ALREADY_CHECKED_IN",
             ) from exc
 
-        new_balance = account.balance + amount
-        await self.uow.credit_repo.update_account_balance(account.id, new_balance)
-        account.balance = new_balance
+        account.balance += amount
 
         logger.info(
             "User %s checked in successfully. Earned %d credits.",
@@ -336,68 +335,97 @@ class CreditService(BaseService[AbstractUnitOfWork]):
         )
         return ur, tx
 
+    async def expire_credits_for_account(
+        self, account_id: uuid.UUID, now: datetime.datetime
+    ) -> bool:
+        """对单个账户执行过期额度清理（独立事务）。
+
+        Returns:
+            True 表示该账户有额度被过期清理。
+        """
+        # 1. 悲观锁读取当前账户
+        account = await self.uow.credit_repo.get_account_by_id_with_lock(account_id)
+        if not account:
+            return False
+
+        # 2. 汇总已过期授权与已标记过期的流水之差，计算出还需要扣减的差值
+        expired_grants_sum = await self.uow.credit_repo.get_expired_grants_sum(
+            account_id, now
+        )
+        already_expired_sum = await self.uow.credit_repo.get_already_expired_sum(
+            account_id
+        )
+        spent_sum = await self.uow.credit_repo.get_spent_sum(account_id)
+        protected_positive_sum = await self.uow.credit_repo.get_protected_positive_sum(
+            account_id, now
+        )
+
+        pending_expire = expired_grants_sum - spent_sum - already_expired_sum
+        if pending_expire <= 0:
+            return False
+
+        # 3. 保护非过期 / 非 checkin 正向额度，避免过期任务误扣长期余额。
+        expirable_balance = max(0, account.balance - protected_positive_sum)
+        to_expire = min(expirable_balance, pending_expire)
+        if to_expire > 0:
+            await self.uow.credit_repo.try_decrement_balance(account.id, to_expire)
+
+            await self.uow.credit_repo.add_transaction(
+                account_id=account.id,
+                amount=-to_expire,
+                source="expire",
+                metadata={
+                    "expired_grants_sum": expired_grants_sum,
+                    "spent_sum": spent_sum,
+                    "already_expired_sum": already_expired_sum,
+                    "protected_positive_sum": protected_positive_sum,
+                    "calculation_time": now.isoformat(),
+                },
+            )
+            logger.info(
+                "Account %s expired %d credits (expired grants: %d, spent: %d, already expired: %d).",
+                account_id,
+                to_expire,
+                expired_grants_sum,
+                spent_sum,
+                already_expired_sum,
+            )
+            return True
+        return False
+
     async def expire_credits(self) -> int:
-        """执行过期的 Credit 额度清理。
+        """执行过期的 Credit 额度清理（分页扫描 + 逐账户独立事务）。
 
         由后台 Cron 每日调用，找出所有已过期的 checkin 赠送，
         扣减剩余未被消费的部分，并生成类型为 expire 的反向流水冲正。
         """
         now = datetime.datetime.now(datetime.UTC)
-        account_ids = await self.uow.credit_repo.list_accounts_needing_expiration(now)
-
         expired_count = 0
-        for account_id in account_ids:
-            # 1. 悲观锁读取当前账户
-            account = await self.uow.credit_repo.get_account_by_id_with_lock(account_id)
-            if not account:
-                continue
+        batch_size = 200
+        max_pages = 100_000
 
-            # 2. 汇总已过期授权与已标记过期的流水之差，计算出还需要扣减的差值
-            expired_grants_sum = await self.uow.credit_repo.get_expired_grants_sum(
-                account_id, now
+        for page_index in range(max_pages):
+            offset = page_index * batch_size
+            account_ids = await self.uow.credit_repo.list_accounts_needing_expiration(
+                now, limit=batch_size, offset=offset
             )
-            already_expired_sum = await self.uow.credit_repo.get_already_expired_sum(
-                account_id
-            )
-            spent_sum = await self.uow.credit_repo.get_spent_sum(account_id)
-            protected_positive_sum = (
-                await self.uow.credit_repo.get_protected_positive_sum(account_id, now)
-            )
+            if not account_ids:
+                break
 
-            pending_expire = expired_grants_sum - spent_sum - already_expired_sum
-            if pending_expire <= 0:
-                continue
-
-            # 3. 保护非过期 / 非 checkin 正向额度，避免过期任务误扣长期余额。
-            expirable_balance = max(0, account.balance - protected_positive_sum)
-            to_expire = min(expirable_balance, pending_expire)
-            if to_expire > 0:
-                new_balance = account.balance - to_expire
-                await self.uow.credit_repo.update_account_balance(
-                    account.id, new_balance
-                )
-
-                await self.uow.credit_repo.add_transaction(
-                    account_id=account.id,
-                    amount=-to_expire,
-                    source="expire",
-                    metadata={
-                        "expired_grants_sum": expired_grants_sum,
-                        "spent_sum": spent_sum,
-                        "already_expired_sum": already_expired_sum,
-                        "protected_positive_sum": protected_positive_sum,
-                        "calculation_time": now.isoformat(),
-                    },
-                )
-                expired_count += 1
-                logger.info(
-                    "Account %s expired %d credits (expired grants: %d, spent: %d, already expired: %d). New balance: %d.",
-                    account_id,
-                    to_expire,
-                    expired_grants_sum,
-                    spent_sum,
-                    already_expired_sum,
-                    new_balance,
-                )
+            for account_id in account_ids:
+                try:
+                    async with self.uow.savepoint():
+                        did_expire = await self.expire_credits_for_account(
+                            account_id, now
+                        )
+                        if did_expire:
+                            expired_count += 1
+                except Exception:
+                    logger.exception(
+                        "Failed to expire credits for account %s, skipping.",
+                        account_id,
+                    )
+        else:
+            raise RuntimeError("credit expiration exceeded max_pages")
 
         return expired_count

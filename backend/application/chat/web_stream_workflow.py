@@ -210,12 +210,8 @@ class ChatWorkflow:
                 deadline = (
                     loop.time() + settings.CHAT_STREAM_FIRST_MESSAGE_TIMEOUT_SECONDS
                 )
-                while True:
+                while loop.time() < deadline:
                     remaining = deadline - loop.time()
-                    if remaining <= 0:
-                        raise app_service_error(
-                            "LLM 响应超时，请稍后重试", code="LLM_TIMEOUT"
-                        )
                     try:
                         first_message = await asyncio.wait_for(
                             anext(stream_iter),
@@ -253,9 +249,13 @@ class ChatWorkflow:
                         accumulated_content.append(content)
                         yield chunk_event(content)
                     break
+                else:
+                    raise app_service_error(
+                        "LLM 响应超时，请稍后重试", code="LLM_TIMEOUT"
+                    )
 
                 if not done_received:
-                    while True:
+                    while not done_received:
                         try:
                             message = await asyncio.wait_for(
                                 anext(stream_iter),

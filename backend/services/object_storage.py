@@ -301,7 +301,8 @@ async def _stream_upload_to_path(
         pending_size = 0
 
     with path.open("wb") as target:
-        while True:
+        max_chunks = max_size_bytes // chunk_size + 2
+        for _chunk_index in range(max_chunks):
             chunk = await upload_file.read(chunk_size)
             if not chunk:
                 break
@@ -313,6 +314,8 @@ async def _stream_upload_to_path(
             pending_size += len(chunk)
             if pending_size >= flush_size:
                 await _flush_pending_chunks(target)
+        else:
+            raise UploadSizeLimitExceeded("upload exceeds max_size_bytes")
         await _flush_pending_chunks(target)
     return UploadStreamStats(size=total_size, sha256=hasher.hexdigest())
 

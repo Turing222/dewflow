@@ -351,6 +351,10 @@ class CreditRepositoryProtocol(Protocol):
 
     async def try_decrement_balance(self, account_id: uuid.UUID, cost: int) -> bool: ...
 
+    async def try_increment_balance(
+        self, account_id: uuid.UUID, amount: int
+    ) -> bool: ...
+
     async def add_transaction(
         self,
         *,
@@ -408,5 +412,9 @@ class CreditRepositoryProtocol(Protocol):
     ) -> int: ...
 
     async def list_accounts_needing_expiration(
-        self, now: datetime.datetime
+        self,
+        now: datetime.datetime,
+        *,
+        limit: int = 200,
+        offset: int = 0,
     ) -> Sequence[uuid.UUID]: ...

@@ -40,7 +40,7 @@ export PERF_USERS PERF_SPAWN_RATE PERF_RUN_TIME PERF_PROFILE PERF_OUTPUT
 .DEFAULT_GOAL := help
 
 .PHONY: help \
-	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
+	qa-lint qa-lint-fix qa-boundaries qa-format qa-format-check qa-typecheck qa-layer-deps qa-alembic-check qa-config-check qa-no-while-true qa-test-markers qa-test-unit qa-test-component qa-test-integration qa-test-local qa-test-ci qa-test-external qa-test-all qa-checks qa-eval-rag qa-eval-api qa-perf-chat qa-perf-chat-locust qa-agent-flow \
 	frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-mock frontend-e2e-smoke frontend-check \
 	image-build frontend-image-build image-build-all \
 	env-smoke-prepare env-smoke-check env-smoke-up env-smoke-wait env-smoke-create-kb env-smoke-down env-smoke-logs \
@@ -64,6 +64,7 @@ help:
 			'  qa-layer-deps        Verify each extras layer can import independently' \
 			'  qa-alembic-check     Validate migration chain integrity' \
 			'  qa-config-check      Validate config/env for deployment contexts' \
+			'  qa-no-while-true     Reject bare Python while True loops' \
 			'  qa-test-markers      Audit pytest dependency markers' \
 			'  qa-test-unit         Run unit tests (UNIT_TARGETS=...)' \
 			'  qa-test-component    Run component tests (COMPONENT_TARGETS=...)' \
@@ -138,6 +139,9 @@ qa-alembic-check:
 
 qa-config-check:
 	uv run python scripts/qa/config_check.py $(ARGS)
+
+qa-no-while-true:
+	uv run python scripts/qa/check_no_while_true.py
 
 qa-test-markers:
 	uv run python scripts/qa/check_test_markers.py
@@ -272,6 +276,7 @@ flow-static:
 	$(MAKE) qa-lint
 	$(MAKE) qa-format-check
 	$(MAKE) qa-boundaries
+	$(MAKE) qa-no-while-true
 	$(MAKE) qa-test-markers
 	$(MAKE) qa-typecheck
 	$(MAKE) qa-layer-deps
@@ -292,6 +297,7 @@ flow-dev-check:
 flow-fast:
 	$(MAKE) qa-lint
 	$(MAKE) qa-format-check
+	$(MAKE) qa-no-while-true
 	$(MAKE) qa-typecheck
 	$(MAKE) qa-test-unit
 	$(MAKE) qa-test-component

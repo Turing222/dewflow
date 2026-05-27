@@ -17,6 +17,7 @@ Use this reference when modifying existing files.
 - Services should own business logic.
 - Repositories should own SQLAlchemy queries.
 - Writes should happen inside the Unit of Work transaction boundary.
+- Do not introduce bare `while True`; pagination, polling, retries, and scans must use bounded loops with explicit exit behavior.
 
 ## Validation Choice
 

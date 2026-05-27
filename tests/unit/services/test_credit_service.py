@@ -168,7 +168,7 @@ async def test_daily_checkin_recovers_from_concurrent_account_create() -> None:
     assert result_transaction is transaction
     assert account.balance == 100
     uow.rollback.assert_not_awaited()
-    uow.credit_repo.update_account_balance.assert_awaited_once_with(account.id, 100)
+    uow.credit_repo.try_increment_balance.assert_awaited_once_with(account.id, 100)
 
 
 async def test_daily_checkin_rejects_duplicate_checkin() -> None:
@@ -219,7 +219,7 @@ async def test_expire_credits_does_not_charge_future_balance_for_spent_grants() 
     account_id = uuid.uuid4()
     account = make_account(balance=100)
     uow = make_uow()
-    uow.credit_repo.list_accounts_needing_expiration.return_value = [account_id]
+    uow.credit_repo.list_accounts_needing_expiration.side_effect = [[account_id], []]
     uow.credit_repo.get_account_by_id_with_lock.return_value = account
     uow.credit_repo.get_expired_grants_sum.return_value = 100
     uow.credit_repo.get_spent_sum.return_value = 100
@@ -238,7 +238,7 @@ async def test_expire_credits_charges_only_unspent_expired_grants() -> None:
     account_id = uuid.uuid4()
     account = make_account(balance=100)
     uow = make_uow()
-    uow.credit_repo.list_accounts_needing_expiration.return_value = [account_id]
+    uow.credit_repo.list_accounts_needing_expiration.side_effect = [[account_id], []]
     uow.credit_repo.get_account_by_id_with_lock.return_value = account
     uow.credit_repo.get_expired_grants_sum.return_value = 100
     uow.credit_repo.get_spent_sum.return_value = 40
@@ -251,7 +251,7 @@ async def test_expire_credits_charges_only_unspent_expired_grants() -> None:
     assert expired_count == 1
     # ORM object is NOT mutated; new_balance is computed locally.
     assert account.balance == 100
-    uow.credit_repo.update_account_balance.assert_awaited_once_with(account.id, 40)
+    uow.credit_repo.try_decrement_balance.assert_awaited_once_with(account.id, 60)
     uow.credit_repo.add_transaction.assert_awaited_once()
     assert uow.credit_repo.add_transaction.await_args.kwargs["amount"] == -60
     assert (
@@ -263,7 +263,7 @@ async def test_expire_credits_protects_non_expiring_positive_balance() -> None:
     account_id = uuid.uuid4()
     account = make_account(balance=300)
     uow = make_uow()
-    uow.credit_repo.list_accounts_needing_expiration.return_value = [account_id]
+    uow.credit_repo.list_accounts_needing_expiration.side_effect = [[account_id], []]
     uow.credit_repo.get_account_by_id_with_lock.return_value = account
     uow.credit_repo.get_expired_grants_sum.return_value = 300
     uow.credit_repo.get_spent_sum.return_value = 0
@@ -275,7 +275,7 @@ async def test_expire_credits_protects_non_expiring_positive_balance() -> None:
     expired_count = await service.expire_credits()
 
     assert expired_count == 1
-    uow.credit_repo.update_account_balance.assert_awaited_once_with(account.id, 200)
+    uow.credit_repo.try_decrement_balance.assert_awaited_once_with(account.id, 100)
     assert uow.credit_repo.add_transaction.await_args.kwargs["amount"] == -100
     assert (
         uow.credit_repo.add_transaction.await_args.kwargs["metadata"][

@@ -227,8 +227,23 @@ class CreditRepository:
         val = result.scalar()
         return int(val) if val is not None else 0
 
+    async def try_increment_balance(self, account_id: uuid.UUID, amount: int) -> bool:
+        """原子条件 UPDATE：余额增加指定额度。"""
+        stmt = (
+            update(CreditAccount)
+            .where(CreditAccount.id == account_id)
+            .values(balance=CreditAccount.balance + amount)
+            .returning(CreditAccount.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def list_accounts_needing_expiration(
-        self, now: datetime.datetime
+        self,
+        now: datetime.datetime,
+        *,
+        limit: int = 200,
+        offset: int = 0,
     ) -> Sequence[uuid.UUID]:
         """获取包含已过期且未处理 checkin 赠送的所有 CreditAccount 账户 ID。"""
         stmt = (
@@ -238,6 +253,8 @@ class CreditRepository:
                 CreditTransaction.expires_at <= now,
             )
             .distinct()
+            .limit(limit)
+            .offset(offset)
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()

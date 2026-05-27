@@ -13,9 +13,10 @@ Use this skill when the primary task is changing existing files.
 2. Check `git status --short` so user changes are not overwritten.
 3. Apply the smallest coherent patch that satisfies the latest request.
 4. Preserve architecture boundaries: endpoint → service → repository, and web → dispatcher → worker.
-5. Run focused validation first, then broader checks only when the change risk justifies it.
-6. If behavior changed or coverage gaps are exposed, consider loading `add-tests`.
-7. If files were modified, append the Change Summary block from `.codex/skills/project/references/handoff.md`.
+5. Do not add bare `while True`; use an explicit bounded loop with a clear exit path.
+6. Run focused validation first, then broader checks only when the change risk justifies it.
+7. If behavior changed or coverage gaps are exposed, consider loading `add-tests`.
+8. If files were modified, append the Change Summary block from `.codex/skills/project/references/handoff.md`.
 
 ## Progressive Disclosure
 
