@@ -8,16 +8,25 @@ from __future__ import annotations
 
 import pytest
 
+from backend.core.exceptions import AppException
 from backend.services.google_oauth_service import GoogleOAuthService
 
 pytestmark = pytest.mark.asyncio
 
 
-async def test_verify_id_token_uses_local_google_auth_verifier(monkeypatch) -> None:
-    service = GoogleOAuthService(
+def _make_service(
+    *,
+    allowed_redirect_uris: list[str] | None = None,
+) -> GoogleOAuthService:
+    return GoogleOAuthService(
         google_client_id="client-id",
         google_client_secret="client-secret",
+        allowed_redirect_uris=allowed_redirect_uris,
     )
+
+
+async def test_verify_id_token_uses_local_google_auth_verifier(monkeypatch) -> None:
+    service = _make_service()
     calls: dict[str, object] = {}
 
     def fake_verify_oauth2_token(token: str, request: object, audience: str) -> dict:
@@ -44,3 +53,35 @@ async def test_verify_id_token_uses_local_google_auth_verifier(monkeypatch) -> N
     }
     assert calls["token"] == "id-token"
     assert calls["audience"] == "client-id"
+
+
+def test_get_authorization_url_rejects_disallowed_redirect_uri() -> None:
+    service = _make_service(allowed_redirect_uris=["http://localhost:3000/callback"])
+
+    with pytest.raises(AppException) as exc_info:
+        service.get_authorization_url("https://evil.com/callback")
+
+    assert exc_info.value.code == "INVALID_REDIRECT_URI"
+
+
+def test_get_authorization_url_allows_whitelisted_redirect_uri() -> None:
+    service = _make_service(allowed_redirect_uris=["http://localhost:3000/callback"])
+
+    url = service.get_authorization_url("http://localhost:3000/callback")
+    assert "redirect_uri=http" in url
+
+
+async def test_exchange_code_rejects_disallowed_redirect_uri(monkeypatch) -> None:
+    service = _make_service(allowed_redirect_uris=["http://localhost:3000/callback"])
+
+    with pytest.raises(AppException) as exc_info:
+        await service.exchange_code("some-code", "https://evil.com/callback")
+
+    assert exc_info.value.code == "INVALID_REDIRECT_URI"
+
+
+def test_get_authorization_url_allows_any_uri_when_whitelist_empty() -> None:
+    service = _make_service(allowed_redirect_uris=[])
+
+    url = service.get_authorization_url("https://any-domain.com/callback")
+    assert "redirect_uri=https" in url

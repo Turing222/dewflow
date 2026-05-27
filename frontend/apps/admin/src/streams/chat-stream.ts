@@ -30,6 +30,11 @@ export function streamChatQuery(
 ): AbortController {
     const abortController = new AbortController();
 
+    if (options.signal?.aborted) {
+        abortController.abort();
+        return abortController;
+    }
+
     let parentAbortHandler: (() => void) | null = null;
 
     if (options.signal) {

@@ -4,6 +4,7 @@ import { LogOut, LogIn, Shield, Coins, Edit2, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/useAuth';
+import { AppHttpError } from '../../lib/http/errors';
 import { useChatController } from '../../features/chat/use-chat-controller';
 import { useMyCreditsQuery, useDailyCheckinMutation } from '../../query/hooks/credits';
 import Sidebar from './Sidebar';
@@ -60,12 +61,11 @@ const ChatPage: React.FC = () => {
             const response = await checkinMutation.mutateAsync();
             antdMessage.success(t('credits.success_earn', { amount: response.amount_earned }));
         } catch (err: unknown) {
-            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-            const message = (err as { message?: string })?.message;
-            if (detail === 'ALREADY_CHECKED_IN' || message?.includes('ALREADY_CHECKED_IN')) {
-                antdMessage.warning(t('credits.checked_in_today'));
-            } else {
-                antdMessage.error(message || t('credits.checkin_error'));
+            if (err instanceof AppHttpError) {
+                if (err.code === 'validation' && String(err.details).includes('ALREADY_CHECKED_IN')) {
+                    antdMessage.warning(t('credits.checked_in_today'));
+                }
+                return;
             }
         }
     };

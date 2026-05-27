@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Spin, message as antdMessage } from 'antd';
 import { ArrowLeft, Coins, CheckCircle2, Calendar, ClipboardList, LogIn } from 'lucide-react';
 import { useAuth } from '../../context/useAuth';
+import { AppHttpError } from '../../lib/http/errors';
 import {
   useMyCreditsQuery,
   useCreditTransactionsQuery,
@@ -30,18 +31,26 @@ const CreditsPage: React.FC = () => {
       const response = await checkinMutation.mutateAsync();
       antdMessage.success(t('credits.success_earn', { amount: response.amount_earned }));
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      const message = (err as { message?: string })?.message;
-      if (detail === 'ALREADY_CHECKED_IN' || message?.includes('ALREADY_CHECKED_IN')) {
-        antdMessage.warning(t('credits.checked_in_today'));
-      } else {
-        antdMessage.error(message || t('credits.checkin_error'));
+      if (err instanceof AppHttpError) {
+        if (err.code === 'validation' && String(err.details).includes('ALREADY_CHECKED_IN')) {
+          antdMessage.warning(t('credits.checked_in_today'));
+        }
+        return;
       }
     }
   };
 
   // Generate Calendar days
-  const today = React.useMemo(() => new Date(), []);
+  const [today, setToday] = React.useState(() => new Date());
+  React.useEffect(() => {
+    const ms = (() => {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      return midnight.getTime() - now.getTime();
+    })();
+    const timer = setTimeout(() => setToday(new Date()), ms);
+    return () => clearTimeout(timer);
+  }, [today]);
   const currentYear = today.getFullYear();
   const currentMonth = today.getMonth();
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();

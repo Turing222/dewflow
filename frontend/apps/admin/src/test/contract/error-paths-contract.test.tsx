@@ -31,12 +31,16 @@ describe('Error paths contract', () => {
         }
     });
 
-    it('401 clears token and fires unauthorized event', async () => {
+    it('401 fires unauthorized event (token cleared by AuthProvider listener)', async () => {
         setAccessToken('test-access-token');
         expect(useAuthStore.getState().token).toBe('test-access-token');
 
         const eventSpy = vi.fn();
         window.addEventListener(AUTH_UNAUTHORIZED_EVENT, eventSpy);
+
+        // Simulate AuthProvider's event listener
+        const cleanupListener = () => useAuthStore.getState().clearAuth();
+        window.addEventListener(AUTH_UNAUTHORIZED_EVENT, cleanupListener);
 
         server.use(
             http.get(API_URLS.USER.ME, () => unauthorizedError()),
@@ -51,6 +55,7 @@ describe('Error paths contract', () => {
         expect(useAuthStore.getState().token).toBeNull();
         expect(eventSpy).toHaveBeenCalled();
         window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, eventSpy);
+        window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, cleanupListener);
     });
 
     it('500 produces AppHttpError with code server', async () => {

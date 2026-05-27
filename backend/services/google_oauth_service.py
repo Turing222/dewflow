@@ -6,11 +6,13 @@
 
 import asyncio
 import logging
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from google.auth.transport.requests import Request
 from google.oauth2 import id_token as google_id_token
+
+from backend.core.exceptions import app_bad_request
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +24,35 @@ _SCOPES = "openid email profile"
 class GoogleOAuthService:
     """Google OAuth2 认证服务。"""
 
-    def __init__(self, google_client_id: str, google_client_secret: str) -> None:
+    def __init__(
+        self,
+        google_client_id: str,
+        google_client_secret: str,
+        allowed_redirect_uris: list[str] | None = None,
+    ) -> None:
         self._google_client_id = google_client_id
         self._google_client_secret = google_client_secret
+        self._allowed_redirect_uris = allowed_redirect_uris or []
+
+    def _validate_redirect_uri(self, redirect_uri: str) -> str:
+        """Validate redirect_uri against the whitelist."""
+        if not self._allowed_redirect_uris:
+            return redirect_uri
+        parsed = urlparse(redirect_uri)
+        origin = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
+        for allowed in self._allowed_redirect_uris:
+            allowed_parsed = urlparse(allowed)
+            allowed_origin = (
+                f"{allowed_parsed.scheme}://{allowed_parsed.netloc}"
+                f"{allowed_parsed.path.rstrip('/')}"
+            )
+            if origin == allowed_origin:
+                return redirect_uri
+        raise app_bad_request("redirect_uri not allowed", code="INVALID_REDIRECT_URI")
 
     def get_authorization_url(self, redirect_uri: str) -> str:
         """构建 Google OAuth2 授权跳转 URL。"""
+        redirect_uri = self._validate_redirect_uri(redirect_uri)
         params = {
             "client_id": self._google_client_id,
             "redirect_uri": redirect_uri,
@@ -39,11 +64,12 @@ class GoogleOAuthService:
         return f"{_GOOGLE_AUTH_URL}?{urlencode(params)}"
 
     async def exchange_code(self, code: str, redirect_uri: str) -> dict:
-        """用授权码换取 Google 令牌并解析 ID Token 声明。
+        """用授权码换取 Google 令牌并解析 ID Token。
 
         Returns:
             包含 sub、email、name 等字段的字典。
         """
+        redirect_uri = self._validate_redirect_uri(redirect_uri)
         async with httpx.AsyncClient(timeout=10) as client:
             # 1. 用授权码换令牌
             token_resp = await client.post(

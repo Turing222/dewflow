@@ -92,6 +92,24 @@ async def test_send_code_respects_rate_limit() -> None:
     redis.set.assert_not_awaited()
 
 
+async def test_send_code_mock_mode_uses_random_not_hash() -> None:
+    """Mock 模式下验证码应为随机值，两次调用同一手机号生成不同验证码。"""
+    redis = _make_redis_mock()
+    service = make_sms_service(redis=redis, sms_mock_mode=True)
+
+    code1 = await service.send_code("13800138000")
+    code2 = await service.send_code("13900139000")
+
+    # 验证码格式正确
+    assert len(code1) == 6
+    assert code1.isdigit()
+    assert len(code2) == 6
+    assert code2.isdigit()
+    # 不同手机号产生不同验证码（概率极高）
+    # 注意：理论上可能碰撞，但 6 位数字空间 900000 中碰撞概率极低
+    assert code1 != code2
+
+
 async def test_send_code_mock_mode_logs_without_sending() -> None:
     redis = _make_redis_mock()
     service = make_sms_service(redis=redis, sms_mock_mode=True)

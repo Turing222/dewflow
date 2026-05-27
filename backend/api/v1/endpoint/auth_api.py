@@ -146,10 +146,9 @@ async def login(
 @router.post("/sms/send", dependencies=[Depends(sms_limiter)])
 async def sms_send(body: SMSSendRequest, sms_service: SMSServiceDep) -> SMSSendResponse:
     """发送短信验证码。"""
-    code = await sms_service.send_code(body.phone)
+    await sms_service.send_code(body.phone)
     return SMSSendResponse(
         message="验证码已发送",
-        code=code if sms_service._sms_mock_mode else None,
     )
 
 

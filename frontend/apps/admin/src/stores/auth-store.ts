@@ -28,6 +28,9 @@ export const useAuthStore = create<AuthStoreState & AuthStoreActions>()(
             resetAll: () => set(initialState),
         }),
         {
+            // SECURITY NOTE: JWT is persisted to localStorage, making it accessible
+            // to XSS. Long-term fix: migrate to HttpOnly cookie set by the backend.
+            // Current mitigation: short token expiry, CSP headers, no eval/innerHTML.
             name: 'auth-storage',
             partialize: (state) => ({
                 token: state.token,

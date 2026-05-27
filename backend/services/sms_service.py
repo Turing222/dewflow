@@ -4,6 +4,7 @@
 边界：本模块不处理用户查找或 JWT 签发，仅负责验证码的生命周期。
 """
 
+import hmac
 import logging
 import secrets
 import string
@@ -48,14 +49,8 @@ class SMSService:
         if await redis.get(rate_key):
             raise app_bad_request("发送过于频繁，请稍后再试", code="SMS_RATE_LIMITED")
 
-        # 生成 6 位验证码（Mock 模式下基于手机号哈希，输出确定性但随机分布的 6 位数字，方便前端自动计算填充）
-        if self._sms_mock_mode:
-            h = 0
-            for char in phone:
-                h = (31 * h + ord(char)) & 0xFFFFFFFF
-            code = str(h % 900000 + 100000)
-        else:
-            code = "".join(secrets.choice(string.digits) for _ in range(6))
+        # 生成 6 位随机验证码（Mock 和生产模式统一使用随机码，Mock 模式下验证码仅通过服务端日志可见）
+        code = "".join(secrets.choice(string.digits) for _ in range(6))
 
         # 存入 Redis（TTL 由配置决定）
         code_key = f"{_SMS_CODE_PREFIX}{phone}"
@@ -87,7 +82,7 @@ class SMSService:
             return False
         if isinstance(stored, bytes):
             stored = stored.decode()
-        if stored != code:
+        if not hmac.compare_digest(stored, code):
             return False
 
         # 验证通过后删除，防止重复使用

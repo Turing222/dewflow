@@ -1,5 +1,4 @@
 import { useAuthStore } from '../../stores/auth-store';
-import { queryClient } from '../../query/query-client';
 
 export const AUTH_UNAUTHORIZED_EVENT = 'app:http:unauthorized';
 
@@ -22,7 +21,5 @@ export const notifyUnauthorized = (): void => {
 };
 
 export const handleUnauthorized = (): void => {
-    clearAccessToken();
     notifyUnauthorized();
-    queryClient.removeQueries({ queryKey: ['auth'] });
 };

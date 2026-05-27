@@ -97,11 +97,12 @@ export function useChatController(): UseChatControllerReturn {
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const retryCacheRef = useRef<Map<string, RetryCacheEntry>>(new Map());
-    const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pollIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const tabSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         return () => {
+            abortControllerRef.current?.abort();
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             if (tabSwitchTimerRef.current) clearTimeout(tabSwitchTimerRef.current);
         };
@@ -533,10 +534,10 @@ export function useChatController(): UseChatControllerReturn {
             retryCacheRef.current.delete(messageId);
         }
 
-        setMessages(() => {
+        setMessages((prev) => {
             const baseMessages = isSessionFromHistory && sessionDetailData
                 ? sessionDetailData.messages || []
-                : messages;
+                : prev;
             return baseMessages.filter((msg) => msg.id !== messageId);
         });
 
@@ -545,7 +546,7 @@ export function useChatController(): UseChatControllerReturn {
             addUserMessage: false,
             retryMessageId: messageId,
         });
-    }, [sendQuery, isStreaming, pruneRetryCache, displayedMessages, isSessionFromHistory, sessionDetailData, messages]);
+    }, [sendQuery, isStreaming, pruneRetryCache, displayedMessages, isSessionFromHistory, sessionDetailData]);
 
     const selectSession = useCallback((session: ChatSession) => {
         setIsSessionFromHistory(true);
@@ -586,7 +587,7 @@ export function useChatController(): UseChatControllerReturn {
         }
 
         if (pollIntervalRef.current) {
-            clearInterval(pollIntervalRef.current);
+            clearTimeout(pollIntervalRef.current);
             pollIntervalRef.current = null;
         }
         if (tabSwitchTimerRef.current) {
@@ -662,11 +663,12 @@ export function useChatController(): UseChatControllerReturn {
                 )
             );
 
-            pollIntervalRef.current = setInterval(async () => {
+            const pollOnce = async () => {
                 if (!pollIntervalRef.current) return;
                 pollAttempts++;
                 if (pollAttempts > maxPollAttempts) {
-                    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+                    if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
+                    pollIntervalRef.current = null;
                     setIsIngesting(false);
                     setIngestionSteps((prev) =>
                         prev.map((step) =>
@@ -804,22 +806,28 @@ export function useChatController(): UseChatControllerReturn {
                     });
 
                     if (currentStatus === 'completed') {
-                        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+                        if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
+                        pollIntervalRef.current = null;
                         setIsIngesting(false);
                         message.success('文件入库成功！');
                         tabSwitchTimerRef.current = setTimeout(() => {
                             setActiveTraceTab('rag');
                         }, 4000);
                     } else if (currentStatus === 'failed') {
-                        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+                        if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
+                        pollIntervalRef.current = null;
                         setIsIngesting(false);
                         message.error(taskRes.error_log || '文件入库失败，请查看右侧诊断！');
+                    } else {
+                        pollIntervalRef.current = setTimeout(pollOnce, 1000);
                     }
 
                 } catch (err) {
                     console.error('轮询入库任务状态失败:', err);
+                    pollIntervalRef.current = setTimeout(pollOnce, 1000);
                 }
-            }, 1000);
+            };
+            pollIntervalRef.current = setTimeout(pollOnce, 1000);
 
         } catch (err: unknown) {
             console.error('上传文件失败:', err);

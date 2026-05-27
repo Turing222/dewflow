@@ -10,12 +10,14 @@ export const parseWithSchema = <T>(
         return result.data;
     }
 
-    console.error(
-        errorMessage,
-        '\nValidation error:',
-        JSON.stringify(result.error.format(), null, 2),
-        '\nOriginal input:',
-        JSON.stringify(input, null, 2)
-    );
+    if (import.meta.env.DEV) {
+        console.error(
+            errorMessage,
+            '\nValidation error:',
+            JSON.stringify(result.error.format(), null, 2),
+            '\nOriginal input:',
+            JSON.stringify(input, null, 2)
+        );
+    }
     throw new Error(errorMessage);
 };

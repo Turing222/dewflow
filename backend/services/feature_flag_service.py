@@ -34,6 +34,17 @@ class FeatureFlagService:
         self._features_cache: dict[str, Any] = {}
         self._last_fetch_time: float = 0.0
         self._ttl_seconds: float = 30.0
+        self._http_client: httpx.AsyncClient | None = None
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient()
+        return self._http_client
+
+    async def close(self) -> None:
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
 
     async def _ensure_features_loaded(self) -> dict[str, Any]:
         """确保 GrowthBook 规则缓存已被拉取，具备平稳超时与错误降级能力。"""
@@ -47,19 +58,19 @@ class FeatureFlagService:
 
             url = f"{self._growthbook_api_host}/api/features/{self._growthbook_sdk_key}"
             try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(url, timeout=3.0)
-                    if response.status_code == 200:
-                        self._features_cache = response.json().get("features", {})
-                        self._last_fetch_time = current_time
-                        logger.info(
-                            "Successfully synchronized Feature Flags from GrowthBook Cloud CDN."
-                        )
-                    else:
-                        logger.warning(
-                            "GrowthBook API returned non-200 status: %s",
-                            response.status_code,
-                        )
+                client = self._get_http_client()
+                response = await client.get(url, timeout=3.0)
+                if response.status_code == 200:
+                    self._features_cache = response.json().get("features", {})
+                    self._last_fetch_time = current_time
+                    logger.info(
+                        "Successfully synchronized Feature Flags from GrowthBook Cloud CDN."
+                    )
+                else:
+                    logger.warning(
+                        "GrowthBook API returned non-200 status: %s",
+                        response.status_code,
+                    )
             except Exception as e:
                 logger.error("Error syncing with GrowthBook Cloud CDN: %s", e)
         return self._features_cache

@@ -60,6 +60,10 @@ class WebSettings(BaseSettings):
     # ── Google OAuth ──────────────────────────────────────────────
     GOOGLE_CLIENT_ID: str = Field("", description="Google OAuth2 Client ID")
     GOOGLE_CLIENT_SECRET: str = Field("", description="Google OAuth2 Client Secret")
+    GOOGLE_ALLOWED_REDIRECT_URIS: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Google OAuth2 允许的 redirect_uri 白名单（逗号分隔）",
+    )
 
     # ── SMS Verification ──────────────────────────────────────────
     SMS_CODE_EXPIRE_SECONDS: int = Field(300, description="短信验证码有效期（秒）")
@@ -133,6 +137,7 @@ class WebSettings(BaseSettings):
         "BACKEND_CORS_ORIGINS",
         "BACKEND_CORS_METHODS",
         "BACKEND_CORS_HEADERS",
+        "GOOGLE_ALLOWED_REDIRECT_URIS",
         mode="before",
     )
     @classmethod
@@ -145,6 +150,18 @@ class WebSettings(BaseSettings):
                 return []
             return [item.strip() for item in stripped.split(",") if item.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "WebSettings":
+        app_env = _current_app_env()
+        if app_env in PRODUCTION_APP_ENVS:
+            if self.SMS_MOCK_MODE:
+                raise ValueError("SMS_MOCK_MODE must be False in production")
+            if not self.GOOGLE_ALLOWED_REDIRECT_URIS:
+                raise ValueError(
+                    "GOOGLE_ALLOWED_REDIRECT_URIS must be set in production"
+                )
+        return self
 
 
 @lru_cache

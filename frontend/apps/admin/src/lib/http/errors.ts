@@ -28,6 +28,7 @@ export class AppHttpError extends Error {
     url?: string;
     method?: string;
     details?: unknown;
+    displayed: boolean;
 
     constructor({ code, message, status, requestId, url, method, details }: AppHttpErrorParams) {
         super(message);
@@ -38,6 +39,7 @@ export class AppHttpError extends Error {
         this.url = url;
         this.method = method;
         this.details = details;
+        this.displayed = false;
     }
 }
 
@@ -153,6 +155,7 @@ export const createFetchHttpError = (params: {
 };
 
 export const notifyHttpError = (error: AppHttpError): void => {
+    error.displayed = true;
     switch (error.code) {
         case 'unauthorized':
             message.warning('请登录以使用完整功能');

@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { waitFor } from '@testing-library/react';
 
 import { useAuthStore } from '../../stores/auth-store';
-import { setAccessToken } from '../../lib/http/auth';
+import { setAccessToken, AUTH_UNAUTHORIZED_EVENT } from '../../lib/http/auth';
 import { streamChatQuery } from '../../streams/chat-stream';
 import { server } from '../msw/server';
 import { http } from 'msw';
@@ -49,7 +49,7 @@ describe('Streaming contract', () => {
         expect(onError).not.toHaveBeenCalled();
     });
 
-    it('stream 401 clears token', async () => {
+    it('stream 401 fires unauthorized event (token cleared by AuthProvider listener)', async () => {
         server.use(
             http.post(API_URLS.CHAT.QUERY_STREAM, () => unauthorizedError()),
         );
@@ -58,6 +58,10 @@ describe('Streaming contract', () => {
         const onChunk = vi.fn();
         const onDone = vi.fn();
         const onError = vi.fn();
+
+        // Simulate AuthProvider's event listener
+        const cleanupListener = () => useAuthStore.getState().clearAuth();
+        window.addEventListener(AUTH_UNAUTHORIZED_EVENT, cleanupListener);
 
         streamChatQuery(
             { query: 'Hello' },
@@ -69,6 +73,7 @@ describe('Streaming contract', () => {
         });
 
         expect(useAuthStore.getState().token).toBeNull();
+        window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, cleanupListener);
     });
 
     it('stream request includes X-Idempotency-Key', async () => {
