@@ -17,6 +17,7 @@ from backend.repositories.audit_repo import AuditRepository
 from backend.repositories.chat_repo import ChatRepository
 from backend.repositories.credit_repo import CreditRepository
 from backend.repositories.knowledge_repo import KnowledgeRepository
+from backend.repositories.repo_analysis_repo import RepoAnalysisRepository
 from backend.repositories.task_repo import TaskRepository
 from backend.repositories.user_repo import UserRepository
 
@@ -99,4 +100,5 @@ class SQLAlchemyUnitOfWork(AbstractUnitOfWork):
         self.chat_repo = ChatRepository(session)
         self.knowledge_repo = KnowledgeRepository(session)
         self.task_repo = TaskRepository(session)
+        self.repo_analysis_repo = RepoAnalysisRepository(session)
         self.credit_repo = CreditRepository(session)

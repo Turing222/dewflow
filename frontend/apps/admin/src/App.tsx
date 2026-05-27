@@ -15,6 +15,7 @@ import { useThemeStore } from './stores/theme-store';
 
 const LazyAdminDashboard = React.lazy(() => import('./pages/Admin'));
 const LazyCreditsPage = React.lazy(() => import('./pages/Credits'));
+const LazyRepoCheckPage = React.lazy(() => import('./pages/RepoCheck'));
 
 const BRAND_PALETTES = {
   '#1677ff': {
@@ -208,6 +209,13 @@ const App: React.FC = () => {
               <Route path="/credits" element={
                 <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
                   <LazyCreditsPage />
+                </React.Suspense>
+              } />
+
+              {/* AI repo credibility check */}
+              <Route path="/repo-check" element={
+                <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }}><Spin size="large" /></div>}>
+                  <LazyRepoCheckPage />
                 </React.Suspense>
               } />
 

@@ -19,13 +19,12 @@ async def expire_credits_task() -> int:
     """TaskIQ 定时后台任务：扫描并扣减已过期的赠送额度。
 
     由外部 Scheduler/Cron 调度器每日调用。
+    expire_credits 内部使用 savepoint 逐账户独立处理，失败不影响其他账户。
     """
     logger.info("TaskIQ expire_credits_task started")
     uow = SQLAlchemyUnitOfWork(get_worker_session_factory())
     service = CreditService(uow)
 
-    # 外部事务：expire_credits 内部对每个账户使用 select FOR UPDATE 在独立的子事务/行级锁中操作，
-    # 这里的 write context 确保 session 被正确提交与释放。
     async with service.write():
         expired_count = await service.expire_credits()
 

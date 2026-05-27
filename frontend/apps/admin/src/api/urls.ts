@@ -39,4 +39,8 @@ export const API_URLS = {
         CHECKIN: `${API_PREFIX}/credits/checkin`,
         TRANSACTIONS: `${API_PREFIX}/credits/transactions`,
     },
+    REPO_ANALYSIS: {
+        README_CHECK: `${API_PREFIX}/repo-analysis/readme-check`,
+        RUN: (id: string) => `${API_PREFIX}/repo-analysis/runs/${id}`,
+    },
 } as const;

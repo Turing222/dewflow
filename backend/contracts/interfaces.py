@@ -12,6 +12,7 @@ from backend.contracts.repository_protocols import (
     ChatRepositoryProtocol,
     CreditRepositoryProtocol,
     KnowledgeRepositoryProtocol,
+    RepoAnalysisRepositoryProtocol,
     TaskRepositoryProtocol,
     UserRepositoryProtocol,
 )
@@ -26,6 +27,7 @@ class AbstractUnitOfWork(ABC):
     chat_repo: ChatRepositoryProtocol
     knowledge_repo: KnowledgeRepositoryProtocol
     task_repo: TaskRepositoryProtocol
+    repo_analysis_repo: RepoAnalysisRepositoryProtocol
     credit_repo: CreditRepositoryProtocol
 
     async def __aenter__(self) -> "AbstractUnitOfWork":
@@ -248,4 +250,14 @@ class AbstractTaskDispatcher(ABC):
         trace_context: dict[str, str] | None = None,
     ) -> None:
         """投递知识库文件入库任务到 TaskIQ worker。"""
+        ...
+
+    @abstractmethod
+    async def enqueue_repo_analysis(
+        self,
+        run_id: str,
+        task_id: str,
+        trace_context: dict[str, str] | None = None,
+    ) -> None:
+        """投递 GitHub repo README 初筛任务到 TaskIQ worker。"""
         ...

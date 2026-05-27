@@ -110,4 +110,5 @@ RUN /app/.venv/bin/python -c "import backend; print('✅ Worker image: backend m
 CMD ["taskiq", "worker", "backend.infra.task_broker:broker", \
     "backend.worker.tasks.llm_tasks", \
     "backend.worker.tasks.knowledge_tasks", \
+    "backend.worker.tasks.repo_analysis_tasks", \
     "--workers", "2"]

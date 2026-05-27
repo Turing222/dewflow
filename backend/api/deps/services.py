@@ -14,6 +14,7 @@ from backend.services.google_oauth_service import GoogleOAuthService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.object_storage import ObjectStorage, create_object_storage
 from backend.services.permission_service import PermissionService
+from backend.services.repo_analysis_service import RepoAnalysisService
 from backend.services.session_query_service import SessionQueryService
 from backend.services.sms_service import SMSService
 from backend.services.task_service import TaskService
@@ -90,6 +91,7 @@ def get_google_oauth_service() -> GoogleOAuthService:
     return GoogleOAuthService(
         google_client_id=ws.GOOGLE_CLIENT_ID,
         google_client_secret=ws.GOOGLE_CLIENT_SECRET,
+        allowed_redirect_uris=ws.GOOGLE_ALLOWED_REDIRECT_URIS,
     )
 
 
@@ -97,6 +99,12 @@ def get_credit_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
 ) -> CreditService:
     return CreditService(uow=uow)
+
+
+def get_repo_analysis_service(
+    uow: AbstractUnitOfWork = Depends(get_uow),
+) -> RepoAnalysisService:
+    return RepoAnalysisService(uow=uow)
 
 
 @lru_cache(maxsize=1)

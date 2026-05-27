@@ -8,6 +8,7 @@ from backend.api.v1.endpoint import (
     health_check,
     knowledge_api,
     permission_api,
+    repo_analysis_api,
     telemetry_api,
     user_api,
     workspace_api,
@@ -71,6 +72,12 @@ api_router.include_router(
     credit_api.router,
     prefix="/credits",
     tags=["credits"],
+    dependencies=[Depends(business_limiter)],
+)
+api_router.include_router(
+    repo_analysis_api.router,
+    prefix="/repo-analysis",
+    tags=["repo-analysis"],
     dependencies=[Depends(business_limiter)],
 )
 api_router.include_router(

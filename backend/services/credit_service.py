@@ -196,7 +196,11 @@ class CreditService(BaseService[AbstractUnitOfWork]):
         model_name: str,
         chat_message_id: uuid.UUID | None = None,
     ) -> tuple[UsageRecord, CreditTransaction]:
-        """根据大模型 Token 用量和折算费率扣除 Credits。优先扣积分，不足部分扣 Token。"""
+        """根据大模型 Token 用量和折算费率扣除 Credits。优先扣积分，不足部分扣 Token。
+
+        此方法在 write() UoW 上下文中调用；若 token 扣减失败（如余额不足触发异常），
+        整个事务将回滚，不会产生部分写入。
+        """
         # 1. 费率折算
         rates = credit_settings.CREDIT_MODEL_RATES.get(
             model_name

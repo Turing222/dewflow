@@ -18,6 +18,7 @@ from backend.models.orm.chat import ChatMessage, ChatSession
 from backend.models.orm.chunk import DocumentChunk
 from backend.models.orm.credits import CreditAccount, CreditTransaction, UsageRecord
 from backend.models.orm.knowledge import File, FileStatus, FileVisibility, KnowledgeBase
+from backend.models.orm.repo_analysis import RepoAnalysisResult, RepoAnalysisRun
 from backend.models.orm.task import TaskJob, TaskStatus
 from backend.models.orm.user import User
 from backend.models.schemas.audit_schema import AuditEventFilters
@@ -298,6 +299,52 @@ class TaskRepositoryProtocol(Protocol):
     async def mark_stale_kb_ingestion_tasks_failed(
         self, *, older_than: datetime.datetime, error_log: str
     ) -> int: ...
+
+
+class RepoAnalysisRepositoryProtocol(Protocol):
+    async def create_run(
+        self,
+        *,
+        user_id: uuid.UUID,
+        repo_url: str,
+        owner: str,
+        repo: str,
+        rubric_version: str,
+    ) -> RepoAnalysisRun: ...
+
+    async def get_run(self, run_id: uuid.UUID) -> RepoAnalysisRun | None: ...
+
+    async def get_run_for_user(
+        self, *, run_id: uuid.UUID, user_id: uuid.UUID
+    ) -> RepoAnalysisRun | None: ...
+
+    async def set_task_id(
+        self, *, run_id: uuid.UUID, task_id: uuid.UUID
+    ) -> RepoAnalysisRun | None: ...
+
+    async def mark_running(self, *, run_id: uuid.UUID) -> RepoAnalysisRun | None: ...
+
+    async def mark_failed(
+        self, *, run_id: uuid.UUID, error_message: str
+    ) -> RepoAnalysisRun | None: ...
+
+    async def mark_succeeded(self, *, run_id: uuid.UUID) -> RepoAnalysisRun | None: ...
+
+    async def create_result(
+        self,
+        *,
+        run_id: uuid.UUID,
+        subject: dict[str, Any],
+        snapshot: dict[str, Any],
+        evidence: dict[str, Any],
+        structured_report: dict[str, Any],
+        markdown_report: str,
+        generated_by: str,
+    ) -> RepoAnalysisResult: ...
+
+    async def get_result_for_run(
+        self, run_id: uuid.UUID
+    ) -> RepoAnalysisResult | None: ...
 
 
 class UserRepositoryProtocol(Protocol):
