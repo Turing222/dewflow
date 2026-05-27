@@ -66,6 +66,7 @@ def test_non_local_web_config_rejects_default_secret_key(
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("DEBUG", "false")
     monkeypatch.setenv("SECRET_KEY", DEFAULT_SECRET_KEY)
+    monkeypatch.setenv("GOOGLE_ALLOWED_REDIRECT_URIS", "https://example.com/callback")
     get_web_settings.cache_clear()
 
     exit_code = run_checks("web")
@@ -96,6 +97,7 @@ def test_cors_defaults_are_restricted_for_production(
     monkeypatch.delenv("BACKEND_CORS_METHODS", raising=False)
     monkeypatch.delenv("BACKEND_CORS_HEADERS", raising=False)
     monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("GOOGLE_ALLOWED_REDIRECT_URIS", "https://example.com/callback")
 
     settings = Settings(_env_file=None)
 
@@ -112,6 +114,7 @@ def test_cors_env_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BACKEND_CORS_METHODS", "GET,POST")
     monkeypatch.setenv("BACKEND_CORS_HEADERS", "Authorization,Content-Type")
     monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("GOOGLE_ALLOWED_REDIRECT_URIS", "https://example.com/callback")
 
     settings = Settings(_env_file=None)
 
@@ -131,6 +134,7 @@ def test_cors_defaults_follow_yaml_app_env(
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.setenv("CONFIG_DIR", str(config_dir))
     monkeypatch.setenv("SECRET_KEY", "prod-secret")
+    monkeypatch.setenv("GOOGLE_ALLOWED_REDIRECT_URIS", "https://example.com/callback")
 
     settings = Settings()
 

@@ -70,8 +70,8 @@ export const sendQueryStreamAPI = async (options: ChatQueryOptions): Promise<Res
 
         if (error.code === 'unauthorized') {
             handleUnauthorized();
-            notifyHttpError(error);
         }
+        notifyHttpError(error);
 
         throw error;
     }
