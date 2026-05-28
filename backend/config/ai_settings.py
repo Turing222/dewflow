@@ -101,7 +101,6 @@ class AISettings(BaseSettings):
     LLM_RESERVED_RESPONSE_TOKENS: int = 1024
     LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
     LLM_CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 30
-    LLM_MODEL_ROUTING_ENABLED: bool = False
     LLM_MODEL_ROUTE_FAST_PROVIDER: str = "bifrost_flash"
     LLM_MODEL_ROUTE_BALANCED_PROVIDER: str = "bifrost_pro"
     LLM_MODEL_ROUTE_REASONING_PROVIDER: str = "bifrost_reasoner"
@@ -119,28 +118,25 @@ class AISettings(BaseSettings):
 
     # ── RAG Retrieval ─────────────────────────────────────────────
     RAG_TOP_K: int = 4
-    RAG_RERANK_ENABLED: bool = False
     RAG_RERANK_PROVIDER: str | None = None
+    RAG_RERANK_BASE_URL: str | None = None
     RAG_RERANK_MODEL: str = "qwen3-rerank"
     RAG_RERANK_TIMEOUT_SECONDS: int = Field(default=15, ge=1, le=60)
     RAG_RERANK_CANDIDATE_COUNT: int = Field(default=20, ge=8, le=50)
     RAG_RERANK_TOP_K: int = Field(default=4, ge=1, le=10)
-    RAG_PLANNER_ENABLED: bool = False
     RAG_PLANNER_PROVIDER: str | None = None
     RAG_PLANNER_TIMEOUT_SECONDS: int = Field(default=8, ge=1, le=60)
-    RAG_PLANNER_ROUTING_ENABLED: bool = False
+    RAG_PLANNER_THINKING_ENABLED: bool = False
     RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD: float = Field(
         default=0.85, ge=0.0, le=1.0
     )
     RAG_PLANNER_REFUSAL_MESSAGE: str = "当前请求暂时无法可靠回答。"
-    RAG_REFUSAL_ENABLED: bool = True
     RAG_MIN_HIT_COUNT: int = Field(default=1, ge=1)
     RAG_MIN_RELEVANCE_SCORE: float = Field(default=0.2, ge=0.0, le=1.0)
     RAG_MIN_RERANK_SCORE: float = Field(default=4.0, ge=0.0, le=10.0)
     RAG_REFUSAL_MESSAGE: str = "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
 
     # ── External Context Retrieval ────────────────────────────────
-    EXTERNAL_CONTEXT_ENABLED: bool = False
     EXTERNAL_CONTEXT_PROVIDER: str = "tavily"
     EXTERNAL_CONTEXT_TOP_K: int = Field(default=4, ge=1, le=10)
     EXTERNAL_CONTEXT_TIMEOUT_SECONDS: int = Field(default=6, ge=1, le=30)

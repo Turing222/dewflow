@@ -68,7 +68,7 @@ configure_model_routing() {
             ;;
     esac
 
-    update_env_smoke "LLM_MODEL_ROUTING_ENABLED" "$enabled"
+    log_warn "MODEL_ROUTING only configures route providers; enable-llm-model-routing is controlled by GrowthBook."
     if [[ "$enabled" == "false" ]]; then
         return
     fi

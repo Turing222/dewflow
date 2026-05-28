@@ -282,23 +282,19 @@ def test_rag_refusal_settings_can_load_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SECRET_KEY", "test-secret")
-    monkeypatch.setenv("RAG_REFUSAL_ENABLED", "false")
     monkeypatch.setenv("RAG_MIN_HIT_COUNT", "2")
     monkeypatch.setenv("RAG_MIN_RELEVANCE_SCORE", "0.35")
     monkeypatch.setenv("RAG_MIN_RERANK_SCORE", "6.5")
     monkeypatch.setenv("RAG_REFUSAL_MESSAGE", "资料不足，无法回答。")
-    monkeypatch.setenv("RAG_PLANNER_ROUTING_ENABLED", "true")
     monkeypatch.setenv("RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD", "0.75")
     monkeypatch.setenv("RAG_PLANNER_REFUSAL_MESSAGE", "planner 拒答。")
 
     settings = Settings()
 
-    assert settings.RAG_REFUSAL_ENABLED is False
     assert settings.RAG_MIN_HIT_COUNT == 2
     assert settings.RAG_MIN_RELEVANCE_SCORE == 0.35
     assert settings.RAG_MIN_RERANK_SCORE == 6.5
     assert settings.RAG_REFUSAL_MESSAGE == "资料不足，无法回答。"
-    assert settings.RAG_PLANNER_ROUTING_ENABLED is True
     assert settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD == 0.75
     assert settings.RAG_PLANNER_REFUSAL_MESSAGE == "planner 拒答。"
 
@@ -311,7 +307,7 @@ def test_rag_planner_enabled_default_from_yaml(
     app_dir = config_dir / "app"
     app_dir.mkdir(parents=True)
     (app_dir / "base.yaml").write_text(
-        "LLM_PROVIDER: bifrost_pro\nRAG_PLANNER_ENABLED: true\nRAG_PLANNER_PROVIDER: bifrost_flash\n",
+        "LLM_PROVIDER: bifrost_pro\n",
         encoding="utf-8",
     )
 
@@ -322,8 +318,6 @@ def test_rag_planner_enabled_default_from_yaml(
     settings = Settings()
 
     assert settings.LLM_PROVIDER == "bifrost_pro"
-    assert settings.RAG_PLANNER_ENABLED is True
-    assert settings.RAG_PLANNER_PROVIDER == "bifrost_flash"
 
 
 def test_bifrost_pro_alias_resolves_to_v4_pro_profile() -> None:

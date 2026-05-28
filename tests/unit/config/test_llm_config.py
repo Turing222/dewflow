@@ -64,6 +64,10 @@ def test_load_llm_model_config_resolves_aliases() -> None:
     )
     assert qwen3_embedding.dimensions == 768
 
+    assert config.resolve_rerank_profile("bifrost").provider == "bifrost"
+    assert config.resolve_rerank_profile("bifrost").model == "qwen3-rerank"
+    assert config.resolve_rerank_profile("gateway-rerank").name == "bifrost_rerank"
+
 
 def test_embedding_profile_does_not_fallback_to_llm_base_url(
     monkeypatch: pytest.MonkeyPatch,

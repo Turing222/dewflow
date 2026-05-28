@@ -9,6 +9,10 @@ from backend.config.schemas.embeddings import (
     EmbeddingModelProfile,
     EmbeddingModelsConfig,
 )
+from backend.config.schemas.reranks import (
+    RerankModelProfile,
+    RerankModelsConfig,
+)
 from backend.config.schemas.models import (
     LLMModelProfile,
     LLMModelRoute,
@@ -32,6 +36,8 @@ from backend.config.schemas.prompts import (
 __all__ = [
     "EmbeddingModelProfile",
     "EmbeddingModelsConfig",
+    "RerankModelProfile",
+    "RerankModelsConfig",
     "LLMModelProfile",
     "LLMModelRoute",
     "LLMModelsConfig",
