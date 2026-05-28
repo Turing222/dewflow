@@ -346,7 +346,9 @@ class ChatContextBuilder:
                     span,
                     {
                         "rag.hit_count": len(chunks),
-                        "rag.rerank.enabled": settings.RAG_RERANK_ENABLED,
+                        "rag.rerank.enabled": getattr(
+                            self.rag_service, "reranker", None
+                        ) is not None,
                     },
                 )
                 return chunks
@@ -364,7 +366,7 @@ class ChatContextBuilder:
         if rag_service is None:
             return []
 
-        if settings.RAG_RERANK_ENABLED:
+        if getattr(self.rag_service, "reranker", None) is not None:
             retrieve_with_rerank = getattr(
                 rag_service,
                 "retrieve_with_rerank",

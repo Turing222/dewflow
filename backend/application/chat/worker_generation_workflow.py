@@ -37,7 +37,11 @@ from backend.core.concurrency import llm_concurrency_slot
 from backend.core.exceptions import AppException
 from backend.infra.redis import RedisClient
 from backend.models.schemas.chat.dto import LLMQueryDTO
-from backend.models.schemas.chat.payloads import GenerationPayload, GenerationResult
+from backend.models.schemas.chat.payloads import (
+    FeatureFlags,
+    GenerationPayload,
+    GenerationResult,
+)
 from backend.observability.trace_utils import (
     build_llm_span_attributes,
     set_span_attributes,
@@ -182,7 +186,7 @@ class LLMGenerationWorkerWorkflow:
             conversation_history=assembled.messages,
             extra_body=payload.extra_body,
         )
-        selected_llm = self._select_llm(prepared_context)
+        selected_llm = self._select_llm(prepared_context, payload.feature_flags)
         if search_context is not None:
             search_context = merge_metrics(
                 search_context,
@@ -201,9 +205,9 @@ class LLMGenerationWorkerWorkflow:
         if isinstance(prepared, tuple) and len(prepared) == 3:
             llm_query, tokens_input, search_context = prepared
             return _PreparedGeneration(
-                llm_query=llm_query,
-                tokens_input=tokens_input,
-                search_context=search_context,
+                llm_query=llm_query,  # type: ignore[arg-type]
+                tokens_input=tokens_input,  # type: ignore[arg-type]
+                search_context=search_context,  # type: ignore[arg-type]
                 selected_llm=self._default_selected_llm(),
             )
         raise TypeError("Invalid prepared generation payload")
@@ -219,13 +223,15 @@ class LLMGenerationWorkerWorkflow:
             route_reason=DEFAULT_MODEL_ROUTE_REASON,
         )
 
-    def _select_llm(self, prepared_context: PreparedGenerationContext) -> _SelectedLLM:
+    def _select_llm(
+        self, prepared_context: PreparedGenerationContext, feature_flags: FeatureFlags
+    ) -> _SelectedLLM:
         tier = _normalize_model_tier(prepared_context.answer_model_tier)
         route_confidence = float(prepared_context.model_route_confidence or 0.0)
         route_reason = str(prepared_context.model_route_reason or "")
         provider_config = (
             _provider_for_model_tier(tier)
-            if ai_settings.LLM_MODEL_ROUTING_ENABLED
+            if feature_flags.enable_llm_model_routing
             and route_confidence >= ai_settings.LLM_MODEL_ROUTE_MIN_CONFIDENCE
             else None
         )

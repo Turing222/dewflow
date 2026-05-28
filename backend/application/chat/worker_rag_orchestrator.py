@@ -34,6 +34,15 @@ from backend.services.rag_planning_service import (
 
 logger = logging.getLogger(__name__)
 
+_FLAGS_ATTRS: dict[str, str] = {
+    "enable_external_context": "feature_flags.enable_external_context",
+    "enable_rag_rerank": "feature_flags.enable_rag_rerank",
+    "enable_rag_planner": "feature_flags.enable_rag_planner",
+    "enable_rag_planner_routing": "feature_flags.enable_rag_planner_routing",
+    "enable_rag_refusal": "feature_flags.enable_rag_refusal",
+    "enable_llm_model_routing": "feature_flags.enable_llm_model_routing",
+}
+
 
 @dataclass
 class PreparedGenerationContext:
@@ -86,7 +95,7 @@ class WorkerRAGOrchestrator:
             metrics["context_mode"] = rag_plan.context_mode
             metrics["selected_sources"] = ",".join(rag_plan.selected_sources)
             metrics["route_reason"] = rag_plan.reason
-            if ai_settings.RAG_PLANNER_ROUTING_ENABLED:
+            if payload.feature_flags.enable_rag_planner_routing:
                 metrics["answer_route"] = rag_plan.answer_route
                 metrics["route_confidence"] = rag_plan.route_confidence
             metrics["answer_model_tier"] = rag_plan.answer_model_tier
@@ -138,11 +147,8 @@ class WorkerRAGOrchestrator:
             metrics["external_context_ms"] = elapsed_ms(external_started)
             metrics["external_context_hit_count"] = len(external_candidates)
             metrics["external_context_used"] = bool(external_candidates)
-            metrics["external_context_provider"] = (
-                self.external_context_provider.provider_name
-                if external_candidates
-                else None
-            )
+            provider = self.external_context_provider
+            metrics["external_context_provider"] = provider.provider_name if provider and external_candidates else None
 
             candidates = [*rag_candidates, *external_candidates]
             metrics["candidate_count"] = len(candidates)
@@ -160,6 +166,7 @@ class WorkerRAGOrchestrator:
                 kb_id=payload.kb_id,
                 rag_plan=rag_plan,
                 chunks=reranked_chunks,
+                enable_rag_refusal=payload.feature_flags.enable_rag_refusal,
             )
             if refusal_decision.should_refuse:
                 context_started = perf_start()
@@ -213,9 +220,9 @@ class WorkerRAGOrchestrator:
                 {
                     "rag.candidate_count": len(candidates),
                     "rag.rerank.enabled": rag_plan.use_rerank,
-                    "rag.rerank.config_enabled": ai_settings.RAG_RERANK_ENABLED,
+                    "rag.rerank.config_enabled": payload.feature_flags.enable_rag_rerank,
                     "rag.hit_count": len(reranked_chunks),
-                    "rag.planner.enabled": ai_settings.RAG_PLANNER_ENABLED,
+                    "rag.planner.enabled": payload.feature_flags.enable_rag_planner,
                     "rag.planner.used": planner_used,
                     "rag.planner.should_use_rag": rag_plan.should_use_rag,
                     "rag.planner.retrieval_mode": rag_plan.retrieval_mode,
@@ -254,12 +261,13 @@ class WorkerRAGOrchestrator:
             external_context_allowed=is_external_context_allowed(
                 context_mode=payload.context_mode,
                 enable_external_context=payload.enable_external_context,
-                external_context_enabled=ai_settings.EXTERNAL_CONTEXT_ENABLED,
+                external_context_enabled=payload.feature_flags.enable_external_context,
             ),
             context_mode=resolve_context_mode(
                 context_mode=payload.context_mode,
                 enable_external_context=payload.enable_external_context,
             ),
+            infra_flags=payload.feature_flags,
         )
         if payload.rag_candidates:
             return default_plan, False
@@ -267,7 +275,7 @@ class WorkerRAGOrchestrator:
             return default_plan, False
         if not default_plan.selected_sources:
             return default_plan, False
-        if not ai_settings.RAG_PLANNER_ENABLED:
+        if not payload.feature_flags.enable_rag_planner:
             return default_plan, False
         if self.rag_planning_service is None:
             return default_plan, False
@@ -279,10 +287,11 @@ class WorkerRAGOrchestrator:
                 kb_id=payload.kb_id,
                 enable_external_context=payload.enable_external_context,
                 context_mode=payload.context_mode,
+                infra_flags=payload.feature_flags,
             )
             plan = plan.clamped()
             if plan.answer_route == "refuse" and (
-                not ai_settings.RAG_PLANNER_ROUTING_ENABLED
+                not payload.feature_flags.enable_rag_planner_routing
                 or plan.route_confidence
                 < ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD
             ):
@@ -298,7 +307,7 @@ class WorkerRAGOrchestrator:
         payload: GenerationPayload,
         rag_plan: RAGExecutionPlan,
     ) -> RAGEvidenceDecision | None:
-        if not ai_settings.RAG_PLANNER_ROUTING_ENABLED:
+        if not payload.feature_flags.enable_rag_planner_routing:
             return None
         # Preloaded RAG candidates are caller-owned context; do not let planner
         # preflight refusal discard evidence that has already been selected.
@@ -331,7 +340,7 @@ class WorkerRAGOrchestrator:
         if (
             payload.rag_candidates
             or self.external_context_provider is None
-            or not ai_settings.EXTERNAL_CONTEXT_ENABLED
+            or not payload.feature_flags.enable_external_context
             or not source_selected(rag_plan.selected_sources, "web")
         ):
             return []

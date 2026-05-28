@@ -23,10 +23,11 @@ from backend.core.concurrency import db_concurrency_slot
 from backend.core.exceptions import AppException, app_bad_request
 from backend.infra.redis import safe_release_lock
 from backend.models.schemas.chat.commands import ChatQueryCommand
-from backend.models.schemas.chat.payloads import GenerationPayload
+from backend.models.schemas.chat.payloads import FeatureFlags, GenerationPayload
 from backend.observability.trace_utils import set_span_attributes, trace_span
 from backend.services.chat_service import SessionManager
 from backend.services.credit_service import CreditService
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.permission_service import PermissionService
 from backend.utils.token_estimation import count_messages_tokens, count_tokens
 
@@ -68,11 +69,13 @@ class ChatSessionOrchestrator:
         uow: AbstractUnitOfWork,
         redis_client: redis.Redis,
         permission_service: PermissionService,
+        feature_flag_service: FeatureFlagService,
         session_manager: SessionManager | None = None,
     ) -> None:
         self.uow = uow
         self.redis = redis_client
         self.permission_service = permission_service
+        self._feature_flag_service = feature_flag_service
         self._session_manager = session_manager or SessionManager(
             uow, permission_service
         )
@@ -241,6 +244,24 @@ class ChatSessionOrchestrator:
             context_mode=command.context_mode,
             billing_model_name=billing_model_name,
             extra_body=command.extra_body,
+        )
+
+        # Evaluate system-level AI feature flags and attach to payload.
+        system_flags = await self._feature_flag_service.get_system_features()
+        generation_payload.feature_flags = FeatureFlags(
+            enable_external_context=system_flags.get("enable-external-context", False),
+            enable_rag_rerank=system_flags.get("enable-rag-rerank", False),
+            enable_rag_planner=system_flags.get("enable-rag-planner", False),
+            enable_rag_planner_routing=system_flags.get(
+                "enable-rag-planner-routing", False
+            ),
+            enable_rag_refusal=system_flags.get("enable-rag-refusal", True),
+            enable_llm_model_routing=system_flags.get(
+                "enable-llm-model-routing", False
+            ),
+            enable_rag_planner_thinking=system_flags.get(
+                "enable-rag-planner-thinking", False
+            ),
         )
         return ChatPreparedRequest(
             session=session,

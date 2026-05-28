@@ -94,12 +94,15 @@ class WorkerContainer:
 
     def get_rerank_service(self) -> AbstractRerankService | None:
         """Return the cached worker-side rerank service when configured."""
-        if not ai_settings.RAG_RERANK_ENABLED:
-            return None
         if self._rerank_service is None:
-            self._rerank_service = RerankProviderFactory.create(
-                ai_settings.RAG_RERANK_PROVIDER
-            )
+            provider = ai_settings.RAG_RERANK_PROVIDER
+            if provider:
+                config = get_llm_model_config()
+                if config.rerank_profiles:
+                    profile = config.resolve_rerank_profile(provider)
+                    self._rerank_service = RerankProviderFactory.create(profile=profile)
+                else:
+                    self._rerank_service = RerankProviderFactory.create(provider)
         return self._rerank_service
 
     def get_rag_service(
@@ -121,6 +124,11 @@ class WorkerContainer:
                 embed_batch_size=ai_settings.RAG_EMBED_BATCH_SIZE,
                 read_uow_factory=lambda: SQLAlchemyUnitOfWork(session_factory),
             )
+            rerank_score_kind = "bifrost_rerank"
+            config = get_llm_model_config()
+            if config.rerank_profiles and ai_settings.RAG_RERANK_PROVIDER:
+                profile = config.resolve_rerank_profile(ai_settings.RAG_RERANK_PROVIDER)
+                rerank_score_kind = profile.effective_score_kind()
             self._rag_service = RAGService(
                 embedder=embedder,
                 vector_index_service=vector_index_service,
@@ -129,6 +137,7 @@ class WorkerContainer:
                 reranker=reranker,
                 rerank_candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
                 rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
+                rerank_score_kind=rerank_score_kind,
             )
         return self._rag_service
 
@@ -143,7 +152,9 @@ class WorkerContainer:
     def get_external_context_provider(self) -> AbstractExternalContextProvider | None:
         """Return the cached worker-side external context provider."""
         if self._external_context_provider is None:
-            self._external_context_provider = create_external_context_provider()
+            self._external_context_provider = create_external_context_provider(
+                always_create=True
+            )
         return self._external_context_provider
 
     def get_object_storage(self) -> ObjectStorage:

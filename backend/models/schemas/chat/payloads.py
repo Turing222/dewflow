@@ -14,6 +14,18 @@ from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.dto import ConversationMessage
 
 
+class FeatureFlags(BaseModel):
+    """System-level AI feature flags snapshot evaluated at request time."""
+
+    enable_external_context: bool = False
+    enable_rag_rerank: bool = False
+    enable_rag_planner: bool = False
+    enable_rag_planner_routing: bool = False
+    enable_rag_refusal: bool = True
+    enable_llm_model_routing: bool = False
+    enable_rag_planner_thinking: bool = False
+
+
 class GenerationPayload(BaseModel):
     """Worker payload for LLM generation tasks."""
 
@@ -27,6 +39,7 @@ class GenerationPayload(BaseModel):
     context_mode: ContextMode | None = None
     billing_model_name: str = "default"
     extra_body: dict[str, object] | None = None
+    feature_flags: FeatureFlags = Field(default_factory=FeatureFlags)
 
 
 class GenerationResult(BaseModel):

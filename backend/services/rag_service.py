@@ -38,6 +38,7 @@ class RAGService(AbstractRAGService):
         reranker: AbstractRerankService | None = None,
         rerank_candidate_count: int = 20,
         rerank_top_k: int = 4,
+        rerank_score_kind: str = "bifrost_rerank",
     ) -> None:
         self.embedder = embedder
         self.vector_index_service = vector_index_service
@@ -46,6 +47,7 @@ class RAGService(AbstractRAGService):
         self.reranker = reranker
         self.rerank_candidate_count = rerank_candidate_count
         self.rerank_top_k = rerank_top_k
+        self.rerank_score_kind = rerank_score_kind
 
     async def retrieve(
         self,
@@ -106,7 +108,7 @@ class RAGService(AbstractRAGService):
                     candidates=candidates,
                     rankings=rankings,
                     limit=limit,
-                    score_kind="bifrost_rerank",
+                    score_kind=self.rerank_score_kind,
                     index_base=0,
                 )
             except Exception as exc:

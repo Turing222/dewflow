@@ -63,6 +63,14 @@ class AbstractLLMService(ABC):
     与具体的 LLM 提供商解耦 (OpenAI, Claude, Local LLM...)
     """
 
+    @property
+    @abstractmethod
+    def model_name(self) -> str: ...
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str: ...
+
     @abstractmethod
     async def stream_response(
         self,

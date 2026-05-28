@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from backend.ai.providers.llm.pydantic_ai_models import create_pydantic_ai_model
 from backend.config.ai_settings import ai_settings
-from backend.config.llm import get_llm_model_config
+from backend.config.llm import LLMProfile, get_llm_model_config
 from backend.models.schemas.chat.context_routing import (
     ContextMode,
     ContextSource,
@@ -24,6 +24,7 @@ from backend.models.schemas.chat.context_routing import (
     source_selected,
 )
 from backend.models.schemas.chat.dto import ConversationMessage
+from backend.models.schemas.chat.payloads import FeatureFlags
 from backend.observability.trace_utils import set_span_attributes, trace_span
 
 logger = logging.getLogger(__name__)
@@ -91,8 +92,10 @@ class RAGExecutionPlan(BaseModel):
         query_text: str,
         external_context_allowed: bool = False,
         context_mode: ContextMode | None = None,
+        infra_flags: FeatureFlags | None = None,
         reason: str = "使用默认 RAG 配置",
     ) -> "RAGExecutionPlan":
+        flags = infra_flags or FeatureFlags()
         resolved_mode = resolve_context_mode(
             context_mode=context_mode,
             enable_external_context=external_context_allowed,
@@ -103,7 +106,7 @@ class RAGExecutionPlan(BaseModel):
             has_query
             and resolved_mode in {"auto", "web_only"}
             and external_context_allowed
-            and ai_settings.EXTERNAL_CONTEXT_ENABLED
+            and flags.enable_external_context
         )
         selected_sources: list[ContextSource] = []
         if should_use_rag:
@@ -115,9 +118,9 @@ class RAGExecutionPlan(BaseModel):
             context_mode=resolved_mode,
             selected_sources=selected_sources,
             should_use_rag=should_use_rag,
-            retrieval_mode="hybrid" if ai_settings.RAG_RERANK_ENABLED else "vector",
+            retrieval_mode="hybrid" if flags.enable_rag_rerank else "vector",
             top_k=max(1, ai_settings.RAG_TOP_K),
-            use_rerank=ai_settings.RAG_RERANK_ENABLED and should_use_rag,
+            use_rerank=flags.enable_rag_rerank and should_use_rag,
             candidate_count=ai_settings.RAG_RERANK_CANDIDATE_COUNT,
             rerank_top_k=ai_settings.RAG_RERANK_TOP_K,
             should_use_external_context=should_use_external_context,
@@ -159,7 +162,7 @@ class RAGExecutionPlan(BaseModel):
         if model_route_confidence < ai_settings.LLM_MODEL_ROUTE_MIN_CONFIDENCE:
             answer_model_tier = "balanced"
             model_route_reason = "low confidence, fallback to balanced"
-        selected_sources = [
+        selected_sources: list[ContextSource] = [
             source
             for source in dict.fromkeys(self.selected_sources)
             if source in ("kb", "web", "skill", "mcp")
@@ -201,7 +204,10 @@ class RAGPlanningService:
         kb_id: uuid.UUID | None,
         enable_external_context: bool = False,
         context_mode: ContextMode | None = None,
+        infra_flags: FeatureFlags | None = None,
     ) -> RAGExecutionPlan:
+        if infra_flags is None:
+            infra_flags = FeatureFlags()
         resolved_mode = resolve_context_mode(
             context_mode=context_mode,
             enable_external_context=enable_external_context,
@@ -209,17 +215,18 @@ class RAGPlanningService:
         external_context_allowed = is_external_context_allowed(
             context_mode=context_mode,
             enable_external_context=enable_external_context,
-            external_context_enabled=ai_settings.EXTERNAL_CONTEXT_ENABLED,
+            external_context_enabled=infra_flags.enable_external_context,
         )
         default_plan = RAGExecutionPlan.from_settings(
             has_kb=kb_id is not None,
             query_text=query_text,
             external_context_allowed=external_context_allowed,
             context_mode=resolved_mode,
+            infra_flags=infra_flags,
         )
         if (
             not query_text.strip()
-            or not ai_settings.RAG_PLANNER_ENABLED
+            or not infra_flags.enable_rag_planner
             or resolved_mode == "off"
             or (kb_id is None and not external_context_allowed)
         ):
@@ -241,6 +248,7 @@ class RAGPlanningService:
                         has_kb=kb_id is not None,
                         enable_external_context=external_context_allowed,
                         context_mode=resolved_mode,
+                        infra_flags=infra_flags,
                     ),
                     timeout=ai_settings.RAG_PLANNER_TIMEOUT_SECONDS,
                 )
@@ -254,6 +262,7 @@ class RAGPlanningService:
                 query_text=query_text,
                 external_context_allowed=external_context_allowed,
                 context_mode=resolved_mode,
+                infra_flags=infra_flags,
                 reason=RAG_PLANNER_FALLBACK_REASON,
             )
 
@@ -281,8 +290,24 @@ class RAGPlanningService:
         has_kb: bool,
         enable_external_context: bool,
         context_mode: ContextMode,
+        infra_flags: FeatureFlags | None = None,
     ) -> RAGExecutionPlan:
         agent = self._ensure_agent()
+        if infra_flags is None:
+            infra_flags = FeatureFlags()
+
+        from pydantic_ai.settings import ModelSettings
+
+        profile = get_llm_model_config().resolve_profile(
+            self.provider
+            or ai_settings.RAG_PLANNER_PROVIDER
+            or ai_settings.LLM_PROVIDER
+        )
+        extra_body = _planner_extra_body(profile, infra_flags)
+        run_kwargs: dict[str, object] = {}
+        if extra_body is not None:
+            run_kwargs["model_settings"] = ModelSettings(extra_body=extra_body)
+
         result = await agent.run(
             _build_planner_prompt(
                 query_text=query_text,
@@ -290,7 +315,8 @@ class RAGPlanningService:
                 has_kb=has_kb,
                 enable_external_context=enable_external_context,
                 context_mode=context_mode,
-            )
+            ),
+            **run_kwargs,
         )
         output = result.output
         if isinstance(output, RAGExecutionPlan):
@@ -314,6 +340,22 @@ def _clamp(value: int, minimum: int, maximum: int) -> int:
 
 def _clamp_float(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(float(value), maximum))
+
+
+def _planner_extra_body(
+    profile: LLMProfile,
+    infra_flags: FeatureFlags,
+) -> dict[str, object] | None:
+    """Return planner extra_body only for profiles that declare thinking support."""
+    if not profile.extra_body:
+        return None
+    extra_body = dict(profile.extra_body)
+    if "thinking" not in extra_body:
+        return extra_body
+    extra_body["thinking"] = {
+        "type": "enabled" if infra_flags.enable_rag_planner_thinking else "disabled"
+    }
+    return extra_body
 
 
 def _trace_attrs(

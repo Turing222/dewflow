@@ -3,7 +3,7 @@ from fastapi import Depends
 from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.ai.providers.llm.factory import LLMProviderFactory
 from backend.ai.providers.rerank.factory import RerankProviderFactory
-from backend.api.deps.services import get_knowledge_service
+from backend.api.deps.services import get_feature_flag_service, get_knowledge_service
 from backend.api.deps.uow import get_uow
 from backend.application.knowledge.ingestion_workflow import KnowledgeRAGWorkflow
 from backend.config.llm import get_llm_model_config
@@ -16,6 +16,7 @@ from backend.contracts.interfaces import (
     AbstractUnitOfWork,
 )
 from backend.services.chunking_service import ChunkingService
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.rag_service import RAGService
 from backend.services.vector_index_service import VectorIndexService
@@ -25,9 +26,16 @@ def get_llm_service() -> AbstractLLMService:
     return LLMProviderFactory.create()
 
 
-def get_rerank_service() -> AbstractRerankService | None:
-    if not settings.RAG_RERANK_ENABLED:
+async def get_rerank_service(
+    feature_flag_service: FeatureFlagService = Depends(get_feature_flag_service),
+) -> AbstractRerankService | None:
+    system_flags = await feature_flag_service.get_system_features()
+    if not system_flags.get("enable-rag-rerank", False):
         return None
+    config = get_llm_model_config()
+    if config.rerank_profiles:
+        profile = config.resolve_rerank_profile(settings.RAG_RERANK_PROVIDER)
+        return RerankProviderFactory.create(profile=profile)
     return RerankProviderFactory.create(settings.RAG_RERANK_PROVIDER)
 
 
@@ -55,15 +63,24 @@ def get_vector_index_service(
     )
 
 
-def get_rag_service(
+async def get_rag_service(
     uow: AbstractUnitOfWork = Depends(get_uow),
     embedder: AbstractRAGEmbedder = Depends(get_rag_embedder),
     vector_index_service: VectorIndexService = Depends(get_vector_index_service),
     reranker: AbstractRerankService | None = Depends(get_rerank_service),
+    feature_flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> AbstractRAGService:
+    system_flags = await feature_flag_service.get_system_features()
     llm_service = (
-        get_llm_service() if settings.RAG_RERANK_ENABLED and reranker is None else None
+        get_llm_service()
+        if system_flags.get("enable-rag-rerank", False) and reranker is None
+        else None
     )
+    rerank_score_kind = "bifrost_rerank"
+    config = get_llm_model_config()
+    if config.rerank_profiles and settings.RAG_RERANK_PROVIDER:
+        profile = config.resolve_rerank_profile(settings.RAG_RERANK_PROVIDER)
+        rerank_score_kind = profile.effective_score_kind()
     return RAGService(
         embedder=embedder,
         vector_index_service=vector_index_service,
@@ -72,6 +89,7 @@ def get_rag_service(
         reranker=reranker,
         rerank_candidate_count=settings.RAG_RERANK_CANDIDATE_COUNT,
         rerank_top_k=settings.RAG_RERANK_TOP_K,
+        rerank_score_kind=rerank_score_kind,
     )
 
 

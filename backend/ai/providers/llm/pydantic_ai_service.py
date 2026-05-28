@@ -39,6 +39,14 @@ _ROLE_LABELS = {
 class PydanticAILLMService(AbstractLLMService):
     """Pydantic AI provider 的 LLM 服务适配器。"""
 
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    @property
+    def provider_name(self) -> str:
+        return self._provider_name
+
     def __init__(
         self,
         *,
@@ -72,11 +80,11 @@ class PydanticAILLMService(AbstractLLMService):
                 extra_body=resolved_profile.extra_body,
             )
         )
-        self.provider_name = provider_name or self.profile.provider
+        self._provider_name = provider_name or self.profile.provider
         self.api_key = (
             api_key if api_key is not None else self.profile.resolve_api_key()
         )
-        self.model_name = self.profile.model
+        self._model_name = self.profile.model
         self.max_retries = max_retries
         self._extra_body = (
             extra_body if extra_body is not None else self.profile.extra_body

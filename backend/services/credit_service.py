@@ -218,11 +218,13 @@ class CreditService(BaseService[AbstractUnitOfWork]):
             existing_tx = await self.uow.credit_repo.get_transaction_by_idempotency_key(
                 spend_idempotency_key
             )
-            existing_usage_record = (
-                await self.uow.credit_repo.get_usage_record_by_chat_message_id(
-                    chat_message_id
+            existing_usage_record = None
+            if chat_message_id is not None:
+                existing_usage_record = (
+                    await self.uow.credit_repo.get_usage_record_by_chat_message_id(
+                        chat_message_id
+                    )
                 )
-            )
             if existing_tx is not None and existing_usage_record is not None:
                 return existing_usage_record, existing_tx
             if existing_usage_record is not None:

@@ -42,6 +42,7 @@ class RAGEvidencePolicy:
         kb_id: object | None,
         rag_plan: RAGExecutionPlan,
         chunks: list[dict[str, Any]],
+        enable_rag_refusal: bool = True,
     ) -> RAGEvidenceDecision:
         hit_count = len(chunks)
         best_score = self._max_numeric(chunks, "evidence_score")
@@ -49,7 +50,7 @@ class RAGEvidencePolicy:
             best_score = self._max_numeric(chunks, "score")
         best_rerank_score = self._max_numeric(chunks, "rerank_score")
 
-        if not ai_settings.RAG_REFUSAL_ENABLED:
+        if not enable_rag_refusal:
             return self._allow(
                 "RAG 拒答策略未启用", hit_count, best_score, best_rerank_score
             )

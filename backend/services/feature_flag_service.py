@@ -15,6 +15,16 @@ from backend.models.orm.user import User
 
 logger = logging.getLogger(__name__)
 
+_AI_SYSTEM_FLAG_DEFAULTS: dict[str, bool] = {
+    "enable-external-context": False,
+    "enable-rag-rerank": False,
+    "enable-rag-planner": False,
+    "enable-rag-planner-routing": False,
+    "enable-rag-refusal": True,
+    "enable-llm-model-routing": False,
+    "enable-rag-planner-thinking": False,
+}
+
 
 class FeatureFlagService:
     def __init__(
@@ -76,24 +86,25 @@ class FeatureFlagService:
         return self._features_cache
 
     async def get_system_features(self) -> dict[str, bool]:
-        """获取系统级公开控制开关（匿名/登录前阶段）。"""
-        await self._ensure_features_loaded()
+        """获取系统级控制开关（含 AI 基础设施开关），使用 GrowthBook SDK 按环境判定。"""
+        features_dict = await self._ensure_features_loaded()
 
-        enable_reg = True
-        enable_closed_beta = False
+        attributes = {"env": self._app_env}
+        gb = GrowthBook(attributes=attributes, features=features_dict)
 
-        if "enable-public-registration" in self._features_cache:
-            feat = self._features_cache["enable-public-registration"]
-            enable_reg = feat.get("defaultValue", True)
-
-        if "enable-closed-beta-login" in self._features_cache:
-            feat = self._features_cache["enable-closed-beta-login"]
-            enable_closed_beta = feat.get("defaultValue", False)
-
-        return {
-            "enable-public-registration": enable_reg,
-            "enable-closed-beta-login": enable_closed_beta,
+        result: dict[str, bool] = {
+            "enable-public-registration": self._eval_flag(
+                gb, "enable-public-registration", features_dict, True
+            ),
+            "enable-closed-beta-login": self._eval_flag(
+                gb, "enable-closed-beta-login", features_dict, False
+            ),
         }
+
+        for key, default in _AI_SYSTEM_FLAG_DEFAULTS.items():
+            result[key] = self._eval_flag(gb, key, features_dict, default)
+
+        return result
 
     async def get_user_features(self, user: User) -> dict[str, bool]:
         """用户级个性化标志评估，使用官方 growthbook Python SDK 本地判定。"""

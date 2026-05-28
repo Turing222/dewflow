@@ -4,6 +4,7 @@ from fastapi import Depends, Request
 from backend.api.deps.infra import get_redis
 from backend.api.deps.permissions import get_permission_service
 from backend.api.deps.services import (
+    get_feature_flag_service,
     get_knowledge_service,
     get_repo_analysis_service,
     get_task_service,
@@ -20,6 +21,7 @@ from backend.contracts.interfaces import (
 from backend.infra.redis import redis_client
 from backend.infra.task_dispatcher import TaskDispatcher
 from backend.services.chat_service import SessionManager
+from backend.services.feature_flag_service import FeatureFlagService
 from backend.services.knowledge_service import KnowledgeService
 from backend.services.permission_service import PermissionService
 from backend.services.repo_analysis_service import RepoAnalysisService
@@ -47,10 +49,11 @@ def get_chat_workflow(
     dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
     redis_client: redis.Redis = Depends(get_redis),
     permission_service: PermissionService = Depends(get_permission_service),
+    feature_flag_service: FeatureFlagService = Depends(get_feature_flag_service),
     session_manager: SessionManager = Depends(get_session_manager),
 ) -> ChatWorkflow:
     return ChatWorkflow(
-        uow, dispatcher, redis_client, permission_service, session_manager
+        uow, dispatcher, redis_client, permission_service, feature_flag_service, session_manager
     )
 
 
@@ -59,10 +62,11 @@ def get_chat_nonstream_workflow(
     dispatcher: AbstractTaskDispatcher = Depends(get_dispatcher),
     redis_client: redis.Redis = Depends(get_redis),
     permission_service: PermissionService = Depends(get_permission_service),
+    feature_flag_service: FeatureFlagService = Depends(get_feature_flag_service),
     session_manager: SessionManager = Depends(get_session_manager),
 ) -> ChatNonStreamWorkflow:
     return ChatNonStreamWorkflow(
-        uow, dispatcher, redis_client, permission_service, session_manager
+        uow, dispatcher, redis_client, permission_service, feature_flag_service, session_manager
     )
 
 
