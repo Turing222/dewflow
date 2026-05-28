@@ -79,7 +79,7 @@ class TracingMiddleware:
             await send(message)
 
         try:
-            await self.app(scope, receive, send_with_headers)
+            await self.app(scope, receive, send_with_headers)  # type: ignore[arg-type]
         except Exception:
             logger.debug(
                 "Exception propagating through tracing middleware",
@@ -95,4 +95,4 @@ class TracingMiddleware:
 
 def setup_tracing(app: FastAPI) -> None:
     """Helper to add TracingMiddleware to a FastAPI application."""
-    app.add_middleware(TracingMiddleware)
+    app.add_middleware(TracingMiddleware)  # type: ignore[arg-type]

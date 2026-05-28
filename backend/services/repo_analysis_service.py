@@ -115,7 +115,7 @@ class RepoAnalysisService(BaseService[AbstractUnitOfWork]):
             report=RepoReportPayload(
                 structured=structured,
                 markdown=result.markdown_report,
-                generated_by=result.generated_by,
+                generated_by=result.generated_by,  # type: ignore[arg-type]
             ),
         )
 

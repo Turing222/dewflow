@@ -44,6 +44,6 @@ def is_external_context_allowed(
     )
 
 
-def source_selected(sources: list[ContextSource], source: ContextSource) -> bool:
+def source_selected(sources: list[ContextSource], source: ContextSource | str) -> bool:
     """Return true when a source appears in the route plan."""
     return source in sources

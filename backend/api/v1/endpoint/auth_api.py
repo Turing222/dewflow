@@ -208,7 +208,7 @@ async def sms_login(
 @router.get("/google/url")
 async def google_auth_url(
     redirect_uri: Annotated[str, Query(description="前端回调地址")],
-    google_service: GoogleOAuthServiceDep = GoogleOAuthServiceDep,
+    google_service: GoogleOAuthServiceDep = GoogleOAuthServiceDep,  # type: ignore[assignment]
 ) -> GoogleAuthUrlResponse:
     """获取 Google OAuth2 授权跳转 URL。"""
     url = google_service.get_authorization_url(redirect_uri)

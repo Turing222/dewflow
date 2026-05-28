@@ -88,7 +88,7 @@ def load_samples(dataset_path: Path) -> list[EvalSample]:
                 ],
                 reference_answer=reference_answer,
                 category=category,
-                retrieval_mode=retrieval_mode,
+                retrieval_mode=retrieval_mode,  # type: ignore[arg-type]
                 expected_plan=expected_plan,
                 must_refuse=bool(payload.get("must_refuse", False)),
                 notes=notes,

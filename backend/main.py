@@ -61,16 +61,16 @@ setup_exception_handlers(app)
 # Security Middlewares
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
-        CORSMiddleware,
+        CORSMiddleware,  # type: ignore[arg-type]
         allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
         allow_credentials=True,
         allow_methods=settings.BACKEND_CORS_METHODS,
         allow_headers=settings.BACKEND_CORS_HEADERS,
     )
-app.add_middleware(PayloadLimitMiddleware)
+app.add_middleware(PayloadLimitMiddleware)  # type: ignore[arg-type]
 
 # 中间件策略
-app.add_middleware(TracingMiddleware)
+app.add_middleware(TracingMiddleware)  # type: ignore[arg-type]
 
 # OpenTelemetry 统一遥测初始化 (指标通过 OTLP 推送到 Prometheus)
 setup_telemetry(app)

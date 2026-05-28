@@ -13,6 +13,8 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from backend.models.schemas.chat.dto import ConversationMessage
+
 logger = logging.getLogger(__name__)
 
 _tiktoken_available = False
@@ -56,7 +58,7 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
 
 
 def count_messages_tokens(
-    messages: Sequence[dict],
+    messages: Sequence[dict[str, Any] | ConversationMessage],
     model: str = "gpt-4",
 ) -> int:
     """按 OpenAI chat 消息格式估算消息列表 token 数。"""
