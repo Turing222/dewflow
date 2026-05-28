@@ -49,6 +49,7 @@ export const TRACE_STEP_DEFS = [
     { id: 'kb-search' },
     { id: 'local-search' },
     { id: 'web-search' },
+    { id: 'model-thinking' },
     { id: 'generate-answer' },
     { id: 'organize-citations' },
     { id: 'complete' },
@@ -239,6 +240,18 @@ export function applyTraceMetricsToSteps(
                 metricDetails: Object.keys(metricDetails).length > 0 ? metricDetails : step.metricDetails,
             };
         }
+        if (step.id === 'model-thinking') {
+            const firstToken = messageMetrics?.llm_first_token_ms ?? messageMetrics?.first_token_latency_ms;
+            if (firstToken === undefined) {
+                return step;
+            }
+            return {
+                ...step,
+                status: 'done' as const,
+                finishedAt: Date.now(),
+                durationMs: firstToken,
+            };
+        }
         if (step.id === 'generate-answer') {
             const metricDetails: Record<string, number | string | boolean> = {};
             // Prefer Web-observed e2e latency when available; fall back to the
@@ -262,9 +275,16 @@ export function applyTraceMetricsToSteps(
                     metricDetails[key] = value;
                 }
             }
+
+            const llmGenerateMs = messageMetrics?.llm_generate_ms;
+            const llmFirstToken = messageMetrics?.llm_first_token_ms ?? messageMetrics?.first_token_latency_ms ?? 0;
+            const actualGenerateMs = llmGenerateMs !== undefined
+                ? Math.max(0, llmGenerateMs - llmFirstToken)
+                : undefined;
+
             return {
                 ...step,
-                durationMs: messageMetrics?.llm_generate_ms,
+                durationMs: actualGenerateMs,
                 metricDetails: Object.keys(metricDetails).length > 0 ? metricDetails : step.metricDetails,
             };
         }

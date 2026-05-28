@@ -142,6 +142,7 @@
       "kb-search": "Document Search",
       "local-search": "Local Database Search",
       "web-search": "Web Search",
+      "model-thinking": "Model Thinking",
       "generate-answer": "Generate Answer",
       "organize-citations": "Organize Citations",
       "complete": "Complete"
@@ -180,7 +181,15 @@
     "back_home": "Back to Home",
     "history_desc": "Showing recent 20 transactions",
     "checkin_error": "Check-in failed, please try again later",
-    "week_days": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    "week_days": [
+      "Sun",
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat"
+    ]
   },
   "repo_check": {
     "page_title": "AI Project README Credibility Check",

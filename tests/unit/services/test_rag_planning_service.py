@@ -4,10 +4,12 @@
 """
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
+from backend.models.schemas.chat.payloads import FeatureFlags
 from backend.services.rag_planning_service import (
     _PLANNER_INSTRUCTIONS,
     RAG_PLANNER_FALLBACK_REASON,
@@ -57,10 +59,6 @@ def test_rag_execution_plan_clamps_values_to_config_limits(
     monkeypatch.setattr(
         "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_TOP_K",
         4,
-    )
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
     )
 
     plan = RAGExecutionPlan(
@@ -172,15 +170,11 @@ def test_large_route_with_kb_source_normalizes_to_rag() -> None:
 def test_from_settings_enables_external_context_when_allowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     plan = RAGExecutionPlan.from_settings(
         has_kb=True,
         query_text="test query",
         external_context_allowed=True,
+        infra_flags=FeatureFlags(enable_external_context=True),
     )
 
     assert plan.should_use_external_context is True
@@ -190,15 +184,11 @@ def test_from_settings_enables_external_context_when_allowed(
 def test_from_settings_disables_external_context_when_not_allowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     plan = RAGExecutionPlan.from_settings(
         has_kb=True,
         query_text="test query",
         external_context_allowed=False,
+        infra_flags=FeatureFlags(enable_external_context=True),
     )
 
     assert plan.should_use_external_context is False
@@ -208,16 +198,12 @@ def test_from_settings_disables_external_context_when_not_allowed(
 def test_from_settings_off_selects_no_sources(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     plan = RAGExecutionPlan.from_settings(
         has_kb=True,
         query_text="test query",
         external_context_allowed=True,
         context_mode="off",
+        infra_flags=FeatureFlags(enable_external_context=True),
     )
 
     assert plan.selected_sources == []
@@ -228,16 +214,12 @@ def test_from_settings_off_selects_no_sources(
 def test_from_settings_kb_only_does_not_select_web(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     plan = RAGExecutionPlan.from_settings(
         has_kb=True,
         query_text="latest public info",
         external_context_allowed=True,
         context_mode="kb_only",
+        infra_flags=FeatureFlags(enable_external_context=True),
     )
 
     assert plan.selected_sources == ["kb"]
@@ -248,16 +230,12 @@ def test_from_settings_kb_only_does_not_select_web(
 def test_from_settings_web_only_selects_web_without_kb(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     plan = RAGExecutionPlan.from_settings(
         has_kb=False,
         query_text="latest public info",
         external_context_allowed=True,
         context_mode="web_only",
+        infra_flags=FeatureFlags(enable_external_context=True),
     )
 
     assert plan.selected_sources == ["web"]
@@ -408,10 +386,6 @@ def test_rag_planning_service_bifrost_flash_resolves_to_v4_flash(
 async def test_rag_planning_service_returns_fallback_on_invalid_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
     invalid_output = ValidationError.from_exception_data(
         "RAGExecutionPlan",
         [
@@ -428,6 +402,7 @@ async def test_rag_planning_service_returns_fallback_on_invalid_output(
         query_text="查询知识库",
         conversation_history=[],
         kb_id=uuid.uuid4(),
+        infra_flags=FeatureFlags(enable_rag_planner=True),
     )
 
     assert plan.should_use_rag is True
@@ -447,14 +422,6 @@ def test_planner_instructions_include_level2_route_contract() -> None:
 async def test_rag_planning_service_runs_without_kb_when_external_allowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
     planner = RecordingPlanner(
         RAGExecutionPlan(
             should_use_rag=False,
@@ -468,6 +435,10 @@ async def test_rag_planning_service_runs_without_kb_when_external_allowed(
         conversation_history=[],
         kb_id=None,
         enable_external_context=True,
+        infra_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_external_context=True,
+        ),
     )
 
     assert plan.should_use_external_context is True
@@ -481,14 +452,6 @@ async def test_rag_planning_service_runs_without_kb_when_external_allowed(
 async def test_rag_planning_service_web_only_runs_without_legacy_external_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.services.rag_planning_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
     planner = RecordingPlanner(
         RAGExecutionPlan(
             context_mode="web_only",
@@ -505,7 +468,105 @@ async def test_rag_planning_service_web_only_runs_without_legacy_external_flag(
         kb_id=None,
         enable_external_context=False,
         context_mode="web_only",
+        infra_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_external_context=True,
+        ),
     )
 
     assert plan.selected_sources == ["web"]
     assert planner.calls[0]["context_mode"] == "web_only"
+
+
+@pytest.mark.asyncio
+async def test_rag_planning_service_thinking_enabled_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    # 1. Test when infra_flags has enable_rag_planner_thinking=False (default)
+    planner = RAGPlanningService()
+    mock_agent = MagicMock()
+    mock_agent.run = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.output = RAGExecutionPlan(
+        should_use_rag=False,
+        selected_sources=[],
+    )
+    mock_agent.run.return_value = mock_result
+    planner._agent = mock_agent
+
+    await planner._run_agent(
+        query_text="test query",
+        conversation_history=[],
+        has_kb=False,
+        enable_external_context=False,
+        context_mode="auto",
+        infra_flags=FeatureFlags(enable_rag_planner_thinking=False),
+    )
+
+    assert mock_agent.run.called
+    kwargs = mock_agent.run.call_args[1]
+    model_settings = kwargs.get("model_settings")
+    assert model_settings is not None
+    assert model_settings.get("extra_body").get("thinking") == {"type": "disabled"}
+
+    # 2. Test when infra_flags has enable_rag_planner_thinking=True
+    planner_enabled = RAGPlanningService()
+    mock_agent_enabled = MagicMock()
+    mock_agent_enabled.run = AsyncMock()
+    mock_agent_enabled.run.return_value = mock_result
+    planner_enabled._agent = mock_agent_enabled
+
+    await planner_enabled._run_agent(
+        query_text="test query",
+        conversation_history=[],
+        has_kb=False,
+        enable_external_context=False,
+        context_mode="auto",
+        infra_flags=FeatureFlags(enable_rag_planner_thinking=True),
+    )
+
+    assert mock_agent_enabled.run.called
+    kwargs_enabled = mock_agent_enabled.run.call_args[1]
+    model_settings_enabled = kwargs_enabled.get("model_settings")
+    assert model_settings_enabled is not None
+    assert model_settings_enabled.get("extra_body").get("thinking") == {"type": "enabled"}
+
+
+@pytest.mark.asyncio
+async def test_rag_planning_service_does_not_inject_thinking_for_plain_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    profile = SimpleNamespace(extra_body=None)
+    config = SimpleNamespace(resolve_profile=lambda _: profile)
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.get_llm_model_config",
+        lambda: config,
+    )
+
+    planner = RAGPlanningService(provider="gemini")
+    mock_agent = MagicMock()
+    mock_agent.run = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.output = RAGExecutionPlan(
+        should_use_rag=False,
+        selected_sources=[],
+    )
+    mock_agent.run.return_value = mock_result
+    planner._agent = mock_agent
+
+    await planner._run_agent(
+        query_text="test query",
+        conversation_history=[],
+        has_kb=False,
+        enable_external_context=False,
+        context_mode="auto",
+        infra_flags=FeatureFlags(enable_rag_planner_thinking=False),
+    )
+
+    assert mock_agent.run.called
+    kwargs = mock_agent.run.call_args[1]
+    assert "model_settings" not in kwargs

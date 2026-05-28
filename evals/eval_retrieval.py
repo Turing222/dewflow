@@ -30,6 +30,7 @@ from backend.ai.providers.embedding.rag_embedding import RAGEmbedderFactory
 from backend.config.ai_settings import ai_settings
 from backend.config.llm import get_llm_model_config
 from backend.infra.database import create_db_assets
+from backend.models.schemas.chat.payloads import FeatureFlags
 from backend.services.rag_planning_service import (
     RAG_PLANNER_FALLBACK_REASON,
     RAGPlanningService,
@@ -129,6 +130,7 @@ async def _run_one_mode(
     candidate_count: int,
     rerank_top_k: int,
     planner: RAGPlanningService | None = None,
+    infra_flags: FeatureFlags | None = None,
 ) -> tuple[list[dict], dict]:
     rows: list[dict] = []
     hit_total = 0.0
@@ -162,6 +164,7 @@ async def _run_one_mode(
                     query_text=sample.query,
                     conversation_history=[],
                     kb_id=sample.kb_id,
+                    infra_flags=infra_flags,
                 )
                 planner_latency_ms = int(
                     (time.perf_counter() - planner_started_at) * 1000
@@ -303,7 +306,8 @@ async def run(args: argparse.Namespace) -> None:
         if args.compare:
             # 对比模式：确保 rerank 需要 LLM service
             llm_service = None
-            if ai_settings.RAG_RERANK_ENABLED:
+            compare_flags = FeatureFlags(enable_rag_rerank=True)
+            if compare_flags.enable_rag_rerank:
                 from backend.ai.providers.llm.factory import LLMProviderFactory
 
                 llm_service = LLMProviderFactory.create()
@@ -333,6 +337,7 @@ async def run(args: argparse.Namespace) -> None:
                     candidate_count=args.candidate_count,
                     rerank_top_k=args.rerank_top_k,
                     planner=planner,
+                    infra_flags=compare_flags,
                 )
                 comparison[label] = summary
                 print(f"\n--- {label} ---")
@@ -342,14 +347,18 @@ async def run(args: argparse.Namespace) -> None:
                 "run": build_run_metadata(
                     kind="retrieval",
                     dataset_path=args.dataset,
-                    config=_run_config(args, embedding_profile),
+                    config=_run_config(args, embedding_profile, compare_flags),
                 ),
                 "runtime_sec": round(time.perf_counter() - run_started_at, 3),
                 "comparison": comparison,
             }
         else:
             llm_service = None
-            if (args.rerank or args.use_planner) and ai_settings.RAG_RERANK_ENABLED:
+            eval_flags = FeatureFlags(
+                enable_rag_rerank=args.rerank,
+                enable_rag_planner=args.use_planner,
+            )
+            if (args.rerank or args.use_planner) and eval_flags.enable_rag_rerank:
                 from backend.ai.providers.llm.factory import LLMProviderFactory
 
                 llm_service = LLMProviderFactory.create()
@@ -371,13 +380,14 @@ async def run(args: argparse.Namespace) -> None:
                 candidate_count=args.candidate_count,
                 rerank_top_k=args.rerank_top_k,
                 planner=planner,
+                infra_flags=eval_flags,
             )
             summary["runtime_sec"] = round(time.perf_counter() - run_started_at, 3)
             report = {
                 "run": build_run_metadata(
                     kind="retrieval",
                     dataset_path=args.dataset,
-                    config=_run_config(args, embedding_profile),
+                    config=_run_config(args, embedding_profile, eval_flags),
                 ),
                 "summary": summary,
                 "details": details,
@@ -390,7 +400,11 @@ async def run(args: argparse.Namespace) -> None:
         await engine.dispose()
 
 
-def _run_config(args: argparse.Namespace, embedding_profile: Any) -> dict[str, Any]:
+def _run_config(
+    args: argparse.Namespace,
+    embedding_profile: Any,
+    infra_flags: FeatureFlags,
+) -> dict[str, Any]:
     return {
         "cli_args": {
             "top_k": args.top_k,
@@ -411,7 +425,7 @@ def _run_config(args: argparse.Namespace, embedding_profile: Any) -> dict[str, A
         },
         "rag": {
             "planner_enabled": args.use_planner,
-            "config_rerank_enabled": ai_settings.RAG_RERANK_ENABLED,
+            "config_rerank_enabled": infra_flags.enable_rag_rerank,
         },
     }
 

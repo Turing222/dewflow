@@ -176,10 +176,7 @@ async def test_build_uses_rerank_when_enabled(monkeypatch) -> None:
                 }
             ]
         ),
-    )
-    monkeypatch.setattr(
-        "backend.ai.core.chat_context_builder.settings.RAG_RERANK_ENABLED",
-        True,
+        reranker=object(),  # non-None signals rerank is configured
     )
     monkeypatch.setattr(
         "backend.ai.core.chat_context_builder.settings.RAG_RERANK_TOP_K",

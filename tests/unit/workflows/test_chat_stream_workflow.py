@@ -15,6 +15,24 @@ import pytest
 from backend.application.chat.history_projection import history_to_conversation_messages
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.models.enums import MessageStatus
+from backend.services.feature_flag_service import (
+    _AI_SYSTEM_FLAG_DEFAULTS,
+    FeatureFlagService,
+)
+
+
+def _make_mock_feature_flag_service(
+    overrides: dict[str, bool] | None = None,
+) -> AsyncMock:
+    flags = {
+        **_AI_SYSTEM_FLAG_DEFAULTS,
+        "enable-public-registration": True,
+        "enable-closed-beta-login": False,
+        **(overrides or {}),
+    }
+    svc = AsyncMock(spec=FeatureFlagService)
+    svc.get_system_features = AsyncMock(return_value=flags)
+    return svc
 
 
 class FakeUow:
@@ -34,6 +52,7 @@ def test_stream_workflow_constructs_without_ai_dependencies() -> None:
         dispatcher=cast(Any, SimpleNamespace()),
         redis_client=cast(Any, SimpleNamespace()),
         permission_service=cast(Any, SimpleNamespace()),
+        feature_flag_service=_make_mock_feature_flag_service(),
     )
 
     assert workflow is not None
@@ -69,6 +88,7 @@ async def test_stream_workflow_merges_web_metrics_into_message_metadata() -> Non
         dispatcher=cast(Any, SimpleNamespace()),
         redis_client=cast(Any, SimpleNamespace()),
         permission_service=cast(Any, SimpleNamespace()),
+        feature_flag_service=_make_mock_feature_flag_service(),
     )
 
     await workflow._merge_web_stream_metrics(

@@ -26,7 +26,7 @@ from backend.application.chat.worker_generation_workflow import (
 from backend.application.chat.worker_rag_orchestrator import PreparedGenerationContext
 from backend.core.exceptions import app_service_error
 from backend.models.schemas.chat.dto import LLMQueryDTO, LLMResultDTO
-from backend.models.schemas.chat.payloads import GenerationPayload
+from backend.models.schemas.chat.payloads import FeatureFlags, GenerationPayload
 from backend.services.chat_safety_metadata import GuardrailDecision
 from backend.services.rag_planning_service import RAGExecutionPlan
 from tests.unit.workflows.conftest import FakeChatUow, make_rag_hit
@@ -349,10 +349,6 @@ async def test_worker_generation_accepts_legacy_prepared_generation_tuple(
 async def test_worker_nonstream_routes_to_planner_model_tier(monkeypatch) -> None:
     install_llm_slot_recorder(monkeypatch)
     monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTING_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
         "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTE_FAST_PROVIDER",
         "fast-provider",
     )
@@ -386,7 +382,11 @@ async def test_worker_nonstream_routes_to_planner_model_tier(monkeypatch) -> Non
     )
 
     result = await workflow.generate_nonstream(
-        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            feature_flags=FeatureFlags(enable_llm_model_routing=True),
+        ),
         assistant_message_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
     )
@@ -406,10 +406,6 @@ async def test_worker_nonstream_routes_to_planner_model_tier(monkeypatch) -> Non
 async def test_worker_stream_routes_to_planner_model_tier(monkeypatch) -> None:
     redis = FakeRedis()
     install_llm_slot_recorder(monkeypatch)
-    monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTING_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTE_REASONING_PROVIDER",
         "reasoning-provider",
@@ -444,7 +440,11 @@ async def test_worker_stream_routes_to_planner_model_tier(monkeypatch) -> None:
     )
 
     await workflow.generate_stream(
-        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            feature_flags=FeatureFlags(enable_llm_model_routing=True),
+        ),
         channel="stream:test",
         assistant_message_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
@@ -465,10 +465,6 @@ async def test_worker_nonstream_falls_back_when_model_route_provider_fails(
     monkeypatch,
 ) -> None:
     install_llm_slot_recorder(monkeypatch)
-    monkeypatch.setattr(
-        "backend.application.chat.worker_generation_workflow.ai_settings.LLM_MODEL_ROUTING_ENABLED",
-        True,
-    )
     default_llm = NonStreamingLLM(LLMResultDTO(content="default", success=True))
 
     def resolve_llm(provider: str | None):
@@ -494,7 +490,11 @@ async def test_worker_nonstream_falls_back_when_model_route_provider_fails(
     )
 
     result = await workflow.generate_nonstream(
-        payload=GenerationPayload(session_id=uuid.uuid4(), query_text="hi"),
+        payload=GenerationPayload(
+            session_id=uuid.uuid4(),
+            query_text="hi",
+            feature_flags=FeatureFlags(enable_llm_model_routing=True),
+        ),
         assistant_message_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
     )
@@ -891,14 +891,6 @@ async def test_worker_nonstream_planner_preflight_refusal_skips_llm(
 ) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
 
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
@@ -927,6 +919,10 @@ async def test_worker_nonstream_planner_preflight_refusal_skips_llm(
             query_text="知识库无法回答的请求",
             conversation_history=[],
             kb_id=uuid.uuid4(),
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+            ),
         ),
         assistant_message_id=uuid.uuid4(),
     )
@@ -948,14 +944,6 @@ async def test_worker_stream_planner_preflight_refusal_skips_llm(
 ) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
 
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
@@ -984,6 +972,10 @@ async def test_worker_stream_planner_preflight_refusal_skips_llm(
             query_text="知识库无法回答的请求",
             conversation_history=[],
             kb_id=uuid.uuid4(),
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+            ),
         ),
         channel="stream:test",
         assistant_message_id=uuid.uuid4(),
@@ -1008,10 +1000,6 @@ async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
     monkeypatch,
 ) -> None:
     redis = FakeRedis()
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        False,
-    )
 
     rag_hit = make_rag_hit()
     rag_service = RecordingRAGService([rag_hit])
@@ -1029,6 +1017,7 @@ async def test_worker_generation_retrieves_rag_candidates_when_kb_id_exists(
         query_text="hi",
         conversation_history=[],
         kb_id=uuid.uuid4(),
+        feature_flags=FeatureFlags(enable_rag_rerank=False),
     )
 
     await workflow.generate_nonstream(
@@ -1081,10 +1070,6 @@ async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(
     monkeypatch,
 ) -> None:
     redis = FakeRedis()
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        False,
-    )
 
     llm_service = NonStreamingLLM(LLMResultDTO(content="fallback answer"))
     uow = FakeChatUow()
@@ -1102,6 +1087,7 @@ async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(
             query_text="知识库里有什么？",
             conversation_history=[],
             kb_id=uuid.uuid4(),
+            feature_flags=FeatureFlags(enable_rag_refusal=False),
         ),
         assistant_message_id=uuid.uuid4(),
     )
@@ -1112,10 +1098,6 @@ async def test_worker_generation_keeps_old_behavior_when_refusal_disabled(
 
 async def test_worker_generation_skips_rag_when_planner_declines(monkeypatch) -> None:
     redis = FakeRedis()
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
 
     rag_service = RecordingRAGService([make_rag_hit()])
     planner = RecordingRAGPlanner(
@@ -1140,6 +1122,7 @@ async def test_worker_generation_skips_rag_when_planner_declines(monkeypatch) ->
         query_text="hi",
         conversation_history=[],
         kb_id=uuid.uuid4(),
+        feature_flags=FeatureFlags(enable_rag_planner=True),
     )
 
     await workflow.generate_nonstream(
@@ -1213,10 +1196,6 @@ async def test_worker_generation_skips_planner_when_candidates_exist(
 
 async def test_worker_generation_uses_fulltext_plan(monkeypatch) -> None:
     redis = FakeRedis()
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
 
     rag_service = RecordingRAGService(
         [make_rag_hit(content="fulltext context", index=1)]
@@ -1243,6 +1222,7 @@ async def test_worker_generation_uses_fulltext_plan(monkeypatch) -> None:
         query_text="找 ctx.md",
         conversation_history=[],
         kb_id=uuid.uuid4(),
+        feature_flags=FeatureFlags(enable_rag_planner=True),
     )
 
     await workflow.generate_nonstream(
@@ -1263,10 +1243,6 @@ async def test_worker_generation_reranks_candidates_when_enabled(
 ) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.config.ai_settings.ai_settings.RAG_RERANK_TOP_K",
         1,
@@ -1292,6 +1268,7 @@ async def test_worker_generation_reranks_candidates_when_enabled(
         query_text="hi",
         conversation_history=[],
         kb_id=uuid.uuid4(),
+        feature_flags=FeatureFlags(enable_rag_rerank=True),
         rag_candidates=[
             {
                 "id": str(uuid.uuid4()),
@@ -1351,10 +1328,6 @@ async def test_worker_generation_reranks_candidates_when_enabled(
 async def test_worker_generation_refuses_low_rerank_score(monkeypatch) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        True,
-    )
 
     uow = FakeChatUow()
     uow.chat_repo.update_message_status.return_value = object()
@@ -1379,6 +1352,7 @@ async def test_worker_generation_refuses_low_rerank_score(monkeypatch) -> None:
             query_text="hi",
             conversation_history=[],
             kb_id=uuid.uuid4(),
+            feature_flags=FeatureFlags(enable_rag_rerank=True),
         ),
         channel="stream:test",
         assistant_message_id=uuid.uuid4(),
@@ -1395,10 +1369,6 @@ async def test_worker_generation_refuses_low_rerank_score(monkeypatch) -> None:
 async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch) -> None:
     redis = FakeRedis()
     slot_calls = install_llm_slot_recorder(monkeypatch)
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
 
     rag_service = RecordingRAGService(
         [make_rag_hit(content="low", index=0), make_rag_hit(content="high", index=1)]
@@ -1434,6 +1404,7 @@ async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch) -> None:
         query_text="hi",
         conversation_history=[],
         kb_id=uuid.uuid4(),
+        feature_flags=FeatureFlags(enable_rag_planner=True),
     )
 
     await workflow.generate_stream(
@@ -1453,14 +1424,6 @@ async def test_worker_generation_uses_hybrid_rerank_plan(monkeypatch) -> None:
 
 async def test_worker_generation_uses_planner_fallback_plan(monkeypatch) -> None:
     redis = FakeRedis()
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        False,
-    )
 
     rag_service = RecordingRAGService([make_rag_hit()])
     planner = RecordingRAGPlanner(
@@ -1484,6 +1447,10 @@ async def test_worker_generation_uses_planner_fallback_plan(monkeypatch) -> None
         query_text="hi",
         conversation_history=[],
         kb_id=uuid.uuid4(),
+        feature_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_rag_rerank=False,
+        ),
     )
 
     await workflow.generate_nonstream(
@@ -1501,14 +1468,6 @@ async def test_worker_generation_uses_planner_fallback_on_exception(
     monkeypatch,
 ) -> None:
     redis = FakeRedis()
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        False,
-    )
 
     rag_service = RecordingRAGService([make_rag_hit()])
     planner = RecordingRAGPlanner(error=ValueError("LLM API failed"))
@@ -1526,6 +1485,10 @@ async def test_worker_generation_uses_planner_fallback_on_exception(
         query_text="hi",
         conversation_history=[],
         kb_id=uuid.uuid4(),
+        feature_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_rag_rerank=False,
+        ),
     )
 
     await workflow.generate_nonstream(

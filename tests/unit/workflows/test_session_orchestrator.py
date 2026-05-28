@@ -17,9 +17,27 @@ from backend.application.chat.session_orchestrator import (
 from backend.core.exceptions import AppException
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.models.schemas.chat.context_state import ContextState
+from backend.services.feature_flag_service import (
+    _AI_SYSTEM_FLAG_DEFAULTS,
+    FeatureFlagService,
+)
 from backend.services.permission_service import PermissionService
 
 pytestmark = pytest.mark.asyncio
+
+
+def _make_mock_feature_flag_service(
+    overrides: dict[str, bool] | None = None,
+) -> AsyncMock:
+    flags = {
+        **_AI_SYSTEM_FLAG_DEFAULTS,
+        "enable-public-registration": True,
+        "enable-closed-beta-login": False,
+        **(overrides or {}),
+    }
+    svc = AsyncMock(spec=FeatureFlagService)
+    svc.get_system_features = AsyncMock(return_value=flags)
+    return svc
 
 
 def _make_idempotency() -> ChatIdempotencyState:
@@ -58,10 +76,12 @@ def _build_orchestrator() -> tuple[ChatSessionOrchestrator, MagicMock]:
 
     redis_client = AsyncMock()
     permission_service = MagicMock(spec=PermissionService)
+    feature_flag_service = _make_mock_feature_flag_service()
     orchestrator = ChatSessionOrchestrator(
         uow,
         redis_client,
         permission_service,
+        feature_flag_service,
     )
     return orchestrator, uow
 

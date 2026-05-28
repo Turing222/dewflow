@@ -7,8 +7,26 @@ import pytest
 
 from backend.application.chat.web_stream_workflow import ChatWorkflow
 from backend.models.schemas.chat.commands import ChatQueryCommand
+from backend.services.feature_flag_service import (
+    _AI_SYSTEM_FLAG_DEFAULTS,
+    FeatureFlagService,
+)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.performance]
+
+
+def _make_mock_feature_flag_service(
+    overrides: dict[str, bool] | None = None,
+) -> AsyncMock:
+    flags = {
+        **_AI_SYSTEM_FLAG_DEFAULTS,
+        "enable-public-registration": True,
+        "enable-closed-beta-login": False,
+        **(overrides or {}),
+    }
+    svc = AsyncMock(spec=FeatureFlagService)
+    svc.get_system_features = AsyncMock(return_value=flags)
+    return svc
 
 
 async def test_workflow_concurrency():
@@ -53,7 +71,13 @@ async def test_workflow_concurrency():
             mock_up_inst.update_as_success = AsyncMock()
             mock_up_inst.update_as_failed = AsyncMock()
 
-            workflow = ChatWorkflow(uow, dispatcher)
+            workflow = ChatWorkflow(
+                uow,
+                dispatcher,
+                AsyncMock(),
+                MagicMock(),
+                _make_mock_feature_flag_service(),
+            )
 
             user_id = uuid.uuid4()
             start_time = time.time()

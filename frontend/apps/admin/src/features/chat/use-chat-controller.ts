@@ -383,9 +383,25 @@ export function useChatController(): UseChatControllerReturn {
                     });
 
                     if (currentMode === 'normal') {
-                        advanceToStep('generate-answer');
+                        advanceToStep('model-thinking');
+                    } else if (currentMode === 'rag') {
+                        // Simulate sequential delay for kb-search -> model-thinking
+                        tabSwitchTimerRef.current = setTimeout(() => {
+                            setTraceSteps((prev) => {
+                                if (firstChunkReceived) return prev;
+                                return prev.map((step) => {
+                                    if (step.id === 'kb-search' && step.status === 'running') {
+                                        return { ...step, status: 'done' as const, finishedAt: Date.now() };
+                                    }
+                                    if (step.id === 'model-thinking' && step.status === 'idle') {
+                                        return { ...step, status: 'running' as const, startedAt: Date.now() };
+                                    }
+                                    return step;
+                                });
+                            });
+                        }, 600);
                     } else if (currentMode === 'web_rag') {
-                        // Simulate a sequential delay for kb-search -> web-search
+                        // Simulate a sequential delay for kb-search -> web-search -> model-thinking
                         tabSwitchTimerRef.current = setTimeout(() => {
                             setTraceSteps((prev) => {
                                 if (firstChunkReceived) return prev;
@@ -399,7 +415,22 @@ export function useChatController(): UseChatControllerReturn {
                                     return step;
                                 });
                             });
-                        }, 700);
+
+                            tabSwitchTimerRef.current = setTimeout(() => {
+                                setTraceSteps((prev) => {
+                                    if (firstChunkReceived) return prev;
+                                    return prev.map((step) => {
+                                        if (step.id === 'web-search' && step.status === 'running') {
+                                            return { ...step, status: 'done' as const, finishedAt: Date.now() };
+                                        }
+                                        if (step.id === 'model-thinking' && step.status === 'idle') {
+                                            return { ...step, status: 'running' as const, startedAt: Date.now() };
+                                        }
+                                        return step;
+                                    });
+                                });
+                            }, 800);
+                        }, 600);
                     }
 
                     if (!activeSessionId) {
@@ -420,13 +451,16 @@ export function useChatController(): UseChatControllerReturn {
                     if (newController.signal.aborted) return;
                     if (!firstChunkReceived) {
                         firstChunkReceived = true;
+                        if (tabSwitchTimerRef.current) {
+                            clearTimeout(tabSwitchTimerRef.current);
+                        }
                         setTraceSteps((prev) => {
                             const now = Date.now();
                             return prev.map((step) => {
-                                if (step.id === 'kb-search' && (step.status === 'running' || step.status === 'idle')) {
-                                    return { ...step, status: 'done' as const, finishedAt: now };
-                                }
-                                if (step.id === 'web-search' && (step.status === 'running' || step.status === 'idle')) {
+                                if (
+                                    (step.id === 'kb-search' || step.id === 'web-search' || step.id === 'model-thinking') &&
+                                    (step.status === 'running' || step.status === 'idle')
+                                ) {
                                     return { ...step, status: 'done' as const, finishedAt: now };
                                 }
                                 return step;

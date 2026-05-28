@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from backend.models.schemas.chat.payloads import FeatureFlags, GenerationPayload
 from backend.services.rag_planning_service import RAGExecutionPlan
 from tests.unit.workflows.conftest import make_rag_hit
 
@@ -22,19 +23,6 @@ async def test_prepare_context_kb_id_none_empty_retrieval_no_refusal(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.context_state import ContextState
     from backend.models.schemas.chat.payloads import GenerationPayload
-
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        False,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        False,
-    )
 
     payload = GenerationPayload(
         session_id=uuid.uuid4(),
@@ -73,20 +61,15 @@ async def test_build_rag_plan_planner_error_falls_back_to_default(monkeypatch) -
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        False,
-    )
-
     payload = GenerationPayload(
         session_id=uuid.uuid4(),
         query_text="test query",
         kb_id=uuid.uuid4(),
         conversation_history=[],
+        feature_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_rag_rerank=False,
+        ),
     )
 
     planner = MagicMock()
@@ -109,16 +92,12 @@ async def test_retrieve_rag_candidates_connection_error_returns_empty(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        False,
-    )
-
     payload = GenerationPayload(
         session_id=uuid.uuid4(),
         query_text="test",
         kb_id=uuid.uuid4(),
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_rag_rerank=False),
     )
 
     rag_service = MagicMock()
@@ -197,10 +176,6 @@ async def test_prepare_context_refusal_search_context_includes_evidence_fields(
     from backend.models.schemas.chat.payloads import GenerationPayload
 
     monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
         1,
     )
@@ -221,6 +196,7 @@ async def test_prepare_context_refusal_search_context_includes_evidence_fields(
         kb_id=uuid.uuid4(),
         conversation_history=[],
         rag_candidates=[low_evidence_hit],
+        feature_flags=FeatureFlags(enable_rag_refusal=True),
     )
 
     orchestrator = WorkerRAGOrchestrator()
@@ -243,10 +219,6 @@ async def test_prepare_context_hybrid_rerank_uses_rerank_score_for_policy(
     from backend.models.schemas.chat.payloads import GenerationPayload
 
     monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
         "backend.services.rag_evidence_policy.ai_settings.RAG_MIN_HIT_COUNT",
         1,
     )
@@ -264,6 +236,7 @@ async def test_prepare_context_hybrid_rerank_uses_rerank_score_for_policy(
         query_text="test",
         kb_id=uuid.uuid4(),
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_rag_refusal=True),
     )
     candidate = make_rag_hit(
         retrieval_mode="hybrid",
@@ -290,9 +263,15 @@ async def test_prepare_context_hybrid_rerank_uses_rerank_score_for_policy(
     )
     planner = MagicMock()
     planner.plan = AsyncMock(return_value=rag_plan)
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        kb_id=uuid.uuid4(),
+        conversation_history=[],
+        feature_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_rag_refusal=True,
+        ),
     )
 
     orchestrator = WorkerRAGOrchestrator(
@@ -320,14 +299,6 @@ async def test_prepare_context_planner_preflight_refusal_skips_retrieval(
     from backend.models.schemas.chat.payloads import GenerationPayload
 
     monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
         "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD",
         0.85,
     )
@@ -353,6 +324,10 @@ async def test_prepare_context_planner_preflight_refusal_skips_retrieval(
             query_text="test",
             kb_id=uuid.uuid4(),
             conversation_history=[],
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+            ),
         )
     )
 
@@ -370,19 +345,6 @@ async def test_prepare_context_low_confidence_refuse_continues_existing_flow(
 ) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
-
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        False,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
 
     plan = RAGExecutionPlan(
         should_use_rag=True,
@@ -411,6 +373,11 @@ async def test_prepare_context_low_confidence_refuse_continues_existing_flow(
             query_text="test",
             kb_id=uuid.uuid4(),
             conversation_history=[],
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+                enable_rag_refusal=False,
+            ),
         )
     )
 
@@ -424,15 +391,6 @@ async def test_prepare_context_planner_large_route_skips_rag(
 ) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
-
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
 
     plan = RAGExecutionPlan(
         selected_sources=[],
@@ -462,6 +420,10 @@ async def test_prepare_context_planner_large_route_skips_rag(
             query_text="hi",
             kb_id=uuid.uuid4(),
             conversation_history=[],
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+            ),
         )
     )
 
@@ -475,19 +437,6 @@ async def test_prepare_context_routing_disabled_ignores_refuse_route(
 ) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
-
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        False,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        False,
-    )
 
     plan = RAGExecutionPlan(
         should_use_rag=True,
@@ -516,6 +465,11 @@ async def test_prepare_context_routing_disabled_ignores_refuse_route(
             query_text="test",
             kb_id=uuid.uuid4(),
             conversation_history=[],
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=False,
+                enable_rag_refusal=False,
+            ),
         )
     )
 
@@ -529,14 +483,6 @@ async def test_prepare_context_planner_preflight_refusal_falls_back_to_plan_reas
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD",
         0.85,
@@ -564,6 +510,10 @@ async def test_prepare_context_planner_preflight_refusal_falls_back_to_plan_reas
             query_text="test",
             kb_id=uuid.uuid4(),
             conversation_history=[],
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+            ),
         )
     )
 
@@ -576,16 +526,7 @@ async def test_prepare_context_planner_preflight_refusal_falls_back_to_default_t
     monkeypatch,
 ) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
-    from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD",
         0.85,
@@ -613,6 +554,10 @@ async def test_prepare_context_planner_preflight_refusal_falls_back_to_default_t
             query_text="test",
             kb_id=uuid.uuid4(),
             conversation_history=[],
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+            ),
         )
     )
 
@@ -626,19 +571,6 @@ async def test_prepare_context_existing_rag_candidates_skips_preflight_refusal(
 ) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
-
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.services.rag_evidence_policy.ai_settings.RAG_REFUSAL_ENABLED",
-        False,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
 
     plan = RAGExecutionPlan(
         should_use_rag=True,
@@ -668,6 +600,11 @@ async def test_prepare_context_existing_rag_candidates_skips_preflight_refusal(
             kb_id=uuid.uuid4(),
             conversation_history=[],
             rag_candidates=[{"content": "pre-fetched", "score": 0.9}],
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+                enable_rag_refusal=False,
+            ),
         )
     )
 
@@ -682,14 +619,6 @@ async def test_prepare_context_confidence_at_threshold_triggers_refusal(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_ROUTING_ENABLED",
-        True,
-    )
     monkeypatch.setattr(
         "backend.application.chat.worker_rag_orchestrator.ai_settings.RAG_PLANNER_REFUSAL_CONFIDENCE_THRESHOLD",
         0.85,
@@ -716,6 +645,10 @@ async def test_prepare_context_confidence_at_threshold_triggers_refusal(
             query_text="test",
             kb_id=uuid.uuid4(),
             conversation_history=[],
+            feature_flags=FeatureFlags(
+                enable_rag_planner=True,
+                enable_rag_planner_routing=True,
+            ),
         )
     )
 
@@ -729,15 +662,12 @@ async def test_external_context_candidates_are_added_when_planned(monkeypatch) -
     from backend.models.schemas.chat.payloads import GenerationPayload
     from backend.services.external_context_service import ExternalContextChunk
 
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
     payload = GenerationPayload(
         session_id=uuid.uuid4(),
         query_text="latest docs",
         conversation_history=[],
         enable_external_context=True,
+        feature_flags=FeatureFlags(enable_external_context=True),
     )
     plan = RAGExecutionPlan(
         should_use_rag=False,
@@ -775,19 +705,6 @@ async def test_build_rag_plan_kbid_none_external_enabled_proceeds_to_planner(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        False,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     planned = RAGExecutionPlan(
         should_use_rag=False,
         should_use_external_context=True,
@@ -803,6 +720,11 @@ async def test_build_rag_plan_kbid_none_external_enabled_proceeds_to_planner(
         kb_id=None,
         enable_external_context=True,
         conversation_history=[],
+        feature_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_rag_rerank=False,
+            enable_external_context=True,
+        ),
     )
 
     orchestrator = WorkerRAGOrchestrator(rag_planning_service=planner)
@@ -816,6 +738,7 @@ async def test_build_rag_plan_kbid_none_external_enabled_proceeds_to_planner(
         kb_id=None,
         enable_external_context=True,
         context_mode=None,
+        infra_flags=payload.feature_flags,
     )
 
 
@@ -825,17 +748,13 @@ async def test_build_rag_plan_kbid_none_external_disabled_returns_default(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-
     payload = GenerationPayload(
         session_id=uuid.uuid4(),
         query_text="test query",
         kb_id=None,
         enable_external_context=False,
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_rag_planner=True),
     )
 
     orchestrator = WorkerRAGOrchestrator(
@@ -851,16 +770,12 @@ async def test_build_rag_plan_blank_query_returns_default(monkeypatch) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-
     payload = GenerationPayload(
         session_id=uuid.uuid4(),
         query_text="   ",
         kb_id=uuid.uuid4(),
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_rag_planner=True),
     )
 
     orchestrator = WorkerRAGOrchestrator(
@@ -876,15 +791,6 @@ async def test_build_rag_plan_planner_receives_enable_external_context(
 ) -> None:
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
-
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_RERANK_ENABLED",
-        False,
-    )
 
     planned = RAGExecutionPlan(
         should_use_rag=True,
@@ -903,6 +809,10 @@ async def test_build_rag_plan_planner_receives_enable_external_context(
         kb_id=uuid.uuid4(),
         enable_external_context=True,
         conversation_history=[],
+        feature_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_rag_rerank=False,
+        ),
     )
 
     orchestrator = WorkerRAGOrchestrator(rag_planning_service=planner)
@@ -919,21 +829,16 @@ async def test_build_rag_plan_default_plan_includes_external_context_allowed(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        False,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     payload = GenerationPayload(
         session_id=uuid.uuid4(),
         query_text="test query",
         kb_id=None,
         enable_external_context=True,
         conversation_history=[],
+        feature_flags=FeatureFlags(
+            enable_rag_planner=False,
+            enable_external_context=True,
+        ),
     )
 
     orchestrator = WorkerRAGOrchestrator()
@@ -950,13 +855,17 @@ async def test_build_rag_plan_web_only_context_mode_allows_external_without_lega
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.RAG_PLANNER_ENABLED",
-        True,
-    )
-    monkeypatch.setattr(
-        "backend.config.ai_settings.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="latest news",
+        kb_id=None,
+        context_mode="web_only",
+        enable_external_context=False,
+        conversation_history=[],
+        feature_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_external_context=True,
+        ),
     )
 
     planned = RAGExecutionPlan(
@@ -969,14 +878,6 @@ async def test_build_rag_plan_web_only_context_mode_allows_external_without_lega
     )
     planner = MagicMock()
     planner.plan = AsyncMock(return_value=planned)
-    payload = GenerationPayload(
-        session_id=uuid.uuid4(),
-        query_text="latest news",
-        kb_id=None,
-        context_mode="web_only",
-        enable_external_context=False,
-        conversation_history=[],
-    )
 
     orchestrator = WorkerRAGOrchestrator(rag_planning_service=planner)
     plan, planner_used = await orchestrator.build_rag_plan(payload)
@@ -993,16 +894,12 @@ async def test_retrieve_external_context_returns_empty_when_provider_none(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     payload = GenerationPayload(
         session_id=uuid.uuid4(),
         query_text="test",
         enable_external_context=True,
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_external_context=True),
     )
     plan = RAGExecutionPlan(
         should_use_rag=False,
@@ -1023,11 +920,6 @@ async def test_retrieve_external_context_returns_empty_when_disabled(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        False,
-    )
-
     provider = MagicMock()
     provider.search = AsyncMock(return_value=[])
 
@@ -1036,6 +928,7 @@ async def test_retrieve_external_context_returns_empty_when_disabled(
         query_text="test",
         enable_external_context=True,
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_external_context=False),
     )
     plan = RAGExecutionPlan(
         should_use_rag=False,
@@ -1058,10 +951,6 @@ async def test_retrieve_external_context_uses_selected_sources_not_legacy_flag(
     from backend.models.schemas.chat.payloads import GenerationPayload
     from backend.services.external_context_service import ExternalContextChunk
 
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
     provider = MagicMock()
     provider.provider_name = "tavily"
     provider.search = AsyncMock(
@@ -1080,6 +969,7 @@ async def test_retrieve_external_context_uses_selected_sources_not_legacy_flag(
         context_mode="web_only",
         enable_external_context=False,
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_external_context=True),
     )
     plan = RAGExecutionPlan(
         context_mode="web_only",
@@ -1103,10 +993,6 @@ async def test_retrieve_external_context_skips_when_web_not_selected(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
     provider = MagicMock()
     provider.search = AsyncMock(return_value=[])
     payload = GenerationPayload(
@@ -1115,6 +1001,7 @@ async def test_retrieve_external_context_skips_when_web_not_selected(
         context_mode="kb_only",
         enable_external_context=True,
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_external_context=True),
     )
     plan = RAGExecutionPlan(
         context_mode="kb_only",
@@ -1136,11 +1023,6 @@ async def test_retrieve_external_context_provider_error_returns_empty(
     from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
     from backend.models.schemas.chat.payloads import GenerationPayload
 
-    monkeypatch.setattr(
-        "backend.application.chat.worker_rag_orchestrator.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        True,
-    )
-
     provider = MagicMock()
     provider.provider_name = "tavily"
     provider.search = AsyncMock(side_effect=ConnectionError("API down"))
@@ -1150,6 +1032,7 @@ async def test_retrieve_external_context_provider_error_returns_empty(
         query_text="test",
         enable_external_context=True,
         conversation_history=[],
+        feature_flags=FeatureFlags(enable_external_context=True),
     )
     plan = RAGExecutionPlan(
         should_use_rag=False,

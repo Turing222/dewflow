@@ -133,7 +133,7 @@ async def test_get_external_context_provider_lazy_init(monkeypatch) -> None:
     fake_provider = AsyncMock()
     monkeypatch.setattr(
         "backend.worker.dependencies.create_external_context_provider",
-        lambda: fake_provider,
+        lambda **kw: fake_provider,
     )
 
     container = WorkerContainer()
@@ -153,7 +153,7 @@ async def test_get_rerank_service_lazy_init(monkeypatch) -> None:
 
     fake_reranker = AsyncMock()
     monkeypatch.setattr(
-        "backend.worker.dependencies.ai_settings.RAG_RERANK_ENABLED", True
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "some-provider"
     )
     monkeypatch.setattr(
         "backend.worker.dependencies.RerankProviderFactory.create",
@@ -171,11 +171,11 @@ async def test_get_rerank_service_lazy_init(monkeypatch) -> None:
     assert result2 is fake_reranker
 
 
-def test_get_rerank_service_returns_none_when_disabled(monkeypatch) -> None:
+def test_get_rerank_service_returns_none_when_no_provider(monkeypatch) -> None:
     from backend.worker.dependencies import WorkerContainer
 
     monkeypatch.setattr(
-        "backend.worker.dependencies.ai_settings.RAG_RERANK_ENABLED", False
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", None
     )
 
     container = WorkerContainer()
@@ -233,7 +233,7 @@ async def test_get_rag_service_prefers_reranker_over_llm(monkeypatch) -> None:
 
     fake_reranker = AsyncMock()
     monkeypatch.setattr(
-        "backend.worker.dependencies.ai_settings.RAG_RERANK_ENABLED", True
+        "backend.worker.dependencies.ai_settings.RAG_RERANK_PROVIDER", "some-provider"
     )
     monkeypatch.setattr(
         "backend.worker.dependencies.RerankProviderFactory.create",

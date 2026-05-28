@@ -65,7 +65,7 @@ describe('AgentTracePanel', () => {
         mockUseAuth.mockReturnValue(defaultAuth);
         const steps = createInitialTraceSteps();
         renderPanel({ traceSteps: steps });
-        const stepIds = ['receive-query', 'router-judge', 'kb-search', 'local-search', 'web-search', 'generate-answer', 'organize-citations', 'complete'];
+        const stepIds = ['receive-query', 'router-judge', 'kb-search', 'local-search', 'web-search', 'model-thinking', 'generate-answer', 'organize-citations', 'complete'];
         for (const id of stepIds) {
             expect(screen.getByTestId(`trace-step-${id}`)).toBeInTheDocument();
         }

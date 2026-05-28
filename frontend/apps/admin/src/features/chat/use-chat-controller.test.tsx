@@ -286,8 +286,8 @@ describe('useChatController', () => {
             capturedCallbacks.onChunk!({ type: 'chunk', content: 'Hello' });
         });
 
-        expect(result.current.traceSteps[5].status).toBe('running');
-        expect(result.current.traceSteps[5].id).toBe('generate-answer');
+        expect(result.current.traceSteps[6].status).toBe('running');
+        expect(result.current.traceSteps[6].id).toBe('generate-answer');
     });
 
     it('marks all remaining steps done on onDone', async () => {

@@ -142,6 +142,7 @@
       "kb-search": "文档查询",
       "local-search": "本地知识库查询",
       "web-search": "联网查询",
+      "model-thinking": "深度思维推理",
       "generate-answer": "生成回答",
       "organize-citations": "整理引用",
       "complete": "完成"
@@ -180,7 +181,15 @@
     "back_home": "返回主页",
     "history_desc": "展示最近 20 条收支变动",
     "checkin_error": "签到失败，请稍后重试",
-    "week_days": ["日", "一", "二", "三", "四", "五", "六"]
+    "week_days": [
+      "日",
+      "一",
+      "二",
+      "三",
+      "四",
+      "五",
+      "六"
+    ]
   },
   "repo_check": {
     "page_title": "AI 项目可信度初筛报告",

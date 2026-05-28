@@ -3,6 +3,8 @@
 职责：验证外部上下文 provider 的结果标准化与配置降级；边界：不连接真实 Tavily API。
 """
 
+from unittest.mock import patch
+
 from backend.services.external_context_service import (
     TavilyExternalContextProvider,
     create_external_context_provider,
@@ -34,12 +36,32 @@ def test_tavily_parse_response_normalizes_chunks() -> None:
     assert rag_chunk["evidence_score"] == 0.8
 
 
-def test_create_external_context_provider_returns_none_when_disabled(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_ENABLED",
-        False,
-    )
+def test_create_external_context_provider_returns_none_when_no_provider_configured() -> None:
+    with patch(
+        "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_PROVIDER",
+        None,
+    ):
+        assert create_external_context_provider() is None
 
-    assert create_external_context_provider() is None
+
+def test_create_external_context_provider_returns_none_when_no_api_key() -> None:
+    with patch(
+        "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_PROVIDER",
+        "tavily",
+    ), patch(
+        "backend.services.external_context_service.ai_settings.TAVILY_API_KEY",
+        None,
+    ):
+        assert create_external_context_provider() is None
+
+
+def test_create_external_context_provider_returns_provider_when_configured() -> None:
+    with patch(
+        "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_PROVIDER",
+        "tavily",
+    ), patch(
+        "backend.services.external_context_service.ai_settings.TAVILY_API_KEY",
+        "test-key",
+    ):
+        provider = create_external_context_provider()
+        assert provider is not None

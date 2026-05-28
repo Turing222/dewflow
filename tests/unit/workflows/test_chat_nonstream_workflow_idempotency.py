@@ -20,8 +20,26 @@ from backend.models.orm.chat import MessageStatus
 from backend.models.schemas.chat.commands import ChatQueryCommand
 from backend.models.schemas.chat.context_state import ContextState
 from backend.models.schemas.chat.payloads import GenerationResult
+from backend.services.feature_flag_service import (
+    _AI_SYSTEM_FLAG_DEFAULTS,
+    FeatureFlagService,
+)
 
 pytestmark = pytest.mark.asyncio
+
+
+def _make_mock_feature_flag_service(
+    overrides: dict[str, bool] | None = None,
+) -> AsyncMock:
+    flags = {
+        **_AI_SYSTEM_FLAG_DEFAULTS,
+        "enable-public-registration": True,
+        "enable-closed-beta-login": False,
+        **(overrides or {}),
+    }
+    svc = AsyncMock(spec=FeatureFlagService)
+    svc.get_system_features = AsyncMock(return_value=flags)
+    return svc
 
 
 def _build_workflow(
@@ -32,6 +50,7 @@ def _build_workflow(
         dispatcher=dispatcher or AsyncMock(),
         redis_client=redis_client or AsyncMock(),
         permission_service=MagicMock(),
+        feature_flag_service=_make_mock_feature_flag_service(),
     )
 
 
@@ -67,6 +86,7 @@ async def test_orchestrator_without_injected_session_manager_uses_default() -> N
         uow,
         AsyncMock(),
         MagicMock(),
+        _make_mock_feature_flag_service(),
     )
 
     with (

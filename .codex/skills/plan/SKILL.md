@@ -7,6 +7,14 @@ description: Dependency-aware task planning for Dewflow backend work. Use when t
 
 Use this skill before execution when the user wants a plan or the work is broad enough that ordering matters.
 
+## Flow
+
+1. Follow the Core Flow below to produce a lightweight plan as plain text in the conversation.
+2. Decide whether to enter formal plan mode:
+   - **Skip `EnterPlanMode`** when the task is single-file, has a clear path, or touches ≤ 2 files. Just proceed after the lightweight plan.
+   - **Call `EnterPlanMode`** when the task is multi-file, involves architectural choices, ambiguous requirements, or the user explicitly wants approval. Use the lightweight plan as context.
+3. After approval (or directly if skipped), switch to `write`, `edit`, or `add-tests` skill to execute.
+
 ## Core Flow
 
 1. Restate the goal in one sentence.
