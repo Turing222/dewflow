@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.ai.providers.rerank.bifrost_rerank import BifrostRerankService
+from backend.ai.providers.rerank.dashscope_rerank import DashScopeRerankService
 from backend.ai.providers.rerank.factory import RerankProviderFactory
 from backend.config.rerank import RerankProfile
 
@@ -57,6 +58,18 @@ def _make_rerank_profile(
         api_key_envs=("BIFROST_API_KEY",),
         aliases=("bifrost", "bifrost-rerank", "gateway-rerank"),
         score_kind=score_kind,
+    )
+
+
+def _make_dashscope_rerank_profile() -> RerankProfile:
+    return RerankProfile(
+        name="dashscope_rerank",
+        provider="dashscope",
+        model="qwen3-rerank",
+        base_url="https://dashscope.aliyuncs.com/compatible-api/v1",
+        api_key_envs=("DASHSCOPE_API_KEY",),
+        aliases=("dashscope", "qwen3-rerank"),
+        score_kind="dashscope_rerank",
     )
 
 
@@ -167,6 +180,34 @@ def test_create_raises_value_error_for_incomplete_bifrost_config(
         RerankProviderFactory.create(provider="bifrost")
 
 
+def test_create_constructs_dashscope_service_for_dashscope_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.ai.providers.rerank.factory.get_llm_model_config",
+        lambda: _make_mock_config(),
+    )
+    monkeypatch.setattr(
+        "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_MODEL",
+        "qwen3-rerank",
+    )
+    monkeypatch.setattr(
+        "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_TIMEOUT_SECONDS",
+        15,
+    )
+    monkeypatch.setattr(
+        "backend.ai.providers.rerank.factory.ai_settings.DASHSCOPE_API_KEY",
+        "sk-dashscope",
+    )
+
+    result = RerankProviderFactory.create(provider="dashscope")
+
+    assert isinstance(result, DashScopeRerankService)
+    assert result.base_url == "https://dashscope.aliyuncs.com/compatible-api/v1"
+    assert result.api_key == "sk-dashscope"
+    assert result.model_name == "qwen3-rerank"
+
+
 # ── Profile path ─────────────────────────────────────────────────
 
 
@@ -188,12 +229,29 @@ def test_create_from_profile_constructs_bifrost_service(
     assert result.model_name == "qwen3-rerank"
 
 
+def test_create_from_profile_constructs_dashscope_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_TIMEOUT_SECONDS",
+        15,
+    )
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-profile")
+
+    profile = _make_dashscope_rerank_profile()
+    result = RerankProviderFactory.create(profile=profile)
+
+    assert isinstance(result, DashScopeRerankService)
+    assert result.base_url == "https://dashscope.aliyuncs.com/compatible-api/v1"
+    assert result.api_key == "sk-profile"
+    assert result.model_name == "qwen3-rerank"
+
+
 def test_create_from_profile_raises_for_incomplete_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("BIFROST_API_KEY", raising=False)
 
-    profile = _make_rerank_profile(base_url=None)
     # Need to set api_key_envs to something that won't resolve
     profile_no_key = RerankProfile(
         name="test",
@@ -242,4 +300,27 @@ def test_create_uses_rerank_profile_when_profiles_exist(
     result = RerankProviderFactory.create(provider="bifrost")
 
     assert isinstance(result, BifrostRerankService)
+    assert result.model_name == "qwen3-rerank"
+
+
+def test_create_uses_dashscope_rerank_profile_when_profiles_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rerank_profile = _make_dashscope_rerank_profile()
+    config = _make_mock_config(
+        rerank_profiles={"dashscope_rerank": rerank_profile},
+    )
+    monkeypatch.setattr(
+        "backend.ai.providers.rerank.factory.get_llm_model_config",
+        lambda: config,
+    )
+    monkeypatch.setattr(
+        "backend.ai.providers.rerank.factory.ai_settings.RAG_RERANK_TIMEOUT_SECONDS",
+        15,
+    )
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-via-profile")
+
+    result = RerankProviderFactory.create(provider="dashscope")
+
+    assert isinstance(result, DashScopeRerankService)
     assert result.model_name == "qwen3-rerank"

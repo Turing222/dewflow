@@ -64,8 +64,9 @@ def test_load_llm_model_config_resolves_aliases() -> None:
     )
     assert qwen3_embedding.dimensions == 768
 
+    assert config.resolve_rerank_profile("dashscope").provider == "dashscope"
+    assert config.resolve_rerank_profile("dashscope").model == "qwen3-rerank"
     assert config.resolve_rerank_profile("bifrost").provider == "bifrost"
-    assert config.resolve_rerank_profile("bifrost").model == "qwen3-rerank"
     assert config.resolve_rerank_profile("gateway-rerank").name == "bifrost_rerank"
 
 
@@ -109,10 +110,15 @@ profiles:
         load_llm_model_config(config_dir=config_dir)
 
 
-def test_llm_profile_extra_body_accepts_thinking_mode() -> None:
+def test_llm_profile_extra_body_keeps_thinking_explicit() -> None:
     config = load_llm_model_config()
 
-    assert config.resolve_profile("deepseek-v4-flash").extra_body == {
+    assert config.resolve_profile("deepseek-v4-flash").extra_body is None
+    assert config.resolve_profile("deepseek-v4-flash-thinking").extra_body == {
+        "thinking": {"type": "enabled"}
+    }
+    assert config.resolve_profile("bifrost_flash").extra_body is None
+    assert config.resolve_profile("bifrost_flash_thinking").extra_body == {
         "thinking": {"type": "enabled"}
     }
 

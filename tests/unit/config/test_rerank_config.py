@@ -145,20 +145,33 @@ class TestBuildRerankProfiles:
         assert build_rerank_profiles(config) == {}
 
     def test_builds_profiles_from_schema(self) -> None:
-        config = _make_config({
-            "default_profile": "bifrost_rerank",
-            "profiles": {
-                "bifrost_rerank": {
-                    "provider": "bifrost",
-                    "model": "qwen3-rerank",
-                    "base_url": "http://bifrost:8080/v1",
-                    "api_key_envs": ["BIFROST_API_KEY"],
-                    "aliases": ["bifrost", "gateway-rerank"],
-                    "score_kind": "bifrost_rerank",
+        config = _make_config(
+            {
+                "default_profile": "dashscope_rerank",
+                "profiles": {
+                    "dashscope_rerank": {
+                        "provider": "dashscope",
+                        "model": "qwen3-rerank",
+                        "base_url": "https://dashscope.aliyuncs.com/compatible-api/v1",
+                        "api_key_envs": ["DASHSCOPE_API_KEY"],
+                        "aliases": ["dashscope", "qwen3-rerank"],
+                        "score_kind": "dashscope_rerank",
+                    },
+                    "bifrost_rerank": {
+                        "provider": "bifrost",
+                        "model": "qwen3-rerank",
+                        "base_url": "http://bifrost:8080/v1",
+                        "api_key_envs": ["BIFROST_API_KEY"],
+                        "aliases": ["bifrost", "gateway-rerank"],
+                        "score_kind": "bifrost_rerank",
+                    },
                 },
-            },
-        })
+            }
+        )
         profiles = build_rerank_profiles(config)
+        assert "dashscope_rerank" in profiles
+        assert profiles["dashscope_rerank"].provider == "dashscope"
+        assert profiles["dashscope_rerank"].api_key_envs == ("DASHSCOPE_API_KEY",)
         assert "bifrost_rerank" in profiles
         assert profiles["bifrost_rerank"].provider == "bifrost"
         assert profiles["bifrost_rerank"].model == "qwen3-rerank"
@@ -166,47 +179,61 @@ class TestBuildRerankProfiles:
 
 class TestRerankModelsConfig:
     def test_valid_config(self) -> None:
-        config = RerankModelsConfig.model_validate({
-            "default_profile": "bifrost_rerank",
-            "profiles": {
-                "bifrost_rerank": {
-                    "provider": "bifrost",
-                    "model": "qwen3-rerank",
-                    "base_url": "http://bifrost:8080/v1",
-                    "api_key_envs": ["BIFROST_API_KEY"],
-                    "aliases": ["bifrost-rerank"],
-                    "score_kind": "bifrost_rerank",
-                },
-            },
-        })
-        assert config.default_profile == "bifrost_rerank"
-
-    def test_rejects_missing_default_profile(self) -> None:
-        with pytest.raises(Exception, match="not defined"):
-            RerankModelsConfig.model_validate({
-                "default_profile": "nonexistent",
+        config = RerankModelsConfig.model_validate(
+            {
+                "default_profile": "dashscope_rerank",
                 "profiles": {
+                    "dashscope_rerank": {
+                        "provider": "dashscope",
+                        "model": "qwen3-rerank",
+                        "base_url": "https://dashscope.aliyuncs.com/compatible-api/v1",
+                        "api_key_envs": ["DASHSCOPE_API_KEY"],
+                        "aliases": ["dashscope"],
+                        "score_kind": "dashscope_rerank",
+                    },
                     "bifrost_rerank": {
                         "provider": "bifrost",
                         "model": "qwen3-rerank",
+                        "base_url": "http://bifrost:8080/v1",
+                        "api_key_envs": ["BIFROST_API_KEY"],
+                        "aliases": ["bifrost-rerank"],
+                        "score_kind": "bifrost_rerank",
                     },
                 },
-            })
+            }
+        )
+        assert config.default_profile == "dashscope_rerank"
+
+    def test_rejects_missing_default_profile(self) -> None:
+        with pytest.raises(Exception, match="not defined"):
+            RerankModelsConfig.model_validate(
+                {
+                    "default_profile": "nonexistent",
+                    "profiles": {
+                        "bifrost_rerank": {
+                            "provider": "bifrost",
+                            "model": "qwen3-rerank",
+                        },
+                    },
+                }
+            )
 
     def test_rejects_alias_conflict(self) -> None:
         with pytest.raises(Exception, match="used by both"):
-            RerankModelsConfig.model_validate({
-                "default_profile": "a",
-                "profiles": {
-                    "a": {
-                        "provider": "bifrost",
-                        "model": "model-a",
-                        "aliases": ["shared-alias"],
+            RerankModelsConfig.model_validate(
+                {
+                    "default_profile": "a",
+                    "profiles": {
+                        "a": {
+                            "provider": "bifrost",
+                            "model": "model-a",
+                            "aliases": ["shared-alias"],
+                        },
+                        "b": {
+                            "provider": "cohere",
+                            "model": "model-b",
+                            "aliases": ["shared-alias"],
+                        },
                     },
-                    "b": {
-                        "provider": "cohere",
-                        "model": "model-b",
-                        "aliases": ["shared-alias"],
-                    },
-                },
-            })
+                }
+            )

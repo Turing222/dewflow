@@ -83,7 +83,7 @@ x-feature-env:
   RAG_EMBED_BATCH_SIZE: ${RAG_EMBED_BATCH_SIZE:-10}
   # ── RAG Retrieval ──────────────────────────────────────────
   RAG_TOP_K: ${RAG_TOP_K:-4}
-  RAG_RERANK_PROVIDER: ${RAG_RERANK_PROVIDER:-bifrost}
+  RAG_RERANK_PROVIDER: ${RAG_RERANK_PROVIDER:-dashscope}
   RAG_RERANK_MODEL: ${RAG_RERANK_MODEL:-qwen3-rerank}
   RAG_RERANK_TIMEOUT_SECONDS: ${RAG_RERANK_TIMEOUT_SECONDS:-15}
   RAG_RERANK_CANDIDATE_COUNT: ${RAG_RERANK_CANDIDATE_COUNT:-20}
@@ -237,7 +237,7 @@ services:
     environment:
       APP_HOST: 0.0.0.0
       APP_PORT: 8080
-      LOG_LEVEL: ${BIFROST_LOG_LEVEL:-info}
+      BIFROST_LOG_LEVEL: ${BIFROST_LOG_LEVEL:-info}
       LOG_STYLE: json
     secrets:
       - BIFROST_API_KEY
@@ -254,7 +254,7 @@ services:
     entrypoint:
       - sh
       - -c
-      - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY_2=\"$$(cat /run/secrets/DEEPSEEK_API_KEY_2 | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY=\"$$(cat /run/secrets/DASHSCOPE_API_KEY | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY_2=\"$$(cat /run/secrets/DASHSCOPE_API_KEY_2 | tr -d '\\015\\012')\" && export COHERE_API_KEY=\"$$(cat /run/secrets/COHERE_API_KEY | tr -d '\\015\\012')\" && export COHERE_API_KEY_2=\"$$(cat /run/secrets/COHERE_API_KEY_2 | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
+      - "export BIFROST_API_KEY=\"$$(cat /run/secrets/BIFROST_API_KEY | tr -d '\\015\\012')\" && export BIFROST_ENCRYPTION_KEY=\"$$(cat /run/secrets/BIFROST_ENCRYPTION_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY=\"$$(cat /run/secrets/DEEPSEEK_API_KEY | tr -d '\\015\\012')\" && export DEEPSEEK_API_KEY_2=\"$$(cat /run/secrets/DEEPSEEK_API_KEY_2 | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY=\"$$(cat /run/secrets/DASHSCOPE_API_KEY | tr -d '\\015\\012')\" && export DASHSCOPE_API_KEY_2=\"$$(cat /run/secrets/DASHSCOPE_API_KEY_2 | tr -d '\\015\\012')\" && export COHERE_API_KEY=\"$$(cat /run/secrets/COHERE_API_KEY | tr -d '\\015\\012')\" && export COHERE_API_KEY_2=\"$$(cat /run/secrets/COHERE_API_KEY_2 | tr -d '\\015\\012')\" && exec /app/main -app-dir /app/data -port \"$${APP_PORT}\" -host \"$${APP_HOST}\" -log-level \"$${BIFROST_LOG_LEVEL}\" -log-style \"$${LOG_STYLE}\""
     ports:
       - "${BIFROST_PORT:-18080}:8080"
     healthcheck:
@@ -283,6 +283,7 @@ services:
     secrets: *app-secrets
     environment:
       <<: [ *infra-env, *feature-env, *secret-file-env ]
+      BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
       PYTHONMALLOC: default
       WEB_CONCURRENCY: "1"
     restart: "no"
@@ -325,6 +326,7 @@ services:
     secrets: *app-secrets
     environment:
       <<: [ *infra-env, *feature-env, *secret-file-env ]
+      BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
       TASKIQ_HEALTH_MIN_PROCESSES: "2"
     healthcheck:
       test: [ "CMD-SHELL", "python -m backend.worker.tasks.healthcheck || exit 1" ]
