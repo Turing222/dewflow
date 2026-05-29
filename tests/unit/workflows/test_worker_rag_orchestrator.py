@@ -169,6 +169,69 @@ async def test_rerank_candidates_if_enabled_rerank_error_falls_back(
     assert result[1]["content"] == "chunk-1"
 
 
+async def test_rerank_candidates_if_enabled_fallback_preserves_web_hit(
+    monkeypatch,
+) -> None:
+    from backend.application.chat.worker_rag_orchestrator import WorkerRAGOrchestrator
+    from backend.models.schemas.chat.payloads import GenerationPayload
+
+    class _FakeSlot:
+        def __init__(self, attrs: dict | None) -> None:
+            self.attrs = attrs
+
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, *args) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "backend.application.chat.worker_rag_orchestrator.llm_concurrency_slot",
+        _FakeSlot,
+    )
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="test",
+        conversation_history=[],
+    )
+    kb_candidates = [
+        make_rag_hit(content=f"kb-{index}", index=index) for index in range(20)
+    ]
+    web_candidates = [
+        {
+            **make_rag_hit(content=f"web-{index}", index=index),
+            "source_type": "web",
+            "file_id": f"https://example.com/{index}",
+            "title": f"Web {index}",
+        }
+        for index in range(4)
+    ]
+
+    rag_plan = RAGExecutionPlan(
+        should_use_rag=True,
+        retrieval_mode="hybrid",
+        top_k=4,
+        use_rerank=True,
+        rerank_top_k=4,
+        candidate_count=20,
+        selected_sources=["kb", "web"],
+    )
+
+    rag_service = MagicMock()
+    rag_service.rerank = AsyncMock(side_effect=RuntimeError("rerank failed"))
+
+    orchestrator = WorkerRAGOrchestrator(rag_service=rag_service)
+    result = await orchestrator.rerank_candidates_if_enabled(
+        payload, [*kb_candidates, *web_candidates], rag_plan
+    )
+
+    assert len(result) == 4
+    assert [chunk["content"] for chunk in result[:3]] == ["kb-0", "kb-1", "kb-2"]
+    assert result[3]["content"] == "web-0"
+    assert result[3]["source_type"] == "web"
+
+
 async def test_prepare_context_refusal_search_context_includes_evidence_fields(
     monkeypatch,
 ) -> None:

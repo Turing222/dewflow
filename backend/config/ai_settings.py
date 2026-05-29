@@ -96,7 +96,7 @@ class AISettings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
 
     # ── LLM Behavior ──────────────────────────────────────────────
-    LLM_MAX_CONTEXT_TOKENS: int = 4096
+    LLM_MAX_CONTEXT_TOKENS: int = 8192
     LLM_MAX_HISTORY_ROUNDS: int = 10
     LLM_RESERVED_RESPONSE_TOKENS: int = 1024
     LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
@@ -135,6 +135,7 @@ class AISettings(BaseSettings):
     RAG_MIN_RELEVANCE_SCORE: float = Field(default=0.2, ge=0.0, le=1.0)
     RAG_MIN_RERANK_SCORE: float = Field(default=4.0, ge=0.0, le=10.0)
     RAG_REFUSAL_MESSAGE: str = "知识库中没有找到足够相关的信息，暂时无法基于资料回答。"
+    RAG_HYBRID_MIN_SOURCE_SCORE: float = Field(default=0.3, ge=0.0, le=1.0)
 
     # ── External Context Retrieval ────────────────────────────────
     EXTERNAL_CONTEXT_PROVIDER: str = "tavily"

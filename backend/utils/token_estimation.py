@@ -26,7 +26,7 @@ try:
     _tiktoken_available = True
     logger.info("tiktoken 加载成功，将使用精确的 Token 计算")
 except ImportError:
-    logger.warning("tiktoken 未安装，将使用字符估算法 (len // 3)")
+    logger.debug("tiktoken 未安装，将使用字符估算法 (len // 3)")
 
 
 def _get_encoding(model: str):

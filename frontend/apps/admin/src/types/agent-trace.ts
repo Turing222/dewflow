@@ -199,19 +199,30 @@ export function applyTraceMetricsToSteps(
                 return { ...step, status: 'skipped' as const, finishedAt: Date.now() };
             }
             const metricDetails: Record<string, number | string | boolean> = {};
-            if (ragMetrics?.candidate_count !== undefined) {
-                metricDetails.candidate_count = ragMetrics.candidate_count;
+            const rerankUsed = ragMetrics?.rerank_used === true;
+
+            if (rerankUsed) {
+                if (ragMetrics?.candidate_count !== undefined) {
+                    metricDetails.candidate_count = ragMetrics.candidate_count;
+                }
+                if (ragMetrics?.hit_count !== undefined) {
+                    metricDetails.hit_count = ragMetrics.hit_count;
+                }
+            } else {
+                if (ragMetrics?.hit_count !== undefined) {
+                    metricDetails.hit_count = ragMetrics.hit_count;
+                } else if (ragMetrics?.candidate_count !== undefined) {
+                    metricDetails.hit_count = ragMetrics.candidate_count;
+                }
             }
-            if (ragMetrics?.hit_count !== undefined) {
-                metricDetails.hit_count = ragMetrics.hit_count;
-            }
+
             if (ragMetrics?.retrieval_mode !== undefined) {
                 metricDetails.retrieval_mode = ragMetrics.retrieval_mode;
             }
             if (ragMetrics?.rerank_used !== undefined) {
                 metricDetails.rerank_used = ragMetrics.rerank_used;
             }
-            if (ragMetrics?.rerank_ms !== undefined) {
+            if (rerankUsed && ragMetrics?.rerank_ms !== undefined) {
                 metricDetails.rerank_ms = ragMetrics.rerank_ms;
             }
             return {
@@ -241,6 +252,39 @@ export function applyTraceMetricsToSteps(
             };
         }
         if (step.id === 'model-thinking') {
+            const hasThinkingMetric = messageMetrics?.llm_thinking_ms !== undefined;
+            const thinkingMs = messageMetrics?.llm_thinking_ms;
+            const isReasoning = messageMetrics?.answer_model_tier === 'reasoning';
+
+            if (hasThinkingMetric) {
+                if (!thinkingMs || thinkingMs === 0) {
+                    return {
+                        ...step,
+                        status: 'skipped' as const,
+                        finishedAt: Date.now(),
+                        durationMs: undefined,
+                    };
+                }
+                return {
+                    ...step,
+                    status: 'done' as const,
+                    finishedAt: Date.now(),
+                    durationMs: thinkingMs,
+                };
+            }
+
+            // Fallback for older records without llm_thinking_ms metric:
+            // Skip model-thinking if model tier is explicitly known and is NOT 'reasoning'.
+            if (messageMetrics?.answer_model_tier !== undefined && !isReasoning) {
+                return {
+                    ...step,
+                    status: 'skipped' as const,
+                    finishedAt: Date.now(),
+                    durationMs: undefined,
+                };
+            }
+
+            // Otherwise, fallback to using firstToken as thinking time for backward compatibility
             const firstToken = messageMetrics?.llm_first_token_ms ?? messageMetrics?.first_token_latency_ms;
             if (firstToken === undefined) {
                 return step;
@@ -276,11 +320,16 @@ export function applyTraceMetricsToSteps(
                 }
             }
 
-            const llmGenerateMs = messageMetrics?.llm_generate_ms;
-            const llmFirstToken = messageMetrics?.llm_first_token_ms ?? messageMetrics?.first_token_latency_ms ?? 0;
-            const actualGenerateMs = llmGenerateMs !== undefined
-                ? Math.max(0, llmGenerateMs - llmFirstToken)
-                : undefined;
+            // Prefer the precise llm_answer_ms metric when available.
+            let actualGenerateMs = messageMetrics?.llm_answer_ms;
+            if (actualGenerateMs === undefined) {
+                // Fallback for older/completed records.
+                const llmGenerateMs = messageMetrics?.llm_generate_ms;
+                const llmFirstToken = messageMetrics?.llm_first_token_ms ?? messageMetrics?.first_token_latency_ms ?? 0;
+                actualGenerateMs = llmGenerateMs !== undefined
+                    ? Math.max(0, llmGenerateMs - llmFirstToken)
+                    : undefined;
+            }
 
             return {
                 ...step,

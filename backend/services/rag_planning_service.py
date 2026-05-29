@@ -35,6 +35,27 @@ PlannerAnswerRoute = Literal["refuse", "rag", "large"]
 PlannerModelTier = Literal["fast", "balanced", "reasoning"]
 RAG_PLANNER_FALLBACK_REASON = "RAG planner 降级为默认计划"
 DEFAULT_MODEL_ROUTE_REASON = "default model tier"
+_KB_INTENT_KEYWORDS = (
+    "知识库",
+    "文档",
+    "资料",
+    "项目",
+    "文件",
+    "上传",
+    "库里",
+)
+_REALTIME_WEB_TOPIC_KEYWORDS = (
+    "天气",
+    "气温",
+    "温度",
+    "下雨",
+    "降雨",
+    "预报",
+    "空气质量",
+    "新闻",
+    "股价",
+    "汇率",
+)
 
 
 class RAGExecutionPlan(BaseModel):
@@ -252,7 +273,11 @@ class RAGPlanningService:
                     ),
                     timeout=ai_settings.RAG_PLANNER_TIMEOUT_SECONDS,
                 )
-                plan = generated.clamped()
+                plan = _prefer_web_for_realtime_query(
+                    generated.clamped(),
+                    query_text=query_text,
+                    external_context_allowed=external_context_allowed,
+                )
                 set_span_attributes(span, _trace_attrs(plan, used=True, fallback=False))
                 return plan
         except Exception as exc:
@@ -269,13 +294,13 @@ class RAGPlanningService:
     def _ensure_agent(self) -> Any:
         if self._agent is None:
             try:
-                from pydantic_ai import Agent
+                from pydantic_ai import Agent, PromptedOutput
             except ImportError as exc:
                 raise RuntimeError("pydantic-ai 未安装") from exc
 
             self._agent = Agent(
                 self._create_model(),
-                output_type=RAGExecutionPlan,
+                output_type=PromptedOutput(RAGExecutionPlan),
                 instructions=_PLANNER_INSTRUCTIONS,
                 instrument=True,
                 name="rag_planner",
@@ -418,7 +443,7 @@ _PLANNER_INSTRUCTIONS = """你是 RAG 检索规划器。
 返回结构化计划：
 - context_mode: 原样使用输入中的上下文路由模式。
 - selected_sources: 选择需要执行的上下文来源；v1 只可实际选择 kb/web，skill/mcp 仅预留。
-- should_use_rag: 用户问题需要知识库事实、文档内容、项目资料时为 true；闲聊、写作泛化、无需外部资料时为 false。
+- should_use_rag: 仅表示是否需要本地知识库 kb；用户问题需要知识库事实、文档内容、项目资料时为 true；闲聊、写作泛化、仅需联网公开信息时为 false。
 - retrieval_mode: 精确关键词或文件名查询用 fulltext；语义查询用 vector；不确定或需要兼顾时用 hybrid。
 - top_k: 普通检索数量。
 - use_rerank: 需要从较多候选中精选相关片段时为 true。
@@ -439,6 +464,42 @@ _PLANNER_INSTRUCTIONS = """你是 RAG 检索规划器。
 - context_mode=kb_only 时 selected_sources 最多包含 kb。
 - context_mode=web_only 时 selected_sources 最多包含 web。
 - context_mode=auto 时按问题需要选择 kb、web 或两者。
+- 天气、新闻、股价、汇率、今天/现在/最新等实时公开信息优先 selected_sources=["web"]；除非问题明确要求查询知识库，否则不要包含 kb。
+- 如果 reason 判断“本地知识库无法提供”或“需要实时信息”，selected_sources 不应包含 kb，should_use_rag 必须为 false。
 - 只有明显不应继续处理的请求才返回 answer_route=refuse；不确定时不要拒答。
 - 普通闲聊或无需知识库的问题返回 answer_route=large，不要误拒。
 """
+
+
+def _prefer_web_for_realtime_query(
+    plan: RAGExecutionPlan,
+    *,
+    query_text: str,
+    external_context_allowed: bool,
+) -> RAGExecutionPlan:
+    if (
+        not external_context_allowed
+        or plan.context_mode != "auto"
+        or plan.answer_route == "refuse"
+        or not _looks_like_realtime_web_query(query_text)
+    ):
+        return plan
+    return plan.model_copy(
+        update={
+            "selected_sources": ["web"],
+            "should_use_rag": False,
+            "should_use_external_context": True,
+            "external_sources": ["web"],
+            "answer_route": "rag",
+            "use_rerank": False,
+        }
+    ).clamped()
+
+
+def _looks_like_realtime_web_query(query_text: str) -> bool:
+    normalized = query_text.strip().lower()
+    if not normalized:
+        return False
+    if any(keyword in normalized for keyword in _KB_INTENT_KEYWORDS):
+        return False
+    return any(keyword in normalized for keyword in _REALTIME_WEB_TOPIC_KEYWORDS)

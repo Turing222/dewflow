@@ -1874,3 +1874,75 @@ async def test_worker_citation_records_zero_when_no_markers_in_output(
     metadata = uow.chat_repo.update_message_status.call_args.kwargs["message_metadata"]
     assert metadata["citation"]["total"] == 0
     assert metadata["citation"]["removed_count"] == 0
+
+
+async def test_worker_stream_timing_with_thinking_tags(monkeypatch) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+
+    uow = FakeChatUow()
+    assistant_message_id = uuid.uuid4()
+    uow.chat_repo.update_message_status.return_value = object()
+
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=StreamingLLM(["<think>", "thinking", "</think>", "actual answer"]),
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 10)
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="hi",
+        conversation_history=[],
+    )
+
+    await workflow.generate_stream(
+        payload=payload,
+        channel="stream:test",
+        assistant_message_id=assistant_message_id,
+        user_id=uuid.uuid4(),
+    )
+
+    uow.chat_repo.update_message_status.assert_awaited_once()
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    metrics = update_kwargs["message_metadata"]["metrics"]
+    assert "llm_thinking_ms" in metrics
+    assert "llm_answer_ms" in metrics
+    assert metrics["llm_thinking_ms"] >= 0
+    assert metrics["llm_answer_ms"] >= 0
+
+
+async def test_worker_stream_timing_without_thinking_tags(monkeypatch) -> None:
+    redis = FakeRedis()
+    install_llm_slot_recorder(monkeypatch)
+
+    uow = FakeChatUow()
+    assistant_message_id = uuid.uuid4()
+    uow.chat_repo.update_message_status.return_value = object()
+
+    workflow = LLMGenerationWorkerWorkflow(
+        uow=uow,
+        redis_client=FakeRedisClient(redis),
+        llm_service=StreamingLLM(["direct answer"]),
+    )
+    monkeypatch.setattr(workflow, "_count_output_tokens", lambda content: 5)
+
+    payload = GenerationPayload(
+        session_id=uuid.uuid4(),
+        query_text="hi",
+        conversation_history=[],
+    )
+
+    await workflow.generate_stream(
+        payload=payload,
+        channel="stream:test",
+        assistant_message_id=assistant_message_id,
+        user_id=uuid.uuid4(),
+    )
+
+    uow.chat_repo.update_message_status.assert_awaited_once()
+    update_kwargs = uow.chat_repo.update_message_status.call_args.kwargs
+    metrics = update_kwargs["message_metadata"]["metrics"]
+    assert metrics["llm_thinking_ms"] == 0
+    assert metrics["llm_answer_ms"] >= 0

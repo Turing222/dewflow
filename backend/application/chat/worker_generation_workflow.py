@@ -540,6 +540,12 @@ class LLMGenerationWorkerWorkflow:
                 first_token_latency_ms: int | None = None
                 first_published_from_llm_ms: int | None = None
 
+                in_thinking = False
+                thinking_started_time = None
+                thinking_duration_ms = None
+                answer_started_time = None
+                answer_duration_ms = None
+
                 async def publish_user_chunk(content: str) -> None:
                     nonlocal first_token_latency_ms
                     nonlocal first_published_from_llm_ms
@@ -565,6 +571,21 @@ class LLMGenerationWorkerWorkflow:
                             await publish_user_chunk(SAFETY_REFUSAL_MESSAGE)
                             break
                         accumulated_content.append(chunk)
+
+                        full_so_far = "".join(accumulated_content)
+                        if not in_thinking and thinking_duration_ms is None:
+                            if "<think>" in full_so_far:
+                                in_thinking = True
+                                thinking_started_time = perf_start()
+                            else:
+                                if answer_started_time is None:
+                                    answer_started_time = perf_start()
+                        elif in_thinking:
+                            if "</think>" in full_so_far:
+                                in_thinking = False
+                                thinking_duration_ms = elapsed_ms(thinking_started_time)
+                                answer_started_time = perf_start()
+
                         if citation_filter is not None:
                             cleaned = citation_filter.push(chunk)
                             if cleaned is not None:
@@ -576,6 +597,17 @@ class LLMGenerationWorkerWorkflow:
                         if remaining:
                             await publish_user_chunk(remaining)
                 llm_generate_ms = elapsed_ms(llm_started)
+
+                # Finalize thinking and answer durations
+                if in_thinking:
+                    thinking_duration_ms = elapsed_ms(thinking_started_time) if thinking_started_time is not None else 0
+                    answer_duration_ms = 0
+                else:
+                    if thinking_duration_ms is None:
+                        thinking_duration_ms = 0
+                        answer_duration_ms = elapsed_ms(answer_started_time) if answer_started_time is not None else 0
+                    else:
+                        answer_duration_ms = elapsed_ms(answer_started_time) if answer_started_time is not None else 0
 
                 full_content = "".join(accumulated_content)
                 if output_blocked:
@@ -630,6 +662,8 @@ class LLMGenerationWorkerWorkflow:
                             "llm_first_token_ms": first_published_from_llm_ms,
                             "first_token_latency_ms": first_token_latency_ms,
                             "llm_generate_ms": llm_generate_ms,
+                            "llm_thinking_ms": thinking_duration_ms,
+                            "llm_answer_ms": answer_duration_ms,
                             "tokens_input": tokens_input,
                             "tokens_output": tokens_output,
                             "tokens_per_second": tokens_per_second(
@@ -847,7 +881,9 @@ class LLMGenerationWorkerWorkflow:
                     selected_llm=selected_llm,
                     first_token_ms=None,
                     output_decision=output_decision,
-                    output_blocked=output_decision.triggered if output_decision else False,
+                    output_blocked=output_decision.triggered
+                    if output_decision
+                    else False,
                     search_context=search_context,
                     citation_result=citation_result,
                 ),

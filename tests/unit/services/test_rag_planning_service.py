@@ -382,6 +382,31 @@ def test_rag_planning_service_bifrost_flash_resolves_to_v4_flash(
     assert captured["profile"].model == "deepseek/deepseek-v4-flash"
 
 
+def test_rag_planning_service_uses_prompted_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAgent:
+        def __init__(self, model: object, **kwargs: object) -> None:
+            captured["model"] = model
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.create_pydantic_ai_model",
+        lambda **_: "model",
+    )
+    monkeypatch.setattr("pydantic_ai.Agent", FakeAgent)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "planner-key")
+
+    agent = RAGPlanningService(provider="deepseek")._ensure_agent()
+
+    assert isinstance(agent, FakeAgent)
+    assert captured["model"] == "model"
+    assert type(captured["output_type"]).__name__ == "PromptedOutput"
+    assert captured["output_type"].outputs is RAGExecutionPlan
+
+
 @pytest.mark.asyncio
 async def test_rag_planning_service_returns_fallback_on_invalid_output(
     monkeypatch: pytest.MonkeyPatch,
@@ -449,6 +474,68 @@ async def test_rag_planning_service_runs_without_kb_when_external_allowed(
 
 
 @pytest.mark.asyncio
+async def test_rag_planning_service_prefers_web_for_realtime_query() -> None:
+    planner = RecordingPlanner(
+        RAGExecutionPlan(
+            context_mode="auto",
+            selected_sources=["web", "kb"],
+            should_use_rag=True,
+            retrieval_mode="hybrid",
+            should_use_external_context=True,
+            external_sources=["web"],
+            use_rerank=True,
+            reason="需要实时天气信息，本地知识库无法提供，应使用网络搜索",
+        )
+    )
+
+    plan = await planner.plan(
+        query_text="今天南京天气如何",
+        conversation_history=[],
+        kb_id=uuid.uuid4(),
+        enable_external_context=True,
+        infra_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_external_context=True,
+            enable_rag_rerank=True,
+        ),
+    )
+
+    assert plan.selected_sources == ["web"]
+    assert plan.should_use_rag is False
+    assert plan.should_use_external_context is True
+    assert plan.external_sources == ["web"]
+    assert plan.use_rerank is False
+
+
+@pytest.mark.asyncio
+async def test_rag_planning_service_keeps_kb_when_query_mentions_documents() -> None:
+    planner = RecordingPlanner(
+        RAGExecutionPlan(
+            context_mode="auto",
+            selected_sources=["kb"],
+            should_use_rag=True,
+            retrieval_mode="hybrid",
+            reason="需要查询知识库文档",
+        )
+    )
+
+    plan = await planner.plan(
+        query_text="当前项目文档里怎么描述 RAG 流程",
+        conversation_history=[],
+        kb_id=uuid.uuid4(),
+        enable_external_context=True,
+        infra_flags=FeatureFlags(
+            enable_rag_planner=True,
+            enable_external_context=True,
+        ),
+    )
+
+    assert plan.selected_sources == ["kb"]
+    assert plan.should_use_rag is True
+    assert plan.should_use_external_context is False
+
+
+@pytest.mark.asyncio
 async def test_rag_planning_service_web_only_runs_without_legacy_external_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -483,6 +570,13 @@ async def test_rag_planning_service_thinking_enabled_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from unittest.mock import AsyncMock, MagicMock
+
+    profile = SimpleNamespace(extra_body={"thinking": {"type": "enabled"}})
+    config = SimpleNamespace(resolve_profile=lambda _: profile)
+    monkeypatch.setattr(
+        "backend.services.rag_planning_service.get_llm_model_config",
+        lambda: config,
+    )
 
     # 1. Test when infra_flags has enable_rag_planner_thinking=False (default)
     planner = RAGPlanningService()
@@ -531,7 +625,9 @@ async def test_rag_planning_service_thinking_enabled_flag(
     kwargs_enabled = mock_agent_enabled.run.call_args[1]
     model_settings_enabled = kwargs_enabled.get("model_settings")
     assert model_settings_enabled is not None
-    assert model_settings_enabled.get("extra_body").get("thinking") == {"type": "enabled"}
+    assert model_settings_enabled.get("extra_body").get("thinking") == {
+        "type": "enabled"
+    }
 
 
 @pytest.mark.asyncio

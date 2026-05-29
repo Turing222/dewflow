@@ -31,6 +31,7 @@ from backend.services.rag_planning_service import (
     RAGExecutionPlan,
     RAGPlanningService,
 )
+from backend.services.rag_service import select_rerank_fallback_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,11 @@ class WorkerRAGOrchestrator:
             metrics: dict[str, object] = {}
             planner_started = perf_start()
             rag_plan, planner_used = await self.build_rag_plan(payload)
+            self._debug_log_rag_plan(
+                payload=payload,
+                rag_plan=rag_plan,
+                planner_used=planner_used,
+            )
             metrics["planner_ms"] = elapsed_ms(planner_started)
             metrics["planner_used"] = planner_used
             metrics["retrieval_mode"] = rag_plan.retrieval_mode
@@ -148,7 +154,9 @@ class WorkerRAGOrchestrator:
             metrics["external_context_hit_count"] = len(external_candidates)
             metrics["external_context_used"] = bool(external_candidates)
             provider = self.external_context_provider
-            metrics["external_context_provider"] = provider.provider_name if provider and external_candidates else None
+            metrics["external_context_provider"] = (
+                provider.provider_name if provider and external_candidates else None
+            )
 
             candidates = [*rag_candidates, *external_candidates]
             metrics["candidate_count"] = len(candidates)
@@ -161,6 +169,11 @@ class WorkerRAGOrchestrator:
             )
             metrics["rerank_ms"] = elapsed_ms(rerank_started)
             metrics["hit_count"] = len(reranked_chunks)
+            self._debug_log_final_chunks(
+                payload=payload,
+                chunks=reranked_chunks,
+                stage="final_rag_chunks",
+            )
 
             refusal_decision = self.rag_evidence_policy.evaluate(
                 kb_id=payload.kb_id,
@@ -457,7 +470,13 @@ class WorkerRAGOrchestrator:
                 return reranked
         except Exception as exc:
             logger.warning("Worker RAG rerank 失败，降级为候选原始排序: %s", exc)
-            return candidates[:limit]
+            fallback_chunks = select_rerank_fallback_candidates(candidates, limit)
+            self._debug_log_final_chunks(
+                payload=payload,
+                chunks=fallback_chunks,
+                stage="rerank_fallback_chunks",
+            )
+            return fallback_chunks
 
     def _build_refusal_search_context(
         self,
@@ -517,3 +536,76 @@ class WorkerRAGOrchestrator:
         if search_context is None:
             return None
         return merge_metrics(search_context, metrics)
+
+    @staticmethod
+    def _debug_log_rag_plan(
+        *,
+        payload: GenerationPayload,
+        rag_plan: RAGExecutionPlan,
+        planner_used: bool,
+    ) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        logger.debug(
+            "Worker RAG plan",
+            extra={
+                "chat_session_id": str(payload.session_id),
+                "rag_kb_id": str(payload.kb_id) if payload.kb_id else None,
+                "rag_planner_used": planner_used,
+                "rag_context_mode": rag_plan.context_mode,
+                "rag_selected_sources": rag_plan.selected_sources,
+                "rag_should_use_rag": rag_plan.should_use_rag,
+                "rag_retrieval_mode": rag_plan.retrieval_mode,
+                "rag_top_k": rag_plan.top_k,
+                "rag_use_rerank": rag_plan.use_rerank,
+                "rag_candidate_count": rag_plan.candidate_count,
+                "rag_rerank_top_k": rag_plan.rerank_top_k,
+                "rag_should_use_external_context": (
+                    rag_plan.should_use_external_context
+                ),
+                "rag_external_top_k": rag_plan.external_top_k,
+                "rag_reason": rag_plan.reason,
+            },
+        )
+
+    @staticmethod
+    def _debug_log_final_chunks(
+        *,
+        payload: GenerationPayload,
+        chunks: list[dict[str, Any]],
+        stage: str,
+    ) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        logger.debug(
+            "Worker RAG chunks",
+            extra={
+                "chat_session_id": str(payload.session_id),
+                "rag_kb_id": str(payload.kb_id) if payload.kb_id else None,
+                "rag_stage": stage,
+                "rag_hit_count": len(chunks),
+                "rag_hits": [_rag_chunk_debug_record(chunk) for chunk in chunks],
+            },
+        )
+
+
+def _rag_chunk_debug_record(chunk: dict[str, Any]) -> dict[str, object]:
+    return {
+        "chunk_id": str(chunk.get("id")),
+        "source_type": chunk.get("source_type"),
+        "file_id": chunk.get("file_id"),
+        "message_id": chunk.get("message_id"),
+        "chunk_index": chunk.get("chunk_index"),
+        "retrieval_mode": chunk.get("retrieval_mode"),
+        "score_kind": chunk.get("score_kind"),
+        "score": chunk.get("score"),
+        "distance": chunk.get("distance"),
+        "raw_score": chunk.get("raw_score"),
+        "evidence_score": chunk.get("evidence_score"),
+        "rerank_score": chunk.get("rerank_score"),
+        "matched_by": chunk.get("matched_by"),
+        "filename": chunk.get("filename"),
+        "title": chunk.get("title"),
+        "url": chunk.get("url"),
+        "content_preview": str(chunk.get("content") or "")[:240],
+    }

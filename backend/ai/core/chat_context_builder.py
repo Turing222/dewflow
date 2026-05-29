@@ -21,6 +21,8 @@ from backend.ai.core.context_budgeter import (
 from backend.ai.core.live_window_builder import LiveWindowBuilder
 from backend.ai.core.message_compressor import MessageCompressor
 from backend.ai.core.prompt_manager import AssembledPrompt, PromptManager
+from backend.ai.core.prompt_resolver import get_prompt_resolver
+from backend.ai.core.prompt_templates import render_system_prompt
 from backend.ai.core.token_counter import count_messages_tokens, count_tokens
 from backend.config.settings import settings
 from backend.contracts.interfaces import AbstractRAGService
@@ -173,10 +175,24 @@ class ChatContextBuilder:
         # 4. Assemble prompt
         prompt_manager = self.rag_prompt_manager if rag_chunks else self.prompt_manager
         search_context = rag_references.search_context if rag_chunks else None
+        prompt_extra_vars = {
+            "context_state": self._context_state_to_prompt_dict(context_state),
+            "conversation_summary": window_result.bridge_summary,
+        }
+        fixed_prompt_tokens = self._estimate_fixed_prompt_tokens(
+            prompt_manager=prompt_manager,
+            history=window_result.exact_messages,
+            current_query=current_query,
+            extra_vars=prompt_extra_vars,
+        )
+        effective_rag_budget = min(
+            rag_chunks_budget,
+            max(0, self.context_budgeter.total_budget - fixed_prompt_tokens),
+        )
 
         context_chunks = self._fit_context_chunks(
             rag_references.context_chunks,
-            budget_tokens=rag_chunks_budget,
+            budget_tokens=effective_rag_budget,
             model=model,
         )
 
@@ -185,10 +201,27 @@ class ChatContextBuilder:
             current_query=current_query,
             extra_vars={
                 "context_chunks": context_chunks,
-                "context_state": self._context_state_to_prompt_dict(context_state),
-                "conversation_summary": window_result.bridge_summary,
+                **prompt_extra_vars,
             },
         )
+        if (
+            context_chunks
+            and assembled.total_tokens > self.context_budgeter.total_budget
+        ):
+            overflow = assembled.total_tokens - self.context_budgeter.total_budget
+            context_chunks = self._fit_context_chunks(
+                context_chunks,
+                budget_tokens=max(0, effective_rag_budget - overflow),
+                model=model,
+            )
+            assembled = prompt_manager.assemble(
+                history=window_result.exact_messages,
+                current_query=current_query,
+                extra_vars={
+                    "context_chunks": context_chunks,
+                    **prompt_extra_vars,
+                },
+            )
 
         # 5. Final validation
         ok, actual = self.context_budgeter.validate(
@@ -258,6 +291,32 @@ class ChatContextBuilder:
             if block.name == name:
                 return block.allocated
         return 0
+
+    @staticmethod
+    def _estimate_fixed_prompt_tokens(
+        *,
+        prompt_manager: PromptManager,
+        history: list[ConversationMessage],
+        current_query: str,
+        extra_vars: dict[str, object],
+    ) -> int:
+        system_template = prompt_manager.system_template or get_prompt_resolver().get_template(
+            prompt_manager.template_name
+        )
+        system_content = render_system_prompt(
+            template=system_template,
+            **{
+                **prompt_manager.template_vars,
+                "context_chunks": [],
+                **extra_vars,
+            },
+        )
+        messages: list[ConversationMessage] = []
+        if system_content.strip():
+            messages.append({"role": "system", "content": system_content})
+        messages.extend(history)
+        messages.append({"role": "user", "content": current_query})
+        return count_messages_tokens(messages, prompt_manager.model_name)
 
     @staticmethod
     def _fit_context_chunks(
@@ -348,7 +407,8 @@ class ChatContextBuilder:
                         "rag.hit_count": len(chunks),
                         "rag.rerank.enabled": getattr(
                             self.rag_service, "reranker", None
-                        ) is not None,
+                        )
+                        is not None,
                     },
                 )
                 return chunks

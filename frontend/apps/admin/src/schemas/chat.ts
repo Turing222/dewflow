@@ -90,6 +90,8 @@ export const ragMetricsSchema = z.object({
     model_route_confidence: z.number().optional(),
     model_route_reason: z.string().optional(),
     model_route_fallback: z.boolean().optional(),
+    llm_thinking_ms: z.number().optional(),
+    llm_answer_ms: z.number().optional(),
 }).partial();
 
 export const chatMessageMetricsSchema = z.object({
@@ -108,6 +110,8 @@ export const chatMessageMetricsSchema = z.object({
     model_route_confidence: z.number().optional(),
     model_route_reason: z.string().optional(),
     model_route_fallback: z.boolean().optional(),
+    llm_thinking_ms: z.number().optional(),
+    llm_answer_ms: z.number().optional(),
 }).partial();
 
 export const searchContextSchema = z.object({

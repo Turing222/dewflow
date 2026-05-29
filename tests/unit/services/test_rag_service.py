@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.services.rag_service import RAGService
+from backend.services.rag_service import RAGService, select_rerank_fallback_candidates
 
 pytestmark = pytest.mark.asyncio
 
@@ -235,11 +235,37 @@ async def test_retrieve_with_rerank_degrades_to_candidate_order_when_reranker_th
     assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
 
 
+async def test_rerank_native_failure_preserves_web_candidate() -> None:
+    reranker = SimpleNamespace(
+        rerank=AsyncMock(side_effect=RuntimeError("reranker down"))
+    )
+    service = _build_service(llm_service=None, reranker=reranker)
+    candidates = [
+        {"content": f"kb-{index}", "source_type": "file"} for index in range(20)
+    ] + [{"content": f"web-{index}", "source_type": "web"} for index in range(4)]
+
+    result = await service.rerank(
+        query_text="query",
+        candidates=candidates,
+        top_k=4,
+    )
+
+    assert len(result) == 4
+    assert [chunk["content"] for chunk in result[:3]] == ["kb-0", "kb-1", "kb-2"]
+    assert result[3]["content"] == "web-0"
+
+
 async def test_retrieve_with_rerank_returns_candidates_when_no_reranker_and_no_llm() -> (
     None
 ):
     service = _build_service(llm_service=None, reranker=None)
-    candidates = [_chunk("alpha", 0), _chunk("beta", 1), _chunk("gamma", 2)]
+    candidates = [
+        _chunk("alpha", 0),
+        _chunk("beta", 1),
+        _chunk("gamma", 2),
+        _chunk("web", 3),
+    ]
+    candidates[-1].source_type = "web"
     service.vector_index_service.search_chunks_for_kb_hybrid = AsyncMock(
         return_value=[(chunk, 0.1) for chunk in candidates]
     )
@@ -249,7 +275,7 @@ async def test_retrieve_with_rerank_returns_candidates_when_no_reranker_and_no_l
         kb_id=uuid.uuid4(),
     )
 
-    assert [chunk["content"] for chunk in result] == ["alpha", "beta"]
+    assert [chunk["content"] for chunk in result] == ["alpha", "web"]
 
 
 def test_apply_rankings_with_bifrost_rerank_score_kind() -> None:
@@ -285,3 +311,27 @@ def test_apply_rankings_with_zero_based_index() -> None:
     assert result[0]["rerank_score"] == 0.9
     assert result[1]["content"] == "a"
     assert result[1]["rerank_score"] == 0.5
+
+
+async def test_select_rerank_fallback_keeps_existing_web_order() -> None:
+    candidates = [
+        {"content": "kb-0", "source_type": "file"},
+        {"content": "web-0", "source_type": "web"},
+        {"content": "kb-1", "source_type": "file"},
+    ]
+
+    result = select_rerank_fallback_candidates(candidates, 2)
+
+    assert [chunk["content"] for chunk in result] == ["kb-0", "web-0"]
+
+
+async def test_select_rerank_fallback_keeps_plain_candidate_order_without_web() -> None:
+    candidates = [
+        {"content": "kb-0", "source_type": "file"},
+        {"content": "kb-1", "source_type": "file"},
+        {"content": "kb-2", "source_type": "file"},
+    ]
+
+    result = select_rerank_fallback_candidates(candidates, 2)
+
+    assert [chunk["content"] for chunk in result] == ["kb-0", "kb-1"]

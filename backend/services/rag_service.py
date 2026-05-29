@@ -26,6 +26,29 @@ from backend.services.vector_index_service import RetrievalHit, VectorIndexServi
 logger = logging.getLogger(__name__)
 
 
+def select_rerank_fallback_candidates(
+    candidates: list[dict],
+    limit: int,
+) -> list[dict]:
+    """Keep candidate order while preserving a web hit when rerank is unavailable."""
+    if limit <= 0:
+        return []
+
+    selected = list(candidates)[:limit]
+    if not selected or any(chunk.get("source_type") == "web" for chunk in selected):
+        return selected
+
+    web_candidate = next(
+        (chunk for chunk in candidates if chunk.get("source_type") == "web"),
+        None,
+    )
+    if web_candidate is None:
+        return selected
+
+    selected[-1] = web_candidate
+    return selected
+
+
 class RAGService(AbstractRAGService):
     """知识库检索服务。"""
 
@@ -115,7 +138,7 @@ class RAGService(AbstractRAGService):
                 logger.warning("Native rerank 失败，降级为候选原始排序: %s", exc)
 
         if self.llm_service is None:
-            return list(candidates)[:limit]
+            return select_rerank_fallback_candidates(candidates, limit)
 
         prompt = self.build_rerank_prompt(
             query_text=query_text,
@@ -178,7 +201,7 @@ class RAGService(AbstractRAGService):
         if not candidates:
             return []
         if self.reranker is None and self.llm_service is None:
-            return candidates[:limit]
+            return select_rerank_fallback_candidates(candidates, limit)
 
         try:
             with trace_span(
@@ -203,7 +226,7 @@ class RAGService(AbstractRAGService):
                 return reranked
         except Exception as exc:
             logger.warning("RAG rerank 失败，降级为候选原始排序: %s", exc)
-            return candidates[:limit]
+            return select_rerank_fallback_candidates(candidates, limit)
 
     async def retrieve_fulltext(
         self,
