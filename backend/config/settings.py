@@ -40,6 +40,7 @@ class Settings(WebSettings, AISettings, WorkerSettings):
     CONFIG_DIR: Path = Field(default_factory=_config_dir)
     BASE_DIR: Path = BASE_DIR
     LOG_DIR: Path = BASE_DIR / "logs/backend"
+    BACKEND_LOG_LEVEL: str = "info"
 
     # ── Database ──────────────────────────────────────────────────
     DATABASE_URL: str | None = None

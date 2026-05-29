@@ -16,8 +16,8 @@ from pydantic import ValidationError
 
 from backend.config.embedding import EmbeddingProfile, build_embedding_profiles
 from backend.config.loader import ConfigurationError, load_yaml_config
-from backend.config.rerank import RerankProfile, build_rerank_profiles
 from backend.config.prompts import get_prompt_config
+from backend.config.rerank import RerankProfile, build_rerank_profiles
 from backend.config.schemas import LLMModelsConfig
 from backend.config.schemas.models import LLMModelProfile as _SchemaLLMProfile
 from backend.config.schemas.models import LLMModelRoute as _SchemaLLMRoute

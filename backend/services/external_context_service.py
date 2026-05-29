@@ -154,7 +154,8 @@ class TavilyExternalContextProvider(AbstractExternalContextProvider):
 
 
 def create_external_context_provider(
-    *, always_create: bool = False,
+    *,
+    always_create: bool = False,
 ) -> AbstractExternalContextProvider | None:
     """Create the configured external context provider."""
     if ai_settings.EXTERNAL_CONTEXT_PROVIDER == "tavily":
@@ -163,5 +164,7 @@ def create_external_context_provider(
             return None
         return provider
     if ai_settings.EXTERNAL_CONTEXT_PROVIDER:
-        logger.warning("未知外部上下文 provider: %s", ai_settings.EXTERNAL_CONTEXT_PROVIDER)
+        logger.warning(
+            "未知外部上下文 provider: %s", ai_settings.EXTERNAL_CONTEXT_PROVIDER
+        )
     return None

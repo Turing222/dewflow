@@ -27,6 +27,26 @@ def test_settings_can_load_without_explicit_secret_key(
     assert settings.SECRET_KEY == DEFAULT_SECRET_KEY
 
 
+def test_backend_log_level_defaults_to_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BACKEND_LOG_LEVEL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_LOG_LEVEL == "info"
+
+
+def test_backend_log_level_loads_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BACKEND_LOG_LEVEL", "debug")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKEND_LOG_LEVEL == "debug"
+
+
 def test_growthbook_sdk_key_loads_from_secret_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

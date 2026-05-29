@@ -181,9 +181,7 @@ async def _generate_llm_stream_task(
         rag_planning_service=get_worker_rag_planning_service(),
         external_context_provider=get_worker_external_context_provider(),
     )
-    assistant_uuid = (
-        uuid.UUID(assistant_message_id) if assistant_message_id else None
-    )
+    assistant_uuid = uuid.UUID(assistant_message_id) if assistant_message_id else None
     user_uuid = uuid.UUID(user_id) if user_id else None
 
     return await workflow.generate_stream(
@@ -276,9 +274,7 @@ async def _generate_llm_nonstream_task(
         rag_planning_service=get_worker_rag_planning_service(),
         external_context_provider=get_worker_external_context_provider(),
     )
-    assistant_uuid = (
-        uuid.UUID(assistant_message_id) if assistant_message_id else None
-    )
+    assistant_uuid = uuid.UUID(assistant_message_id) if assistant_message_id else None
     user_uuid = uuid.UUID(user_id) if user_id else None
 
     return await workflow.generate_nonstream(

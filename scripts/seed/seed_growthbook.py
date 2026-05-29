@@ -317,7 +317,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--env-overrides",
         default=None,
         help="Path to flags.yaml with per-environment overrides "
-             "(default: configs/growthbook/flags.yaml).",
+        "(default: configs/growthbook/flags.yaml).",
     )
     parser.add_argument(
         "--force",

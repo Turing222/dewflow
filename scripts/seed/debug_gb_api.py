@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 
 import httpx
 
@@ -51,7 +50,7 @@ def main() -> int:
         envs = data.get("environments", [])
         print(f"Available environments: {len(envs)}")
         for e in envs:
-            print(f"  - id={e.get('id')}  description={e.get('description','')}")
+            print(f"  - id={e.get('id')}  description={e.get('description', '')}")
     else:
         print(f"Body: {resp.text[:500]}")
 
@@ -64,7 +63,9 @@ def main() -> int:
         features = data.get("features", [])
         print(f"Existing features: {len(features)}")
         for f in features[:5]:
-            print(f"  - id={f.get('id')} valueType={f.get('valueType')} defaultValue={f.get('defaultValue')}")
+            print(
+                f"  - id={f.get('id')} valueType={f.get('valueType')} defaultValue={f.get('defaultValue')}"
+            )
         if len(features) > 5:
             print(f"  ... and {len(features) - 5} more")
     else:

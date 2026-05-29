@@ -30,7 +30,8 @@ def _make_mock_feature_flag_service(
 ) -> AsyncMock:
     flags = {
         **_AI_SYSTEM_FLAG_DEFAULTS,
-        "enable-public-registration": True, "enable-closed-beta-login": False,
+        "enable-public-registration": True,
+        "enable-closed-beta-login": False,
         **(overrides or {}),
     }
     svc = AsyncMock(spec=FeatureFlagService)

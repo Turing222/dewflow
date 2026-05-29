@@ -36,7 +36,9 @@ def test_tavily_parse_response_normalizes_chunks() -> None:
     assert rag_chunk["evidence_score"] == 0.8
 
 
-def test_create_external_context_provider_returns_none_when_no_provider_configured() -> None:
+def test_create_external_context_provider_returns_none_when_no_provider_configured() -> (
+    None
+):
     with patch(
         "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_PROVIDER",
         None,
@@ -45,23 +47,29 @@ def test_create_external_context_provider_returns_none_when_no_provider_configur
 
 
 def test_create_external_context_provider_returns_none_when_no_api_key() -> None:
-    with patch(
-        "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_PROVIDER",
-        "tavily",
-    ), patch(
-        "backend.services.external_context_service.ai_settings.TAVILY_API_KEY",
-        None,
+    with (
+        patch(
+            "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_PROVIDER",
+            "tavily",
+        ),
+        patch(
+            "backend.services.external_context_service.ai_settings.TAVILY_API_KEY",
+            None,
+        ),
     ):
         assert create_external_context_provider() is None
 
 
 def test_create_external_context_provider_returns_provider_when_configured() -> None:
-    with patch(
-        "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_PROVIDER",
-        "tavily",
-    ), patch(
-        "backend.services.external_context_service.ai_settings.TAVILY_API_KEY",
-        "test-key",
+    with (
+        patch(
+            "backend.services.external_context_service.ai_settings.EXTERNAL_CONTEXT_PROVIDER",
+            "tavily",
+        ),
+        patch(
+            "backend.services.external_context_service.ai_settings.TAVILY_API_KEY",
+            "test-key",
+        ),
     ):
         provider = create_external_context_provider()
         assert provider is not None

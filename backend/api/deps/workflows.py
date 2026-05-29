@@ -53,7 +53,12 @@ def get_chat_workflow(
     session_manager: SessionManager = Depends(get_session_manager),
 ) -> ChatWorkflow:
     return ChatWorkflow(
-        uow, dispatcher, redis_client, permission_service, feature_flag_service, session_manager
+        uow,
+        dispatcher,
+        redis_client,
+        permission_service,
+        feature_flag_service,
+        session_manager,
     )
 
 
@@ -66,7 +71,12 @@ def get_chat_nonstream_workflow(
     session_manager: SessionManager = Depends(get_session_manager),
 ) -> ChatNonStreamWorkflow:
     return ChatNonStreamWorkflow(
-        uow, dispatcher, redis_client, permission_service, feature_flag_service, session_manager
+        uow,
+        dispatcher,
+        redis_client,
+        permission_service,
+        feature_flag_service,
+        session_manager,
     )
 
 
