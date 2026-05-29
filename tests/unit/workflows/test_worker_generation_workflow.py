@@ -565,7 +565,7 @@ async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -
         llm_service=StreamingLLM([], error=RuntimeError("internal secret")),
     )
 
-    error = await workflow.generate_stream(
+    result = await workflow.generate_stream(
         payload=GenerationPayload(
             session_id=uuid.uuid4(),
             query_text="hi",
@@ -576,7 +576,8 @@ async def test_worker_stream_system_error_returns_generic_message(monkeypatch) -
         idempotency_lock_key="idempotency:test",
     )
 
-    assert error == "服务暂时不可用，请稍后重试"
+    assert result.success is False
+    assert result.error == "服务暂时不可用，请稍后重试"
     assert redis.published == [
         ("stream:test", encode_started_event()),
         ("stream:test", encode_error_event("服务暂时不可用，请稍后重试")),

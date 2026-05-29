@@ -110,7 +110,8 @@ async def test_stream_error_publishes_error_and_done_and_cleans_lock(
         ("stream:err", encode_done_event()),
     ]
     assert redis.deleted == ["idempotency:err"]
-    assert result == "provider failed"
+    assert result.success is False
+    assert result.error == "provider failed"
 
 
 async def test_stream_done_always_published_even_on_system_error(monkeypatch) -> None:
@@ -139,7 +140,8 @@ async def test_stream_done_always_published_even_on_system_error(monkeypatch) ->
         idempotency_lock_key="idempotency:crash",
     )
 
-    assert result == "服务暂时不可用，请稍后重试"
+    assert result.success is False
+    assert result.error == "服务暂时不可用，请稍后重试"
     done_events = [p for p in redis.published if p[1] == encode_done_event()]
     assert len(done_events) == 1
     assert redis.deleted == ["idempotency:crash"]

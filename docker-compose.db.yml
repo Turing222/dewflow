@@ -262,7 +262,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         limits:
@@ -285,7 +285,7 @@ services:
       <<: [ *infra-env, *feature-env, *secret-file-env ]
       PYTHONMALLOC: default
       WEB_CONCURRENCY: "1"
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         limits:
@@ -333,7 +333,7 @@ services:
       retries: 3
       start_period: 20s
     command: taskiq worker backend.infra.task_broker:broker backend.worker.tasks.llm_tasks backend.worker.tasks.knowledge_tasks backend.worker.tasks.repo_analysis_tasks --workers 2 --wait-tasks-timeout 105 --shutdown-timeout 10
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       redis:
         condition: service_healthy

@@ -5,6 +5,7 @@
 """
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -52,6 +53,21 @@ class GenerationResult(BaseModel):
     search_context: dict | None = None
     latency_ms: int | None = None
     error: str | None = None
+    model_name: str | None = None
+    langfuse_metadata: dict[str, object] | None = None
+
+
+@dataclass
+class StreamGenerationResult:
+    """流式生成的结果，包含观测所需的完整信息。"""
+
+    success: bool
+    error: str | None = None
+    output: str | None = None
+    tokens_input: int | None = None
+    tokens_output: int | None = None
+    model_name: str | None = None
+    langfuse_metadata: dict[str, object] | None = None
 
 
 class LLMTaskPayload(BaseModel):

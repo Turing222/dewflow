@@ -338,12 +338,12 @@ export function useChatController(): UseChatControllerReturn {
                         prev.map((step) =>
                             step.id === 'receive-query'
                                 ? {
-                                      ...step,
-                                      status: 'done' as const,
-                                      finishedAt: Date.now(),
-                                      durationMs: networkMs,
-                                      description: '网络连接建立成功',
-                                  }
+                                    ...step,
+                                    status: 'done' as const,
+                                    finishedAt: Date.now(),
+                                    durationMs: networkMs,
+                                    description: '网络连接建立成功',
+                                }
                                 : step
                         )
                     );
@@ -503,7 +503,7 @@ export function useChatController(): UseChatControllerReturn {
                             return step;
                         });
                     });
-                    refreshUser().catch(() => {});
+                    refreshUser().catch(() => { });
                     if (runtimeSessionId) {
                         queryClient.invalidateQueries({ queryKey: chatKeys.sessionDetail(runtimeSessionId) });
                         getSessionDetailAPI(runtimeSessionId)
@@ -536,7 +536,7 @@ export function useChatController(): UseChatControllerReturn {
                                     ));
                                 }
                             })
-                            .catch(() => {});
+                            .catch(() => { });
                     }
                     queryClient.invalidateQueries({ queryKey: chatKeys.sessions() });
                 },
@@ -703,12 +703,12 @@ export function useChatController(): UseChatControllerReturn {
                 prev.map((step) =>
                     step.id === 'file-upload'
                         ? {
-                              ...step,
-                              status: 'done',
-                              finishedAt: uploadFinishedAt,
-                              durationMs: uploadFinishedAt - now,
-                              description: `已成功上传: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
-                          }
+                            ...step,
+                            status: 'done',
+                            finishedAt: uploadFinishedAt,
+                            durationMs: uploadFinishedAt - now,
+                            description: `已成功上传: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+                        }
                         : step
                 )
             );
@@ -723,8 +723,8 @@ export function useChatController(): UseChatControllerReturn {
                             status: 'done',
                             startedAt: step.startedAt ?? uploadFinishedAt,
                             finishedAt: completeTime,
-                            description: step.id === 'ingestion-complete' 
-                                ? '知识库文档秒传匹配成功，入库完成！' 
+                            description: step.id === 'ingestion-complete'
+                                ? '知识库文档秒传匹配成功，入库完成！'
                                 : '已完成(秒传缓存)',
                         };
                     })

@@ -41,6 +41,7 @@ from backend.models.schemas.chat.payloads import (
     FeatureFlags,
     GenerationPayload,
     GenerationResult,
+    StreamGenerationResult,
 )
 from backend.observability.trace_utils import (
     build_llm_span_attributes,
@@ -48,8 +49,10 @@ from backend.observability.trace_utils import (
     trace_span,
 )
 from backend.services.chat_safety_metadata import (
+    INJECTION_REFUSAL_MESSAGE,
     SAFETY_REFUSAL_MESSAGE,
     GuardrailDecision,
+    GuardrailReason,
     build_guardrail_success_metadata,
     evaluate_input_guardrail,
     evaluate_output_guardrail,
@@ -389,6 +392,40 @@ class LLMGenerationWorkerWorkflow:
             }
         return metadata
 
+    @staticmethod
+    def _build_langfuse_metadata(
+        *,
+        selected_llm: _SelectedLLM,
+        first_token_ms: int | None,
+        output_decision: GuardrailDecision | None,
+        output_blocked: bool,
+        search_context: dict | None,
+        citation_result: CitationResult | None,
+    ) -> dict[str, object]:
+        """构建 Langfuse metadata，包含模型路由、guardrail、RAG、citation 信息。"""
+        metadata: dict[str, object] = {
+            "model_tier": selected_llm.tier,
+            "provider_config": selected_llm.provider_config,
+            "route_confidence": selected_llm.route_confidence,
+            "route_reason": selected_llm.route_reason,
+            "route_fallback": selected_llm.fallback,
+            "first_token_ms": first_token_ms,
+            "guardrail_output_triggered": (
+                output_decision.triggered if output_decision else False
+            ),
+            "guardrail_output_blocked": output_blocked,
+        }
+
+        if search_context is not None:
+            metadata["rag_hit_count"] = search_context.get("rag_hit_count")
+            metadata["rag_rerank_enabled"] = search_context.get("rag_rerank_enabled")
+
+        if citation_result is not None:
+            metadata["citation_total"] = citation_result.total_citations
+            metadata["citation_removed"] = citation_result.removed_count
+
+        return metadata
+
     # ── Streaming ──────────────────────────────────────────────────
 
     async def generate_stream(
@@ -399,10 +436,10 @@ class LLMGenerationWorkerWorkflow:
         assistant_message_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
         idempotency_lock_key: str | None = None,
-    ) -> str | None:
+    ) -> StreamGenerationResult:
         """Generate a streaming answer, publish chunks, and persist final state.
 
-        Returns an error string on failure, or None on success / guardrail block.
+        Returns StreamGenerationResult with success status, output, tokens, and metadata.
         """
         accumulated_content: list[str] = []
         done_published: bool = False
@@ -415,6 +452,12 @@ class LLMGenerationWorkerWorkflow:
             await self.stream_publisher.publish_started(channel)
             input_decision = evaluate_input_guardrail(payload.query_text)
             if input_decision.triggered:
+                refusal_message = (
+                    INJECTION_REFUSAL_MESSAGE
+                    if input_decision.reason == GuardrailReason.INJECTION_RISK.value
+                    else SAFETY_REFUSAL_MESSAGE
+                )
+                tokens_output = self._count_output_tokens(refusal_message)
                 await self.guardrail_handler.handle_stream_input_block(
                     channel=channel,
                     assistant_message_id=assistant_message_id,
@@ -423,12 +466,31 @@ class LLMGenerationWorkerWorkflow:
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
                 )
-                return
+                return StreamGenerationResult(
+                    success=True,
+                    output=refusal_message,
+                    tokens_input=0,
+                    tokens_output=tokens_output,
+                    langfuse_metadata={
+                        "response_outcome": "blocked",
+                        "guardrail_input_triggered": True,
+                        "guardrail_input_reason": input_decision.reason,
+                    },
+                )
             try:
                 prepared = self._coerce_prepared_generation(
                     await self._prepare_generation(payload)
                 )
             except _RAGRefusalSignal as sig:
+                planner_refusal = bool(
+                    sig.search_context and sig.search_context.get("planner_refusal")
+                )
+                refusal_content = (
+                    ai_settings.RAG_PLANNER_REFUSAL_MESSAGE
+                    if planner_refusal
+                    else ai_settings.RAG_REFUSAL_MESSAGE
+                )
+                tokens_output = self._count_output_tokens(refusal_content)
                 await self.guardrail_handler.handle_stream_refusal(
                     channel=channel,
                     assistant_message_id=assistant_message_id,
@@ -437,7 +499,17 @@ class LLMGenerationWorkerWorkflow:
                     start_time=start_time,
                     idempotency_lock_key=idempotency_lock_key,
                 )
-                return
+                return StreamGenerationResult(
+                    success=True,
+                    output=refusal_content,
+                    tokens_input=0,
+                    tokens_output=tokens_output,
+                    langfuse_metadata={
+                        "response_outcome": "refused",
+                        "rag_refusal": True,
+                        "planner_refusal": planner_refusal,
+                    },
+                )
 
             llm_query = prepared.llm_query
             tokens_input = prepared.tokens_input
@@ -570,30 +642,34 @@ class LLMGenerationWorkerWorkflow:
                     model_name=selected_llm.model_name,
                 )
 
-                citation_attrs: dict[str, object] = {}
-                if citation_result is not None:
-                    citation_attrs = {
-                        "citation.total": citation_result.total_citations,
-                        "citation.valid": citation_result.total_citations
-                        - citation_result.removed_count,
-                        "citation.removed": citation_result.removed_count,
-                    }
                 set_span_attributes(
                     span,
                     {
-                        "llm.response.chunk_count": len(accumulated_content),
-                        "llm.response.char_count": len(full_content),
                         "llm.first_token_ms": first_published_from_llm_ms,
                         "chat.first_token_latency_ms": first_token_latency_ms,
                         "chat.worker_total_latency_ms": worker_total_latency_ms,
-                        "gen_ai.usage.input_tokens": tokens_input,
-                        "gen_ai.usage.output_tokens": tokens_output,
+                        "llm.provider": selected_llm.provider,
                         "llm.model_tier": selected_llm.tier,
                         "llm.route.provider_config": selected_llm.provider_config,
-                        **citation_attrs,
+                        "gen_ai.request.model": selected_llm.model_name,
                     },
                 )
             logger.info("TaskIQ Worker 成功结束流式处理: %s", channel)
+            return StreamGenerationResult(
+                success=True,
+                output=content_to_persist,
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                model_name=selected_llm.model_name,
+                langfuse_metadata=self._build_langfuse_metadata(
+                    selected_llm=selected_llm,
+                    first_token_ms=first_published_from_llm_ms,
+                    output_decision=output_decision,
+                    output_blocked=output_blocked,
+                    search_context=search_context,
+                    citation_result=citation_result,
+                ),
+            )
         except (AppException, Exception) as exc:
             result = await self._handle_generation_error(
                 exc,
@@ -601,7 +677,7 @@ class LLMGenerationWorkerWorkflow:
                 idempotency_lock_key=idempotency_lock_key,
                 channel=channel,
             )
-            return result.error
+            return StreamGenerationResult(success=False, error=result.error)
         finally:
             if not done_published:
                 await self.stream_publisher.publish_done(channel)
@@ -677,12 +753,10 @@ class LLMGenerationWorkerWorkflow:
                         "llm.success": result.success,
                         "llm.latency_ms": result.latency_ms,
                         "llm.generate_ms": llm_generate_ms,
-                        "llm.response.completion_tokens": result.completion_tokens,
-                        "llm.response.char_count": len(result.content),
-                        "gen_ai.usage.input_tokens": result.prompt_tokens,
-                        "gen_ai.usage.output_tokens": result.completion_tokens,
+                        "llm.provider": selected_llm.provider,
                         "llm.model_tier": selected_llm.tier,
                         "llm.route.provider_config": selected_llm.provider_config,
+                        "gen_ai.request.model": selected_llm.model_name,
                     },
                 )
 
@@ -717,15 +791,6 @@ class LLMGenerationWorkerWorkflow:
                         {"citation_validate_ms": elapsed_ms(citation_validate_started)},
                     )
                     full_content = citation_result.cleaned_content
-                    set_span_attributes(
-                        span,
-                        {
-                            "citation.total": citation_result.total_citations,
-                            "citation.valid": citation_result.total_citations
-                            - citation_result.removed_count,
-                            "citation.removed": citation_result.removed_count,
-                        },
-                    )
             tokens_output = (
                 self._count_output_tokens(full_content)
                 if output_decision.triggered
@@ -777,6 +842,15 @@ class LLMGenerationWorkerWorkflow:
                 tokens_output=tokens_output,
                 search_context=search_context,
                 latency_ms=result.latency_ms,
+                model_name=selected_llm.model_name,
+                langfuse_metadata=self._build_langfuse_metadata(
+                    selected_llm=selected_llm,
+                    first_token_ms=None,
+                    output_decision=output_decision,
+                    output_blocked=output_decision.triggered if output_decision else False,
+                    search_context=search_context,
+                    citation_result=citation_result,
+                ),
             )
 
         except (AppException, Exception) as exc:
