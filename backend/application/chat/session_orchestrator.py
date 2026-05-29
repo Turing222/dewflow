@@ -163,7 +163,7 @@ class ChatSessionOrchestrator:
                     )
 
                 with trace_span(
-                    f"{span_prefix}.create_session_and_messages",
+                    f"{span_prefix}.prepare_chat_context",
                     trace_attrs,
                 ) as span:
                     session_manager = self._session_manager
@@ -199,17 +199,7 @@ class ChatSessionOrchestrator:
                         client_request_id=command.client_request_id,
                         user_id=command.user_id,
                     )
-                set_span_attributes(
-                    span,
-                    {
-                        "chat.session_id": session.id,
-                        "chat.assistant_message_id": assistant_message.id,
-                    },
-                )
-                trace_attrs["chat.session_id"] = session.id
-                trace_attrs["chat.assistant_message_id"] = assistant_message.id
 
-                with trace_span(f"{span_prefix}.fetch_history", trace_attrs) as span:
                     history_messages = await session_manager.get_session_messages(
                         session_id=session.id,
                         limit=settings.CHAT_MEMORY_FETCH_LIMIT,
@@ -217,9 +207,18 @@ class ChatSessionOrchestrator:
                     context_state = await self.uow.chat_repo.get_context_state(
                         session.id
                     )
+
                     set_span_attributes(
-                        span, {"chat.history.message_count": len(history_messages)}
+                        span,
+                        {
+                            "chat.session_id": session.id,
+                            "chat.assistant_message_id": assistant_message.id,
+                            "chat.history.message_count": len(history_messages),
+                            "chat.context_state.present": context_state is not None,
+                        },
                     )
+                trace_attrs["chat.session_id"] = session.id
+                trace_attrs["chat.assistant_message_id"] = assistant_message.id
 
         conversation_history = history_to_conversation_messages(history_messages)
 

@@ -50,7 +50,6 @@ class TracingMiddleware:
 
         set_current_span_attributes(
             {
-                "app.request_id": request_id,
                 "app.incoming_request_id": bool(incoming_request_id),
             }
         )

@@ -586,8 +586,6 @@ class LLMGenerationWorkerWorkflow:
                         "llm.first_token_ms": first_published_from_llm_ms,
                         "chat.first_token_latency_ms": first_token_latency_ms,
                         "chat.worker_total_latency_ms": worker_total_latency_ms,
-                        "chat.tokens_input": tokens_input,
-                        "chat.tokens_output": tokens_output,
                         "gen_ai.usage.input_tokens": tokens_input,
                         "gen_ai.usage.output_tokens": tokens_output,
                         "llm.model_tier": selected_llm.tier,
@@ -719,6 +717,15 @@ class LLMGenerationWorkerWorkflow:
                         {"citation_validate_ms": elapsed_ms(citation_validate_started)},
                     )
                     full_content = citation_result.cleaned_content
+                    set_span_attributes(
+                        span,
+                        {
+                            "citation.total": citation_result.total_citations,
+                            "citation.valid": citation_result.total_citations
+                            - citation_result.removed_count,
+                            "citation.removed": citation_result.removed_count,
+                        },
+                    )
             tokens_output = (
                 self._count_output_tokens(full_content)
                 if output_decision.triggered
@@ -757,18 +764,6 @@ class LLMGenerationWorkerWorkflow:
                 idempotency_lock_key=idempotency_lock_key,
                 model_name=selected_llm.model_name,
             )
-
-            if citation_result is not None:
-                with trace_span(
-                    "taskiq.llm_nonstream.citation_validate",
-                    {
-                        "citation.total": citation_result.total_citations,
-                        "citation.valid": citation_result.total_citations
-                        - citation_result.removed_count,
-                        "citation.removed": citation_result.removed_count,
-                    },
-                ):
-                    pass
 
             logger.info(
                 "TaskIQ Worker 成功结束非流式处理: session_id=%s, message_id=%s",
